@@ -1,0 +1,2654 @@
+{
+  "info": {
+    "name": "MafiaGame Server",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "역할 분배: 마피아 max(1, 인원/3), 경찰 1, 의사 1, 나머지 시민.\n시나리오 A(6명, 시민 승리, 2일 진행)와 B(4명, 마피아 승리)는 각각 독립적으로 처음부터 폴더 순서대로 실행하세요.\n역할은 무작위라서 'x-2. 역할 확인'을 모두 실행하면 역할별 id 변수가 자동으로 채워집니다."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "gameId",
+      "value": ""
+    },
+    {
+      "key": "mafia1Id",
+      "value": ""
+    },
+    {
+      "key": "mafia2Id",
+      "value": ""
+    },
+    {
+      "key": "policeId",
+      "value": ""
+    },
+    {
+      "key": "doctorId",
+      "value": ""
+    },
+    {
+      "key": "citizen1Id",
+      "value": ""
+    },
+    {
+      "key": "citizen2Id",
+      "value": ""
+    },
+    {
+      "key": "mafiaIds",
+      "value": "[]"
+    },
+    {
+      "key": "citizenIds",
+      "value": "[]"
+    }
+  ],
+  "item": [
+    {
+      "name": "시나리오 A - 6명, 시민 승리",
+      "item": [
+        {
+          "name": "A-1. 게임 시작 (6명)",
+          "item": [
+            {
+              "name": "게임 시작 (방장)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games"
+                  ]
+                },
+                "description": "6명: 마피아 2, 경찰 1, 의사 1, 시민 2",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"roomId\": \"room-1\",\n  \"players\": [\n    {\n      \"playerId\": 1,\n      \"nickname\": \"A\"\n    },\n    {\n      \"playerId\": 2,\n      \"nickname\": \"B\"\n    },\n    {\n      \"playerId\": 3,\n      \"nickname\": \"C\"\n    },\n    {\n      \"playerId\": 4,\n      \"nickname\": \"D\"\n    },\n    {\n      \"playerId\": 5,\n      \"nickname\": \"E\"\n    },\n    {\n      \"playerId\": 6,\n      \"nickname\": \"F\"\n    }\n  ]\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                      "const r = pm.response.json();",
+                      "pm.test('첫 페이즈는 NIGHT, 1일차', () => { pm.expect(r.phase).to.eql('NIGHT'); pm.expect(r.day).to.eql(1); });",
+                      "pm.collectionVariables.set('gameId', r.gameId);",
+                      "['mafia1Id','mafia2Id','policeId','doctorId','citizen1Id','citizen2Id'].forEach(k => pm.collectionVariables.set(k, ''));",
+                      "pm.collectionVariables.set('mafiaIds', '[]');",
+                      "pm.collectionVariables.set('citizenIds', '[]');",
+                      "console.log('gameId =', r.gameId);"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "A-2. 역할 확인",
+          "item": [
+            {
+              "name": "내 역할 - 플레이어 1",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "1"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "function addTo(listKey, prefix) {",
+                      "  const list = JSON.parse(pm.collectionVariables.get(listKey) || '[]');",
+                      "  if (!list.includes(r.playerId)) list.push(r.playerId);",
+                      "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
+                      "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
+                      "}",
+                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "내 역할 - 플레이어 2",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "2"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "function addTo(listKey, prefix) {",
+                      "  const list = JSON.parse(pm.collectionVariables.get(listKey) || '[]');",
+                      "  if (!list.includes(r.playerId)) list.push(r.playerId);",
+                      "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
+                      "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
+                      "}",
+                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "내 역할 - 플레이어 3",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "3"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "function addTo(listKey, prefix) {",
+                      "  const list = JSON.parse(pm.collectionVariables.get(listKey) || '[]');",
+                      "  if (!list.includes(r.playerId)) list.push(r.playerId);",
+                      "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
+                      "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
+                      "}",
+                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "내 역할 - 플레이어 4",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "4"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "function addTo(listKey, prefix) {",
+                      "  const list = JSON.parse(pm.collectionVariables.get(listKey) || '[]');",
+                      "  if (!list.includes(r.playerId)) list.push(r.playerId);",
+                      "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
+                      "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
+                      "}",
+                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "내 역할 - 플레이어 5",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "5"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "function addTo(listKey, prefix) {",
+                      "  const list = JSON.parse(pm.collectionVariables.get(listKey) || '[]');",
+                      "  if (!list.includes(r.playerId)) list.push(r.playerId);",
+                      "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
+                      "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
+                      "}",
+                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "내 역할 - 플레이어 6",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "6"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "function addTo(listKey, prefix) {",
+                      "  const list = JSON.parse(pm.collectionVariables.get(listKey) || '[]');",
+                      "  if (!list.includes(r.playerId)) list.push(r.playerId);",
+                      "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
+                      "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
+                      "}",
+                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "역할 변수 확인",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "위 요청을 모두 실행한 뒤 실행. 필요한 역할 변수가 다 채워졌는지 검사합니다."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const v = k => pm.collectionVariables.get(k);",
+                      "pm.test('역할 변수가 모두 채워짐', () => {",
+                      "  [\"mafia1Id\", \"mafia2Id\", \"policeId\", \"doctorId\", \"citizen1Id\", \"citizen2Id\"].forEach(k => pm.expect(v(k), k + ' 비어 있음. 2번 폴더를 모두 실행했나요?').to.not.be.empty);",
+                      "});",
+                      "console.log('mafia', v('mafia1Id'), v('mafia2Id'), '| police', v('policeId'), '| doctor', v('doctorId'), '| citizen', v('citizen1Id'), v('citizen2Id'));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "A-3. 1일차 밤 (의사가 막음)",
+          "item": [
+            {
+              "name": "마피아1 → 시민1",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{mafia1Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{citizen1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = NIGHT', () => pm.expect(r.phase).to.eql('NIGHT'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "마피아2 → 시민1",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{mafia2Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{citizen1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = NIGHT', () => pm.expect(r.phase).to.eql('NIGHT'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "경찰 → 마피아1 조사",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{policeId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{mafia1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = NIGHT', () => pm.expect(r.phase).to.eql('NIGHT'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "의사 → 시민1 보호",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{doctorId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "능력자 4명이 모두 제출 → 즉시 NIGHT_RESULT",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{citizen1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = NIGHT_RESULT', () => pm.expect(r.phase).to.eql('NIGHT_RESULT'));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "A-4. 1일차 밤 결과",
+          "item": [
+            {
+              "name": "밤 결과 - 경찰",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{policeId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('사망자 없음, 의사 보호 성공', () => { pm.expect(r.killedPlayerId).to.be.null; pm.expect(r.protectedByDoctor).to.be.true; });",
+                      "pm.test('조사 결과: 마피아1은 마피아', () => { pm.expect(r.investigation.targetId).to.eql(Number(pm.collectionVariables.get('mafia1Id'))); pm.expect(r.investigation.mafia).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "밤 결과 - 시민2",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{citizen2Id}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('조사 결과는 안 보임', () => pm.expect(r.investigation).to.be.null);"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "A-5. 1일차 투표 (마피아1 처형)",
+          "item": [
+            {
+              "name": "상태 확인",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "phase가 바뀌었는지 확인할 때 실행하세요."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const r = pm.response.json();",
+                      "console.log('phase =', r.phase, '| day =', r.day, '| v' + r.phaseVersion, '| endsAt =', r.phaseEndsAt, '| winner =', r.winner);",
+                      "console.log('생존:', r.players.filter(p => p.alive).map(p => p.playerId).join(', '));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "경찰 → 마피아1",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{policeId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "상태 확인에서 phase가 VOTE일 때 실행 (NIGHT_RESULT 5초 + DAY 10초 후)",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{mafia1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = VOTE', () => pm.expect(r.phase).to.eql('VOTE'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "의사 → 마피아1",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{doctorId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{mafia1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = VOTE', () => pm.expect(r.phase).to.eql('VOTE'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "시민1 → 마피아1",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{citizen1Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{mafia1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = VOTE', () => pm.expect(r.phase).to.eql('VOTE'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "시민2 → 마피아1",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{citizen2Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{mafia1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = VOTE', () => pm.expect(r.phase).to.eql('VOTE'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "마피아1 → 경찰",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{mafia1Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{policeId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = VOTE', () => pm.expect(r.phase).to.eql('VOTE'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "마피아2 → 경찰",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{mafia2Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "6명 전원 투표 → 마피아1 처형(4표). 마피아 1 vs 시민팀 4 → 게임 계속",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{policeId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = EXECUTION', () => pm.expect(r.phase).to.eql('EXECUTION'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "처형 결과",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/execution-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "execution-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('마피아1 처형', () => pm.expect(r.executedPlayerId).to.eql(Number(pm.collectionVariables.get('mafia1Id'))));",
+                      "pm.test('동률 아님', () => pm.expect(r.tie).to.be.false);"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "A-6. 2일차 밤 (경찰 사망)",
+          "item": [
+            {
+              "name": "상태 확인 (NIGHT, day 2)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "EXECUTION 5초 후 2일차 밤으로 넘어갑니다."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const r = pm.response.json();",
+                      "console.log('phase =', r.phase, '| day =', r.day, '| v' + r.phaseVersion, '| endsAt =', r.phaseEndsAt, '| winner =', r.winner);",
+                      "console.log('생존:', r.players.filter(p => p.alive).map(p => p.playerId).join(', '));",
+                      "pm.test('2일차 밤', () => { pm.expect(r.phase).to.eql('NIGHT'); pm.expect(r.day).to.eql(2); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "마피아2 → 경찰",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{mafia2Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{policeId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = NIGHT', () => pm.expect(r.phase).to.eql('NIGHT'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "경찰 → 마피아2 조사",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{policeId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{mafia2Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = NIGHT', () => pm.expect(r.phase).to.eql('NIGHT'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "의사 → 시민2 보호",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{doctorId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "살아 있는 능력자 3명 제출 완료",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{citizen2Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = NIGHT_RESULT', () => pm.expect(r.phase).to.eql('NIGHT_RESULT'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "밤 결과 - 경찰 (사망했지만 조사 결과는 받음)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{policeId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('경찰 사망', () => pm.expect(r.killedPlayerId).to.eql(Number(pm.collectionVariables.get('policeId'))));",
+                      "pm.test('조사 결과: 마피아2는 마피아', () => { pm.expect(r.investigation.targetId).to.eql(Number(pm.collectionVariables.get('mafia2Id'))); pm.expect(r.investigation.mafia).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "A-7. 2일차 투표 (시민 승리)",
+          "item": [
+            {
+              "name": "상태 확인",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "phase가 바뀌었는지 확인할 때 실행하세요."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const r = pm.response.json();",
+                      "console.log('phase =', r.phase, '| day =', r.day, '| v' + r.phaseVersion, '| endsAt =', r.phaseEndsAt, '| winner =', r.winner);",
+                      "console.log('생존:', r.players.filter(p => p.alive).map(p => p.playerId).join(', '));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "의사 → 마피아2",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{doctorId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{mafia2Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = VOTE', () => pm.expect(r.phase).to.eql('VOTE'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "시민1 → 마피아2",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{citizen1Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{mafia2Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = VOTE', () => pm.expect(r.phase).to.eql('VOTE'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "시민2 → 마피아2",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{citizen2Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{mafia2Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = VOTE', () => pm.expect(r.phase).to.eql('VOTE'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "마피아2 → 의사",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{mafia2Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "생존자 4명 전원 투표 → 마피아2 처형 → 마피아 0명 → 시민 승리",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{doctorId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = ENDED', () => pm.expect(r.phase).to.eql('ENDED'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "게임 결과",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('시민 승리', () => { pm.expect(r.ended).to.be.true; pm.expect(r.winner).to.eql('CITIZEN'); });",
+                      "pm.test('6명 역할 공개', () => pm.expect(r.players.length).to.eql(6));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "시나리오 B - 4명, 마피아 승리",
+      "item": [
+        {
+          "name": "B-1. 게임 시작 (4명)",
+          "item": [
+            {
+              "name": "게임 시작 (방장)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games"
+                  ]
+                },
+                "description": "4명: 마피아 1, 경찰 1, 의사 1, 시민 1",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"roomId\": \"room-1\",\n  \"players\": [\n    {\n      \"playerId\": 1,\n      \"nickname\": \"A\"\n    },\n    {\n      \"playerId\": 2,\n      \"nickname\": \"B\"\n    },\n    {\n      \"playerId\": 3,\n      \"nickname\": \"C\"\n    },\n    {\n      \"playerId\": 4,\n      \"nickname\": \"D\"\n    }\n  ]\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                      "const r = pm.response.json();",
+                      "pm.test('첫 페이즈는 NIGHT, 1일차', () => { pm.expect(r.phase).to.eql('NIGHT'); pm.expect(r.day).to.eql(1); });",
+                      "pm.collectionVariables.set('gameId', r.gameId);",
+                      "['mafia1Id','mafia2Id','policeId','doctorId','citizen1Id','citizen2Id'].forEach(k => pm.collectionVariables.set(k, ''));",
+                      "pm.collectionVariables.set('mafiaIds', '[]');",
+                      "pm.collectionVariables.set('citizenIds', '[]');",
+                      "console.log('gameId =', r.gameId);"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "B-2. 역할 확인",
+          "item": [
+            {
+              "name": "내 역할 - 플레이어 1",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "1"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "function addTo(listKey, prefix) {",
+                      "  const list = JSON.parse(pm.collectionVariables.get(listKey) || '[]');",
+                      "  if (!list.includes(r.playerId)) list.push(r.playerId);",
+                      "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
+                      "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
+                      "}",
+                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "내 역할 - 플레이어 2",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "2"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "function addTo(listKey, prefix) {",
+                      "  const list = JSON.parse(pm.collectionVariables.get(listKey) || '[]');",
+                      "  if (!list.includes(r.playerId)) list.push(r.playerId);",
+                      "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
+                      "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
+                      "}",
+                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "내 역할 - 플레이어 3",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "3"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "function addTo(listKey, prefix) {",
+                      "  const list = JSON.parse(pm.collectionVariables.get(listKey) || '[]');",
+                      "  if (!list.includes(r.playerId)) list.push(r.playerId);",
+                      "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
+                      "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
+                      "}",
+                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "내 역할 - 플레이어 4",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "4"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "function addTo(listKey, prefix) {",
+                      "  const list = JSON.parse(pm.collectionVariables.get(listKey) || '[]');",
+                      "  if (!list.includes(r.playerId)) list.push(r.playerId);",
+                      "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
+                      "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
+                      "}",
+                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "역할 변수 확인",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "위 요청을 모두 실행한 뒤 실행. 필요한 역할 변수가 다 채워졌는지 검사합니다."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const v = k => pm.collectionVariables.get(k);",
+                      "pm.test('역할 변수가 모두 채워짐', () => {",
+                      "  [\"mafia1Id\", \"policeId\", \"doctorId\", \"citizen1Id\"].forEach(k => pm.expect(v(k), k + ' 비어 있음. 2번 폴더를 모두 실행했나요?').to.not.be.empty);",
+                      "});",
+                      "console.log('mafia', v('mafia1Id'), v('mafia2Id'), '| police', v('policeId'), '| doctor', v('doctorId'), '| citizen', v('citizen1Id'), v('citizen2Id'));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "B-3. 밤 (시민 사망)",
+          "item": [
+            {
+              "name": "마피아 → 시민",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{mafia1Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{citizen1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = NIGHT', () => pm.expect(r.phase).to.eql('NIGHT'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "경찰 → 의사 조사",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{policeId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{doctorId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = NIGHT', () => pm.expect(r.phase).to.eql('NIGHT'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "의사 → 경찰 보호",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{doctorId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "마피아 1 vs 시민팀 2 → 게임 계속",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{policeId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = NIGHT_RESULT', () => pm.expect(r.phase).to.eql('NIGHT_RESULT'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "밤 결과 - 경찰",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{policeId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('시민 사망', () => pm.expect(r.killedPlayerId).to.eql(Number(pm.collectionVariables.get('citizen1Id'))));",
+                      "pm.test('의사는 마피아 아님', () => pm.expect(r.investigation.mafia).to.be.false);"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "B-4. 투표 (마피아 승리)",
+          "item": [
+            {
+              "name": "상태 확인",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "phase가 바뀌었는지 확인할 때 실행하세요."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const r = pm.response.json();",
+                      "console.log('phase =', r.phase, '| day =', r.day, '| v' + r.phaseVersion, '| endsAt =', r.phaseEndsAt, '| winner =', r.winner);",
+                      "console.log('생존:', r.players.filter(p => p.alive).map(p => p.playerId).join(', '));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "마피아 → 경찰",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{mafia1Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{policeId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = VOTE', () => pm.expect(r.phase).to.eql('VOTE'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "의사 → 경찰",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{doctorId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{policeId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = VOTE', () => pm.expect(r.phase).to.eql('VOTE'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "경찰 → 마피아",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Player-Id",
+                    "value": "{{policeId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "경찰 처형(2표) → 마피아 1 vs 시민팀 1 → 마피아 승리",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{mafia1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('phase = ENDED', () => pm.expect(r.phase).to.eql('ENDED'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "게임 결과",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/games/{{gameId}}/result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "games",
+                    "{{gameId}}",
+                    "result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(r);",
+                      "pm.test('마피아 승리', () => { pm.expect(r.ended).to.be.true; pm.expect(r.winner).to.eql('MAFIA'); });"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "오류·규칙 확인",
+      "item": [
+        {
+          "name": "밤이 아닌데 밤 행동 → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Player-Id",
+                "value": "{{policeId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{gameId}}",
+                "night-actions"
+              ]
+            },
+            "description": "NIGHT가 아닐 때 실행",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetId\": {{mafia1Id}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "투표 페이즈가 아닌데 투표 → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Player-Id",
+                "value": "{{policeId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{gameId}}",
+                "votes"
+              ]
+            },
+            "description": "VOTE가 아닐 때 실행",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetId\": {{mafia1Id}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "시민이 밤 능력 사용 → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Player-Id",
+                "value": "{{citizen1Id}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{gameId}}",
+                "night-actions"
+              ]
+            },
+            "description": "NIGHT일 때 실행",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetId\": {{mafia1Id}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "경찰이 자기 자신 조사 → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Player-Id",
+                "value": "{{policeId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{gameId}}",
+                "night-actions"
+              ]
+            },
+            "description": "NIGHT일 때 실행",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetId\": {{policeId}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "마피아가 동료 마피아 지목 → 200 (허용)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Player-Id",
+                "value": "{{mafia1Id}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{gameId}}",
+                "night-actions"
+              ]
+            },
+            "description": "현재 규칙에서는 허용됨 (Game.recordNightAction의 검사가 주석 처리됨). 시나리오 A와 별도의 게임에서 NIGHT일 때 실행하세요.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetId\": {{mafia2Id}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3명으로 시작 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"room-1\",\n  \"players\": [\n    {\n      \"playerId\": 1,\n      \"nickname\": \"A\"\n    },\n    {\n      \"playerId\": 2,\n      \"nickname\": \"B\"\n    },\n    {\n      \"playerId\": 3,\n      \"nickname\": \"C\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13명으로 시작 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"room-1\",\n  \"players\": [\n    {\n      \"playerId\": 1,\n      \"nickname\": \"A\"\n    },\n    {\n      \"playerId\": 2,\n      \"nickname\": \"B\"\n    },\n    {\n      \"playerId\": 3,\n      \"nickname\": \"C\"\n    },\n    {\n      \"playerId\": 4,\n      \"nickname\": \"D\"\n    },\n    {\n      \"playerId\": 5,\n      \"nickname\": \"E\"\n    },\n    {\n      \"playerId\": 6,\n      \"nickname\": \"F\"\n    },\n    {\n      \"playerId\": 7,\n      \"nickname\": \"G\"\n    },\n    {\n      \"playerId\": 8,\n      \"nickname\": \"H\"\n    },\n    {\n      \"playerId\": 9,\n      \"nickname\": \"I\"\n    },\n    {\n      \"playerId\": 10,\n      \"nickname\": \"J\"\n    },\n    {\n      \"playerId\": 11,\n      \"nickname\": \"K\"\n    },\n    {\n      \"playerId\": 12,\n      \"nickname\": \"L\"\n    },\n    {\n      \"playerId\": 13,\n      \"nickname\": \"M\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "playerId 중복 → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"room-x\",\n  \"players\": [\n    {\n      \"playerId\": 1,\n      \"nickname\": \"A\"\n    },\n    {\n      \"playerId\": 2,\n      \"nickname\": \"B\"\n    },\n    {\n      \"playerId\": 3,\n      \"nickname\": \"C\"\n    },\n    {\n      \"playerId\": 1,\n      \"nickname\": \"dup\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 게임 조회 → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/not-exist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "not-exist"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "X-Player-Id 헤더 없음 → 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{gameId}}",
+                "me"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "상태 확인 (언제든)",
+      "item": [
+        {
+          "name": "상태 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{gameId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{gameId}}"
+              ]
+            },
+            "description": "phase가 바뀌었는지 확인할 때 실행하세요."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "console.log('phase =', r.phase, '| day =', r.day, '| v' + r.phaseVersion, '| endsAt =', r.phaseEndsAt, '| winner =', r.winner);",
+                  "console.log('생존:', r.players.filter(p => p.alive).map(p => p.playerId).join(', '));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
