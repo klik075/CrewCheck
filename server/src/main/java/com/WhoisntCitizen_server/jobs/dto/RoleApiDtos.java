@@ -1,11 +1,7 @@
 package com.WhoisntCitizen_server.jobs.dto;
 
 import com.WhoisntCitizen_server.jobs.domain.Faction;
-import com.WhoisntCitizen_server.jobs.domain.PirateAttackSelectionEntity;
 import com.WhoisntCitizen_server.jobs.domain.RoleEntity;
-import com.WhoisntCitizen_server.jobs.domain.RoomActionEntity;
-import com.WhoisntCitizen_server.jobs.domain.RoomPhase;
-import com.WhoisntCitizen_server.jobs.domain.RoomReportEntity;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;

@@ -2,23 +2,15 @@ package com.WhoisntCitizen_server.jobs.service;
 
 import com.WhoisntCitizen_server.jobs.domain.ActionCode;
 import com.WhoisntCitizen_server.jobs.domain.Faction;
-import com.WhoisntCitizen_server.jobs.domain.PirateAttackSelectionEntity;
-import com.WhoisntCitizen_server.jobs.domain.RoomActionEntity;
-import com.WhoisntCitizen_server.jobs.domain.RoomEntity;
-import com.WhoisntCitizen_server.jobs.domain.RoomPhase;
-import com.WhoisntCitizen_server.jobs.domain.RoomPlayerEntity;
-import com.WhoisntCitizen_server.jobs.domain.RoomReportEntity;
-import com.WhoisntCitizen_server.jobs.repository.RoomActionRepository;
-import com.WhoisntCitizen_server.jobs.repository.PirateAttackSelectionRepository;
-import com.WhoisntCitizen_server.jobs.repository.RoomPlayerRepository;
-import com.WhoisntCitizen_server.jobs.repository.RoomReportRepository;
-import com.WhoisntCitizen_server.jobs.repository.RoomRepository;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import com.WhoisntCitizen_server.lobby.repository.RoomRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
