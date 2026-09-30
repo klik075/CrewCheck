@@ -1,4 +1,4 @@
-﻿package com.WhoisntCitizen_server.member.dto;
+package com.WhoisntCitizen_server.member.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;

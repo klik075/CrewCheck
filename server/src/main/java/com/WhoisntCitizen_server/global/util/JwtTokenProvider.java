@@ -1,4 +1,4 @@
-﻿package com.WhoisntCitizen_server.global.util;
+package com.WhoisntCitizen_server.global.util;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;

@@ -2,7 +2,7 @@ package com.WhoisntCitizen_server.game.dto;
 
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
-import com.WhoisntCitizen_server.game.entity.Team;
+import com.WhoisntCitizen_server.jobs.domain.Faction;
 
 import java.time.Instant;
 import java.util.List;
@@ -18,7 +18,7 @@ public record GameStateResponse(
         Instant phaseEndsAt,
         long phaseVersion,
         List<PlayerView> players,
-        Team winner
+        Faction winner
 ) {
     public record PlayerView(Long playerId, String nickname, boolean alive) {
     }

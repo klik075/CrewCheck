@@ -42,6 +42,12 @@ dependencies {
 
     // Redis
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+    // DB: MySQL(개발/운영) + Flyway 마이그레이션, 테스트는 H2
+    runtimeOnly 'com.mysql:mysql-connector-j'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'org.flywaydb:flyway-mysql'
+    testRuntimeOnly 'com.h2database:h2'
 }
 
 tasks.named('test') {

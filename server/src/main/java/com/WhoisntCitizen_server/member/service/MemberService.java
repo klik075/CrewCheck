@@ -1,4 +1,4 @@
-﻿package com.WhoisntCitizen_server.member.service;
+package com.WhoisntCitizen_server.member.service;
 
 import com.WhoisntCitizen_server.global.util.JwtTokenProvider;
 import com.WhoisntCitizen_server.member.dto.MemberDto;

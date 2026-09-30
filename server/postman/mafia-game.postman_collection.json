@@ -141,10 +141,10 @@
                       "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
                       "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
                       "}",
-                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
-                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
-                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
-                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                      "if (r.role === 'PIRATE_RAIDER') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CREW_SAILOR') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role === 'CREW_CAPTAIN' ? 'policeId' : 'doctorId', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'PIRATE_RAIDER' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
                     ]
                   }
                 }
@@ -188,10 +188,10 @@
                       "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
                       "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
                       "}",
-                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
-                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
-                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
-                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                      "if (r.role === 'PIRATE_RAIDER') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CREW_SAILOR') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role === 'CREW_CAPTAIN' ? 'policeId' : 'doctorId', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'PIRATE_RAIDER' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
                     ]
                   }
                 }
@@ -235,10 +235,10 @@
                       "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
                       "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
                       "}",
-                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
-                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
-                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
-                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                      "if (r.role === 'PIRATE_RAIDER') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CREW_SAILOR') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role === 'CREW_CAPTAIN' ? 'policeId' : 'doctorId', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'PIRATE_RAIDER' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
                     ]
                   }
                 }
@@ -282,10 +282,10 @@
                       "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
                       "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
                       "}",
-                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
-                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
-                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
-                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                      "if (r.role === 'PIRATE_RAIDER') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CREW_SAILOR') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role === 'CREW_CAPTAIN' ? 'policeId' : 'doctorId', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'PIRATE_RAIDER' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
                     ]
                   }
                 }
@@ -329,10 +329,10 @@
                       "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
                       "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
                       "}",
-                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
-                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
-                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
-                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                      "if (r.role === 'PIRATE_RAIDER') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CREW_SAILOR') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role === 'CREW_CAPTAIN' ? 'policeId' : 'doctorId', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'PIRATE_RAIDER' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
                     ]
                   }
                 }
@@ -376,10 +376,10 @@
                       "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
                       "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
                       "}",
-                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
-                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
-                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
-                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                      "if (r.role === 'PIRATE_RAIDER') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CREW_SAILOR') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role === 'CREW_CAPTAIN' ? 'policeId' : 'doctorId', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'PIRATE_RAIDER' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
                     ]
                   }
                 }
@@ -1522,7 +1522,7 @@
                       "pm.test('200', () => pm.response.to.have.status(200));",
                       "const r = pm.response.json();",
                       "console.log(r);",
-                      "pm.test('시민 승리', () => { pm.expect(r.ended).to.be.true; pm.expect(r.winner).to.eql('CITIZEN'); });",
+                      "pm.test('시민 승리', () => { pm.expect(r.ended).to.be.true; pm.expect(r.winner).to.eql('CREW'); });",
                       "pm.test('6명 역할 공개', () => pm.expect(r.players.length).to.eql(6));"
                     ]
                   }
@@ -1627,10 +1627,10 @@
                       "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
                       "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
                       "}",
-                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
-                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
-                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
-                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                      "if (r.role === 'PIRATE_RAIDER') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CREW_SAILOR') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role === 'CREW_CAPTAIN' ? 'policeId' : 'doctorId', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'PIRATE_RAIDER' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
                     ]
                   }
                 }
@@ -1674,10 +1674,10 @@
                       "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
                       "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
                       "}",
-                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
-                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
-                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
-                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                      "if (r.role === 'PIRATE_RAIDER') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CREW_SAILOR') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role === 'CREW_CAPTAIN' ? 'policeId' : 'doctorId', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'PIRATE_RAIDER' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
                     ]
                   }
                 }
@@ -1721,10 +1721,10 @@
                       "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
                       "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
                       "}",
-                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
-                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
-                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
-                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                      "if (r.role === 'PIRATE_RAIDER') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CREW_SAILOR') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role === 'CREW_CAPTAIN' ? 'policeId' : 'doctorId', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'PIRATE_RAIDER' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
                     ]
                   }
                 }
@@ -1768,10 +1768,10 @@
                       "  pm.collectionVariables.set(listKey, JSON.stringify(list));",
                       "  list.forEach((id, i) => pm.collectionVariables.set(prefix + (i + 1) + 'Id', id));",
                       "}",
-                      "if (r.role === 'MAFIA') addTo('mafiaIds', 'mafia');",
-                      "else if (r.role === 'CITIZEN') addTo('citizenIds', 'citizen');",
-                      "else pm.collectionVariables.set(r.role.toLowerCase() + 'Id', r.playerId);",
-                      "console.log('player', r.playerId, '=', r.role, r.role === 'MAFIA' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
+                      "if (r.role === 'PIRATE_RAIDER') addTo('mafiaIds', 'mafia');",
+                      "else if (r.role === 'CREW_SAILOR') addTo('citizenIds', 'citizen');",
+                      "else pm.collectionVariables.set(r.role === 'CREW_CAPTAIN' ? 'policeId' : 'doctorId', r.playerId);",
+                      "console.log('player', r.playerId, '=', r.role, r.role === 'PIRATE_RAIDER' ? '(동료: ' + r.mafiaTeammateIds + ')' : '');"
                     ]
                   }
                 }
@@ -2203,7 +2203,7 @@
                       "pm.test('200', () => pm.response.to.have.status(200));",
                       "const r = pm.response.json();",
                       "console.log(r);",
-                      "pm.test('마피아 승리', () => { pm.expect(r.ended).to.be.true; pm.expect(r.winner).to.eql('MAFIA'); });"
+                      "pm.test('마피아 승리', () => { pm.expect(r.ended).to.be.true; pm.expect(r.winner).to.eql('PIRATE'); });"
                     ]
                   }
                 }
