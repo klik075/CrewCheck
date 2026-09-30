@@ -132,6 +132,26 @@ public class RoomService {
         });
     }
 
+    /**
+     * 게임 종료 후 방 복귀: IN_GAME → WAITING, gameId 제거, 준비 상태 초기화.
+     * RoomGameListener가 GameEndedEvent를 받아 호출한다.
+     *
+     * @return 실제로 복귀 처리했으면 true, 무시했으면 false
+     *         (방이 이미 없음 / 이미 WAITING / 다른 게임의 이벤트인 경우 무시)
+     */
+    public boolean returnToWaiting(Long roomId, String gameId) {
+        return roomLockManager.withLock(roomId, () -> {
+            Room room = roomRepository.findById(roomId);
+            if (room == null) return false;                          // 게임 중 방이 사라진 경우
+            if (!room.isInGame()) return false;                      // 이미 복귀됨
+            if (!Objects.equals(room.getGameId(), gameId)) return false; // 다른(이전) 게임의 늦은 이벤트
+
+            room.finishGame();
+            roomRepository.save(room);
+            return true;
+        });
+    }
+
     // 현재 룸 참가자 조회
     public List<RoomPlayerResponseDto> getPlayers(Long roomId) {
         return findRoom(roomId).getPlayers()
