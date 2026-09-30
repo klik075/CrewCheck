@@ -24,6 +24,7 @@ public class RoomService {
 
     private final LobbyRoomRepository roomRepository;
     private final UserRepository userRepository;
+    private final RoomLockManager roomLockManager;
 
     /*
      * memberId = JWT의 sub (로그인 계정 id)
@@ -54,33 +55,41 @@ public class RoomService {
 
     // 방 참가
     public RoomResponseDto joinRoom(Long roomId, Long memberId) {
-        Room room = findRoom(roomId);
+        // DB 조회(User)는 잠금 밖에서 먼저 해서 잠금을 쥐고 있는 시간을 줄인다.
         User user = findUser(memberId);
 
-        if (room.containsPlayer(user.getId())) throw new IllegalStateException("이미 참가 중입니다.");
-        if (room.isFull()) throw new IllegalStateException("방이 가득 찼습니다.");
+        // 읽기 → 검사 → 추가 → 저장을 같은 방 잠금 안에서 처리 (동시 입장 시 덮어쓰기 방지)
+        return roomLockManager.withLock(roomId, () -> {
+            Room room = findRoom(roomId);
 
-        room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
+            if (room.containsPlayer(user.getId())) throw new IllegalStateException("이미 참가 중입니다.");
+            if (room.isFull()) throw new IllegalStateException("방이 가득 찼습니다.");
 
-        roomRepository.save(room);
-        return RoomResponseDto.from(room);
+            room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
+
+            roomRepository.save(room);
+            return RoomResponseDto.from(room);
+        });
     }
 
     // 방 나가기
     public void leaveRoom(Long roomId, Long memberId) {
-        Room room = findRoom(roomId);
         Long userId = findUser(memberId).getId();
 
-        if (!room.containsPlayer(userId)) throw new IllegalStateException("해당 방에 참가 중이지 않습니다.");
+        roomLockManager.withLock(roomId, () -> {
+            Room room = findRoom(roomId);
 
-        room.removePlayer(userId); // 방장이면 다음 사람에게 위임
+            if (!room.containsPlayer(userId)) throw new IllegalStateException("해당 방에 참가 중이지 않습니다.");
 
-        // 아무도 없으면 방 삭제
-        if (room.isEmpty()) {
-            roomRepository.delete(roomId);
-            return;
-        }
-        roomRepository.save(room);
+            room.removePlayer(userId); // 방장이면 다음 사람에게 위임
+
+            // 아무도 없으면 방 삭제
+            if (room.isEmpty()) {
+                roomRepository.delete(roomId);
+                return;
+            }
+            roomRepository.save(room);
+        });
     }
 
     // 현재 룸 참가자 조회
