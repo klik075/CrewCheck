@@ -35,6 +35,8 @@ dependencies {
     implementation 'org.springframework.security:spring-security-crypto'
     // JPA & Hibernate ORM (엔티티 매핑 및 DB 레포지토리 관리용)
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-authorization-server'
 }
 
 tasks.named('test') {
