@@ -1,4 +1,4 @@
-﻿package com.WhoisntCitizen_server.member.repository;
+package com.WhoisntCitizen_server.member.repository;
 
 import com.WhoisntCitizen_server.member.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
