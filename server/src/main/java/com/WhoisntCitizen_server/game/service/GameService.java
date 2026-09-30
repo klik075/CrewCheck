@@ -47,7 +47,10 @@ public class GameService {
         List<RoleDefinition> roles = roleAssigner.assign(entries.size());
         List<GamePlayer> players = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
-            players.add(new GamePlayer(entries.get(i).playerId(), entries.get(i).nickname(), roles.get(i)));
+            RoleDefinition role = roles.get(i);
+            // 원숭이는 여기서 위장 직업이 정해지고 게임 끝까지 바뀌지 않는다.
+            players.add(new GamePlayer(entries.get(i).playerId(), entries.get(i).nickname(),
+                    role, roleAssigner.shownRoleOf(role)));
         }
 
         //수정될 부분 - Repository DB 연동
@@ -72,11 +75,10 @@ public class GameService {
         Game game = findGame(gameId);
         synchronized (game) {
             GamePlayer me = game.getPlayer(playerId);
-            List<Long> teammates = me.isPirate()
-                    ? game.getPlayers().stream()
-                        .filter(p -> p.isPirate() && !p.getPlayerId().equals(playerId))
-                        .map(GamePlayer::getPlayerId).toList()
-                    : List.of();
+            // isPirate()로 거르면 접선 전 앵무새가 드러나므로 접선 규칙이 들어간 knownPirateAllies를 쓴다.
+            List<Long> teammates = game.knownPirateAllies(me).stream()
+                    .map(GamePlayer::getPlayerId)
+                    .toList();
             return MyRoleResponse.of(me, teammates);
         }
     }

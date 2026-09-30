@@ -651,7 +651,7 @@
                       "const r = pm.response.json();",
                       "console.log(r);",
                       "pm.test('사망자 없음, 의사 보호 성공', () => { pm.expect(r.killedPlayerId).to.be.null; pm.expect(r.protectedByDoctor).to.be.true; });",
-                      "pm.test('조사 결과: 마피아1은 마피아', () => { pm.expect(r.investigation.targetId).to.eql(Number(pm.collectionVariables.get('mafia1Id'))); pm.expect(r.investigation.mafia).to.be.true; });"
+                      "pm.test('조사 결과: 마피아1은 해적 진영', () => { const inv = r.reports.find(x => x.type === 'FACTION'); pm.expect(inv.targetId).to.eql(Number(pm.collectionVariables.get('mafia1Id'))); pm.expect(inv.faction).to.eql('PIRATE');});"
                     ]
                   }
                 }
@@ -690,7 +690,7 @@
                       "pm.test('200', () => pm.response.to.have.status(200));",
                       "const r = pm.response.json();",
                       "console.log(r);",
-                      "pm.test('조사 결과는 안 보임', () => pm.expect(r.investigation).to.be.null);"
+                      "pm.test('조사 결과는 안 보임', () => pm.expect(r.reports).to.be.empty);"
                     ]
                   }
                 }
@@ -1263,7 +1263,7 @@
                       "const r = pm.response.json();",
                       "console.log(r);",
                       "pm.test('경찰 사망', () => pm.expect(r.killedPlayerId).to.eql(Number(pm.collectionVariables.get('policeId'))));",
-                      "pm.test('조사 결과: 마피아2는 마피아', () => { pm.expect(r.investigation.targetId).to.eql(Number(pm.collectionVariables.get('mafia2Id'))); pm.expect(r.investigation.mafia).to.be.true; });"
+                      "pm.test('조사 결과: 마피아2는 해적 진영', () => { const inv = r.reports.find(x => x.type === 'FACTION'); pm.expect(inv, 'FACTION 결과').to.exist; pm.expect(inv.targetId).to.eql(Number(pm.collectionVariables.get('mafia2Id'))); pm.expect(inv.faction).to.eql('PIRATE'); });"
                     ]
                   }
                 }
@@ -1991,7 +1991,7 @@
                       "const r = pm.response.json();",
                       "console.log(r);",
                       "pm.test('시민 사망', () => pm.expect(r.killedPlayerId).to.eql(Number(pm.collectionVariables.get('citizen1Id'))));",
-                      "pm.test('의사는 마피아 아님', () => pm.expect(r.investigation.mafia).to.be.false);"
+                      "pm.test('의사는 해적 아님', () => { const inv = r.reports.find(x => x.type === 'FACTION'); pm.expect(inv, 'FACTION 결과').to.exist; pm.expect(inv.faction).to.eql('CREW'); });"
                     ]
                   }
                 }
