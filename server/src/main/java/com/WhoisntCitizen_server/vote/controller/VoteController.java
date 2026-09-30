@@ -9,7 +9,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
+import com.WhoisntCitizen_server.member.service.CurrentUserResolver;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -18,17 +20,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class VoteController {
 
     private final VoteService voteService;
+    private final CurrentUserResolver currentUser;
 
-    public VoteController(VoteService voteService) {
+    public VoteController(VoteService voteService, CurrentUserResolver currentUser) {
         this.voteService = voteService;
+        this.currentUser = currentUser;
     }
 
     /** 6. 투표 (VOTE 페이즈에서만) */
     @PostMapping("/votes")
     public VoteResponse vote(@PathVariable String gameId,
-                             @RequestHeader("X-Player-Id") Long playerId,
+                             @AuthenticationPrincipal Jwt jwt,
                              @Valid @RequestBody VoteRequest request) {
-        return voteService.vote(gameId, playerId, request.targetId());
+        return voteService.vote(gameId, currentUser.userId(jwt), request.targetId());
     }
 
     /** 7. 처형 결과 */
