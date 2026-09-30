@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.lobby.controller;
 
 import com.WhoisntCitizen_server.game.dto.StartGameResponse;
 import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
+import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
 import com.WhoisntCitizen_server.lobby.service.RoomService;
@@ -34,6 +35,15 @@ public class RoomController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(roomService.createRoom(memberId(jwt), request));
+    }
+
+    /**
+     * 방 단건 조회: 방 정보 + 상태(WAITING/IN_GAME) + gameId + 참가자 목록.
+     * 대기 화면에서 주기적으로 호출해, status가 IN_GAME이 되면 gameId로 게임 화면에 들어간다.
+     */
+    @GetMapping("/{roomId}")
+    public ResponseEntity<RoomDetailResponseDto> getRoom(@PathVariable Long roomId) {
+        return ResponseEntity.ok(roomService.getRoom(roomId));
     }
 
     @PostMapping("/{roomId}/players")

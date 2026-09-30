@@ -7,6 +7,7 @@ import com.WhoisntCitizen_server.game.service.RoleAssigner;
 import com.WhoisntCitizen_server.lobby.domain.room.Room;
 import com.WhoisntCitizen_server.lobby.domain.room.RoomPlayer;
 import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
+import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
 import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
@@ -157,6 +158,15 @@ public class RoomService {
         });
     }
 
+    // 방 단건 조회 (대기 화면 polling용)
+    public RoomDetailResponseDto getRoom(Long roomId) {
+        // 읽기만 하는 요청이라 평소에는 잠금 없이 조회한다. (여러 참가자가 1초마다 polling해도 서로 기다리지 않음)
+        // 서버 재시작 등으로 게임이 사라진 방일 때만 잠금을 잡고 WAITING으로 복구한다.
+        Room room = recoverInListIfOrphaned(findRoom(roomId));
+        if (room == null) throw new IllegalArgumentException("존재하지 않는 방입니다."); // 복구 중 방이 삭제된 경우
+        return RoomDetailResponseDto.from(room);
+    }
+
     // 현재 룸 참가자 조회
     public List<RoomPlayerResponseDto> getPlayers(Long roomId) {
         return findRoom(roomId).getPlayers()
@@ -199,7 +209,7 @@ public class RoomService {
         return true;
     }
 
-    /** 방 목록 조회용: 복구가 필요한 방만 잠금을 잡고 다시 읽어서 복구한다. */
+    /** 조회용(방 목록, 방 단건): 복구가 필요한 방만 잠금을 잡고 다시 읽어서 복구한다. */
     private Room recoverInListIfOrphaned(Room room) {
         if (!room.isInGame() || gameService.isGameActive(room.getGameId())) {
             return room; // 대부분의 방은 잠금 없이 그대로 반환
