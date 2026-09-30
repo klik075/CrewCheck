@@ -5,10 +5,13 @@ import com.WhoisntCitizen_server.lobby.domain.room.RoomPlayer;
 import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
+import com.WhoisntCitizen_server.lobby.event.RoomPlayerJoinedEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomPlayerLeftEvent;
 import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
 import com.WhoisntCitizen_server.member.entity.User;
 import com.WhoisntCitizen_server.member.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -24,6 +27,8 @@ public class RoomService {
 
     private final LobbyRoomRepository roomRepository;
     private final UserRepository userRepository;
+    // 입장/퇴장 이벤트 발행 (로비는 구독자를 모름. 현재는 채팅이 입장·퇴장 알림을 남기는 데 사용)
+    private final ApplicationEventPublisher eventPublisher;
 
     /*
      * memberId = JWT의 sub (로그인 계정 id)
@@ -49,6 +54,7 @@ public class RoomService {
         room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
 
         roomRepository.save(room);
+        eventPublisher.publishEvent(new RoomPlayerJoinedEvent(roomId, user.getId(), user.getNickname()));
         return RoomResponseDto.from(room);
     }
 
@@ -63,17 +69,20 @@ public class RoomService {
         room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
 
         roomRepository.save(room);
+        eventPublisher.publishEvent(new RoomPlayerJoinedEvent(roomId, user.getId(), user.getNickname()));
         return RoomResponseDto.from(room);
     }
 
     // 방 나가기
     public void leaveRoom(Long roomId, Long memberId) {
         Room room = findRoom(roomId);
-        Long userId = findUser(memberId).getId();
+        User user = findUser(memberId);
+        Long userId = user.getId();
 
         if (!room.containsPlayer(userId)) throw new IllegalStateException("해당 방에 참가 중이지 않습니다.");
 
         room.removePlayer(userId); // 방장이면 다음 사람에게 위임
+        eventPublisher.publishEvent(new RoomPlayerLeftEvent(roomId, userId, user.getNickname()));
 
         // 아무도 없으면 방 삭제
         if (room.isEmpty()) {

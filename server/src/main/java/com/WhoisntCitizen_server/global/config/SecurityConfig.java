@@ -1,4 +1,4 @@
-﻿package com.WhoisntCitizen_server.global.config;
+package com.WhoisntCitizen_server.global.config;
 
 import com.WhoisntCitizen_server.global.util.JwtTokenProvider;
 import org.springframework.context.annotation.Bean;
