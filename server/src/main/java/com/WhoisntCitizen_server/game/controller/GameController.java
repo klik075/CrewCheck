@@ -3,22 +3,17 @@ package com.WhoisntCitizen_server.game.controller;
 import com.WhoisntCitizen_server.game.dto.GameResultResponse;
 import com.WhoisntCitizen_server.game.dto.GameStateResponse;
 import com.WhoisntCitizen_server.game.dto.MyRoleResponse;
-import com.WhoisntCitizen_server.game.dto.StartGameRequest;
-import com.WhoisntCitizen_server.game.dto.StartGameResponse;
 import com.WhoisntCitizen_server.game.service.GameService;
-import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 게임 자체(생성/상태/내 역할/최종 결과).
+ * 진행 중인 게임 조회(상태/내 역할/최종 결과).
+ * 게임 생성은 방에서 한다: POST /api/v1/rooms/{roomId}/games (RoomController)
+ * 로컬 테스트용 생성 API는 DevGameController (local 프로필 전용).
  * X-Player-Id 헤더는 로그인 기능이 붙기 전 임시 식별 수단이다. 인증 도입 후 토큰에서 꺼내도록 교체.
  */
 @RestController
@@ -29,14 +24,6 @@ public class GameController {
 
     public GameController(GameService gameService) {
         this.gameService = gameService;
-    }
-
-    /** 1. 게임 시작 (+ 2. 역할 배정, 첫 밤 진입) */
-    @PostMapping
-    public ResponseEntity<StartGameResponse> start(@Valid @RequestBody StartGameRequest request) {
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(gameService.startGame(request));
     }
 
     /** 3·5·6·9. 현재 상태 조회 (phase = NIGHT / NIGHT_RESULT / DAY / VOTE / EXECUTION / ENDED) */
