@@ -140,7 +140,21 @@ public class GameFlowService {
         gameRepository.save(game);
         log.info("[{}] 게임 종료. 승리: {}", game.getGameId(), winner.get());
         publishGameEnded(game);
+        scheduleCleanup(game.getGameId());
         return true;
+    }
+
+    /**
+     * 10. 끝난 게임 정리. 결과를 조회할 시간(endedRetentionSeconds)을 준 뒤 메모리에서 삭제한다.
+     * 삭제 후에는 해당 gameId로 조회하면 404(GAME_NOT_FOUND)가 된다.
+     * 이미 예약된 페이즈 타이머가 늦게 실행돼도 onPhaseTimeout이 게임을 못 찾으면 그냥 끝나므로 안전하다.
+     */
+    private void scheduleCleanup(String gameId) {
+        Instant at = clock.instant().plusSeconds(phaseProps.endedRetentionSeconds());
+        scheduler.schedule(() -> {
+            gameRepository.delete(gameId);
+            log.info("[{}] 종료된 게임을 메모리에서 삭제", gameId);
+        }, at);
     }
 
     /**
