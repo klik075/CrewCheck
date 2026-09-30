@@ -3,15 +3,13 @@ package com.WhoisntCitizen_server.lobby.service;
 import com.WhoisntCitizen_server.lobby.domain.room.Room;
 import com.WhoisntCitizen_server.lobby.domain.room.RoomPlayer;
 import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
-import com.WhoisntCitizen_server.lobby.dto.JoinRoomRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
-import com.WhoisntCitizen_server.lobby.entity.User;
-import com.WhoisntCitizen_server.lobby.repository.RoomRepository;
-import com.WhoisntCitizen_server.lobby.repository.UserRepository;
+import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
+import com.WhoisntCitizen_server.member.entity.User;
+import com.WhoisntCitizen_server.member.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Objects;
@@ -21,67 +19,73 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class RoomService {
 
-    private final RoomRepository roomRepository;
+    private static final int MIN_PLAYERS = 4;  // 게임 시작 조건(StartGameRequest)과 동일
+    private static final int MAX_PLAYERS = 12;
+
+    private final LobbyRoomRepository roomRepository;
     private final UserRepository userRepository;
 
+    /*
+     * memberId = JWT의 sub (로그인 계정 id)
+     * 룸 안에서는 User(프로필)의 id를 userId로 사용한다.
+     */
+
     // 방 생성
-    @Transactional(readOnly = true)
-    public RoomResponseDto createRoom(CreateRoomRequestDto request) {
-        User user = userRepository
-                .findById(request.getUserId())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
+    public RoomResponseDto createRoom(Long memberId, CreateRoomRequestDto request) {
+        if (request.getTitle() == null || request.getTitle().isBlank()) {
+            throw new IllegalArgumentException("방 제목을 입력해주세요.");
+        }
+        if (request.getMaxPlayers() < MIN_PLAYERS || request.getMaxPlayers() > MAX_PLAYERS) {
+            throw new IllegalArgumentException("최대 인원은 " + MIN_PLAYERS + "~" + MAX_PLAYERS + "명이어야 합니다.");
+        }
+
+        User user = findUser(memberId);
 
         // 새로운 룸 생성
         Long roomId = roomRepository.generateRoomId();
         Room room = new Room(roomId, request.getTitle(), user.getId(), request.getMaxPlayers());
 
         // 방을 만든 사람은 자동으로 해당 방에 입장
-        RoomPlayer host = new RoomPlayer(user.getId(), user.getNickname(), false);
-        room.addPlayer(host);
+        room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
 
         roomRepository.save(room);
         return RoomResponseDto.from(room);
     }
 
     // 방 참가
-    public RoomResponseDto joinRoom(Long roomId, JoinRoomRequestDto request) {
+    public RoomResponseDto joinRoom(Long roomId, Long memberId) {
+        Room room = findRoom(roomId);
+        User user = findUser(memberId);
 
-        Room room = roomRepository.findById(roomId);
-
-        if (room == null) throw new IllegalArgumentException("존재하지 않는 방입니다.");
+        if (room.containsPlayer(user.getId())) throw new IllegalStateException("이미 참가 중입니다.");
         if (room.isFull()) throw new IllegalStateException("방이 가득 찼습니다.");
-        if (room.containsPlayer(request.getUserId())) throw new IllegalStateException("이미 참가 중입니다.");
 
-        User user = userRepository
-                .findById(request.getUserId())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
-
-        RoomPlayer player = new RoomPlayer(user.getId(), user.getNickname(), false);
-        room.addPlayer(player);
+        room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
 
         roomRepository.save(room);
         return RoomResponseDto.from(room);
     }
 
     // 방 나가기
-    public void leaveRoom(Long roomId, Long userId) {
+    public void leaveRoom(Long roomId, Long memberId) {
+        Room room = findRoom(roomId);
+        Long userId = findUser(memberId).getId();
 
-        Room room = roomRepository.findById(roomId);
-
-        if (room == null) throw new IllegalArgumentException("존재하지 않는 방입니다.");
         if (!room.containsPlayer(userId)) throw new IllegalStateException("해당 방에 참가 중이지 않습니다.");
 
-        room.removePlayer(userId);
+        room.removePlayer(userId); // 방장이면 다음 사람에게 위임
+
+        // 아무도 없으면 방 삭제
+        if (room.isEmpty()) {
+            roomRepository.delete(roomId);
+            return;
+        }
         roomRepository.save(room);
     }
 
     // 현재 룸 참가자 조회
     public List<RoomPlayerResponseDto> getPlayers(Long roomId) {
-        Room room = roomRepository.findById(roomId);
-
-        if (room == null) throw new IllegalArgumentException("존재하지 않는 방입니다.");
-
-        return room.getPlayers()
+        return findRoom(roomId).getPlayers()
                 .stream()
                 .map(RoomPlayerResponseDto::from)
                 .toList();
@@ -101,4 +105,14 @@ public class RoomService {
                 .toList();
     }
 
+    private Room findRoom(Long roomId) {
+        Room room = roomRepository.findById(roomId);
+        if (room == null) throw new IllegalArgumentException("존재하지 않는 방입니다.");
+        return room;
+    }
+
+    private User findUser(Long memberId) {
+        return userRepository.findByMemberId(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
+    }
 }

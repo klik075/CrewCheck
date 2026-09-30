@@ -36,7 +36,9 @@ dependencies {
     // JPA & Hibernate ORM (엔티티 매핑 및 DB 레포지토리 관리용)
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 
-    implementation 'org.springframework.boot:spring-boot-starter-oauth2-authorization-server'
+    // 로그인 때 발급한 JWT를 검증 (@AuthenticationPrincipal Jwt 사용)
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
 
     // Redis
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'

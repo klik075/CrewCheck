@@ -1,12 +1,12 @@
 ﻿package com.WhoisntCitizen_server.member.entity;
 
-import com.WhoisntCitizen_server.member.entity.Player;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.util.ArrayList;
-import java.util.List;
-
+/**
+ * 로그인(인증) 전용 엔티티. 비밀번호 같은 민감 정보만 가진다.
+ * 닉네임, 전적 같은 프로필 정보는 User 에 있다. (User -> Member 단방향 1:1)
+ */
 @Entity
 @Table(name = "members")
 @Getter
@@ -24,13 +24,4 @@ public class Member {
 
 	@Column(nullable = false)
 	private String password;
-
-	@Builder.Default
-	@OneToMany(mappedBy = "member", cascade = CascadeType.ALL, orphanRemoval = true)
-	private List<Player> players = new ArrayList<>();
-
-	public void addPlayer(Player player) {
-		players.add(player);
-		player.assignMember(this);
-	}
 }

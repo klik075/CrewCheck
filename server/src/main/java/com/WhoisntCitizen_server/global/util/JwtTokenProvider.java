@@ -32,15 +32,21 @@ public class JwtTokenProvider {
 
 		return Jwts.builder()
 				.subject(String.valueOf(memberId))
+				.claim("username", username)
 				.issuedAt(now)
 				.expiration(validity)
-				.signWith(key)
+				.signWith(key, Jwts.SIG.HS256)
 				.compact();
 	}
 
-	public String getMemberId(String token) {
-		Claims claims = parseClaims(token);
-		return claims.get("username", String.class);
+	// sub에 memberId가 들어 있다.
+	public Long getMemberId(String token) {
+		return Long.valueOf(parseClaims(token).getSubject());
+	}
+
+	// SecurityConfig의 JwtDecoder가 같은 키로 서명을 검증하도록 공유한다.
+	public SecretKey getKey() {
+		return key;
 	}
 
 	public boolean validateToken(String token) {

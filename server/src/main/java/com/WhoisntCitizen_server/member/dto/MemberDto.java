@@ -2,6 +2,7 @@
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -25,6 +26,10 @@ public class MemberDto {
 				message = "비밀번호는 영문, 숫자, 특수문자(!@#$%^&*)를 포함한 8~20자리여야 합니다."
 		)
 		private String password;
+
+		@NotBlank(message = "닉네임은 필수 입력값입니다.")
+		@Size(min = 2, max = 10, message = "닉네임은 2~10자여야 합니다.")
+		private String nickname;
 	}
 
 	@Getter
@@ -45,7 +50,9 @@ public class MemberDto {
 	@Builder
 	public static class Response {
 		private Long memberId;
+		private Long userId;
 		private String username;
+		private String nickname;
 		private String message;
 	}
 
@@ -55,7 +62,9 @@ public class MemberDto {
 	@Builder
 	public static  class AuthResult {
 		private Long memberId;
+		private Long userId;
 		private String username;
+		private String nickname;
 		private String accessToken;
 		private String message;
 	}
