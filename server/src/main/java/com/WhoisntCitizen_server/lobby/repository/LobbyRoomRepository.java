@@ -10,7 +10,7 @@ import java.util.Set;
 
 @Repository
 @RequiredArgsConstructor
-public class RoomRepository {
+public class LobbyRoomRepository {
 
     private final RedisTemplate<String, Room> redisTemplate;
     private final StringRedisTemplate stringRedisTemplate;

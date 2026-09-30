@@ -1,19 +1,23 @@
 package com.WhoisntCitizen_server.lobby.controller;
 
-import com.WhoisntCitizen_server.lobby.domain.room.Room;
-import com.WhoisntCitizen_server.lobby.domain.room.RoomPlayer;
 import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
-import com.WhoisntCitizen_server.lobby.dto.JoinRoomRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
 import com.WhoisntCitizen_server.lobby.service.RoomService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * 모든 요청은 헤더에 Authorization: Bearer {로그인 때 받은 accessToken} 이 필요하다.
+ * 요청 body가 아니라 토큰의 sub(memberId)로 로그인 유저를 식별하고,
+ * 룸 안에서는 그 memberId로 찾은 User(프로필)의 id를 userId로 사용한다.
+ */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/rooms")
@@ -23,19 +27,20 @@ public class RoomController {
 
     @PostMapping
     public ResponseEntity<RoomResponseDto> createRoom(
+            @AuthenticationPrincipal Jwt jwt,
             @RequestBody CreateRoomRequestDto request
     ) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(roomService.createRoom(request));
+                .body(roomService.createRoom(memberId(jwt), request));
     }
 
     @PostMapping("/{roomId}/players")
     public ResponseEntity<RoomResponseDto> joinRoom(
             @PathVariable Long roomId,
-            @RequestBody JoinRoomRequestDto request
+            @AuthenticationPrincipal Jwt jwt
     ) {
-        return ResponseEntity.ok(roomService.joinRoom(roomId, request));
+        return ResponseEntity.ok(roomService.joinRoom(roomId, memberId(jwt)));
     }
 
     @GetMapping("/{roomId}/players")
@@ -45,17 +50,23 @@ public class RoomController {
         return ResponseEntity.ok(roomService.getPlayers(roomId));
     }
 
-    @DeleteMapping("/{roomId}/players/{userId}")
+    // 본인만 나갈 수 있도록 path의 userId 대신 토큰 사용
+    @DeleteMapping("/{roomId}/players/me")
     public ResponseEntity<Void> leaveRoom(
             @PathVariable Long roomId,
-            @PathVariable Long userId
+            @AuthenticationPrincipal Jwt jwt
     ) {
-        roomService.leaveRoom(roomId, userId);
+        roomService.leaveRoom(roomId, memberId(jwt));
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping
     public ResponseEntity<List<RoomResponseDto>> getRooms() {
         return ResponseEntity.ok(roomService.getRooms());
+    }
+
+    // 토큰 sub = memberId. User(프로필) 조회는 service에서 한다.
+    private static Long memberId(Jwt jwt) {
+        return Long.valueOf(jwt.getSubject());
     }
 }
