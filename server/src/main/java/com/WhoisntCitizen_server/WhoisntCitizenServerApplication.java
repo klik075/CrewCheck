@@ -4,10 +4,10 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class UnityAiTestProjectServerApplication {
+public class WhoisntCitizenServerApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(UnityAiTestProjectServerApplication.class, args);
+        SpringApplication.run(WhoisntCitizenServerApplication.class, args);
     }
 
 }
