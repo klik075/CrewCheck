@@ -27,8 +27,16 @@ dependencies {
     testCompileOnly 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testAnnotationProcessor 'org.projectlombok:lombok'
-    implementation 'org.springframework.boot:spring-boot-starter-oauth2-authorization-server'
+    // JWT 설정
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+    // 비밀번호 암호화
+    implementation 'org.springframework.security:spring-security-crypto'
+    // JPA & Hibernate ORM (엔티티 매핑 및 DB 레포지토리 관리용)
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-authorization-server'
 }
 
 tasks.named('test') {
