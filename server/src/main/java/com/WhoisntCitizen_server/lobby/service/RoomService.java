@@ -1,5 +1,9 @@
 package com.WhoisntCitizen_server.lobby.service;
 
+import com.WhoisntCitizen_server.game.dto.GameParticipant;
+import com.WhoisntCitizen_server.game.dto.StartGameResponse;
+import com.WhoisntCitizen_server.game.service.GameService;
+import com.WhoisntCitizen_server.game.service.RoleAssigner;
 import com.WhoisntCitizen_server.lobby.domain.room.Room;
 import com.WhoisntCitizen_server.lobby.domain.room.RoomPlayer;
 import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
@@ -19,12 +23,14 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class RoomService {
 
-    private static final int MIN_PLAYERS = 4;  // 게임 시작 조건(StartGameRequest)과 동일
-    private static final int MAX_PLAYERS = 12;
+    // 인원 규칙은 게임 쪽(RoleAssigner) 값을 그대로 사용한다. 규칙을 바꿀 때 한 곳만 고치면 된다.
+    private static final int MIN_PLAYERS = RoleAssigner.MIN_PLAYERS;
+    private static final int MAX_PLAYERS = RoleAssigner.MAX_PLAYERS;
 
     private final LobbyRoomRepository roomRepository;
     private final UserRepository userRepository;
     private final RoomLockManager roomLockManager;
+    private final GameService gameService;
 
     /*
      * memberId = JWT의 sub (로그인 계정 id)
@@ -94,6 +100,35 @@ public class RoomService {
                 return;
             }
             roomRepository.save(room);
+        });
+    }
+
+    // 게임 시작 (방장만)
+    public StartGameResponse startGame(Long roomId, Long memberId) {
+        Long userId = findUser(memberId).getId();
+
+        // 입장/나가기와 같은 방 잠금 안에서 처리: 시작 도중 누가 들어오거나 나가지 못한다.
+        return roomLockManager.withLock(roomId, () -> {
+            Room room = findRoom(roomId);
+
+            if (!userId.equals(room.getHostUserId())) throw new IllegalStateException("방장만 게임을 시작할 수 있습니다.");
+            if (room.isInGame()) throw new IllegalStateException("이미 게임이 진행 중인 방입니다.");
+            // 사용자에게 빠르게 알려주기 위한 검사. 최종 인원 검사는 게임 쪽(RoleAssigner)이 한 번 더 한다.
+            if (room.getPlayers().size() < MIN_PLAYERS) {
+                throw new IllegalStateException("게임을 시작하려면 최소 " + MIN_PLAYERS + "명이 필요합니다.");
+            }
+
+            // Room 참가자(userId = User.id)를 그대로 게임 참가자(playerId)로 넘긴다.
+            List<GameParticipant> participants = room.getPlayers().stream()
+                    .map(p -> new GameParticipant(p.getUserId(), p.getNickname()))
+                    .toList();
+
+            // 게임을 먼저 만들고 성공했을 때만 방 상태를 바꾼다. 게임 생성이 실패하면 방은 WAITING 그대로다.
+            StartGameResponse started = gameService.startGame(String.valueOf(roomId), participants);
+
+            room.startGame(started.gameId());
+            roomRepository.save(room);
+            return started;
         });
     }
 

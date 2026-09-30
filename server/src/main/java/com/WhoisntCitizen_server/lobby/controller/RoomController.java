@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.lobby.controller;
 
+import com.WhoisntCitizen_server.game.dto.StartGameResponse;
 import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
@@ -58,6 +59,20 @@ public class RoomController {
     ) {
         roomService.leaveRoom(roomId, memberId(jwt));
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 게임 시작 (방장만): 이 방에 게임을 생성한다. 성공하면 방이 IN_GAME이 되고 gameId를 돌려준다.
+     * 다른 참가자는 방 조회(GET /api/v1/rooms)의 gameId로 게임 API(/api/v1/games/{gameId})에 접근한다.
+     */
+    @PostMapping("/{roomId}/games")
+    public ResponseEntity<StartGameResponse> startGame(
+            @PathVariable Long roomId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(roomService.startGame(roomId, memberId(jwt)));
     }
 
     @GetMapping
