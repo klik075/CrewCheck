@@ -1,4 +1,4 @@
-﻿package com.WhoisntCitizen_server.member.entity;
+package com.WhoisntCitizen_server.member.entity;
 
 import com.WhoisntCitizen_server.member.entity.Player;
 import jakarta.persistence.*;

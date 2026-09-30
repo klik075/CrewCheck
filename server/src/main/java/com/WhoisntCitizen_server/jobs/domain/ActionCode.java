@@ -4,8 +4,8 @@ import com.WhoisntCitizen_server.game.entity.GamePhase;
 
 /**
  * 행동 정책의 한곳짜리 정의. enum 이름은 API actionCode 및 roles.action_code와 일치해야 한다.
- * 새 능력을 만들 때는 이곳, 새 Flyway 마이그레이션, RoleService 검증,
- * NightResolutionService 판정(밤 능력인 경우)을 함께 수정한다.
+ * 새 능력을 만들 때는 이곳, 새 Flyway 마이그레이션, Game.recordNightAction 검증,
+ * NightActionResolver 판정(밤 능력인 경우)을 함께 수정한다.
  * maxUses는 게임 전체 제한이며 -1은 무제한이다. 같은 라운드의 중복 제출은 별도 DB 제약으로 막는다.
  */
 public enum ActionCode {

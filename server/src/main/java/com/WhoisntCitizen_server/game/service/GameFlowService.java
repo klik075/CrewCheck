@@ -3,8 +3,8 @@ package com.WhoisntCitizen_server.game.service;
 import com.WhoisntCitizen_server.common.config.GamePhaseProperties;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
-import com.WhoisntCitizen_server.game.entity.Team;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
+import com.WhoisntCitizen_server.jobs.domain.Faction;
 import com.WhoisntCitizen_server.night.entity.NightResult;
 import com.WhoisntCitizen_server.night.service.NightActionResolver;
 import com.WhoisntCitizen_server.vote.entity.ExecutionResult;
@@ -127,7 +127,7 @@ public class GameFlowService {
 
     /** 8~9. 승리 팀이 정해졌으면 게임을 종료한다. */
     private boolean finishIfWinnerDecided(Game game) {
-        Optional<Team> winner = winConditionChecker.check(game);
+        Optional<Faction> winner = winConditionChecker.check(game);
         if (winner.isEmpty()) {
             return false;
         }

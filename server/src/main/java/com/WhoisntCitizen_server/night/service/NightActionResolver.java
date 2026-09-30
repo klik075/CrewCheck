@@ -2,7 +2,7 @@ package com.WhoisntCitizen_server.night.service;
 
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
-import com.WhoisntCitizen_server.game.entity.Role;
+import com.WhoisntCitizen_server.jobs.domain.ActionCode;
 import com.WhoisntCitizen_server.night.entity.NightResult;
 import org.springframework.stereotype.Component;
 
@@ -16,9 +16,10 @@ import java.util.Set;
 
 /**
  * 3~4. 밤 능력 처리.
- * - 마피아: 가장 많이 지목된 대상을 처치 (동률이면 무작위)
- * - 의사: 보호 대상이 처치 대상과 같으면 생존
- * - 경찰: 대상이 마피아인지 조사 (결과는 해당 경찰에게만 공개)
+ * ActionCode 기준으로 처리한다.
+ * - SELECT_ATTACK_TARGET(해적): 가장 많이 지목된 대상을 처치 (동률이면 무작위)
+ * - PROTECT(선의): 보호 대상이 처치 대상과 같으면 생존
+ * - INVESTIGATE_FACTION(선장): 대상이 해적인지 조사 (결과는 조사한 본인에게만 공개)
  */
 @Component
 public class NightActionResolver {
@@ -42,14 +43,16 @@ public class NightActionResolver {
             if (!actor.isAlive()) {
                 continue;
             }
-            Role role = actor.getRole();
-            if (role == Role.MAFIA) {
-                mafiaPicks.merge(target.getPlayerId(), 1, Integer::sum);
-            } else if (role == Role.DOCTOR) {
-                protectedIds.add(target.getPlayerId());
-            } else if (role == Role.POLICE) {
-                investigations.put(actor.getPlayerId(),
-                        new NightResult.Investigation(target.getPlayerId(), target.isMafia()));
+            ActionCode code = actor.getRole().actionCode();
+            if (code == null) {
+                continue;
+            }
+            switch (code) {
+                case SELECT_ATTACK_TARGET -> mafiaPicks.merge(target.getPlayerId(), 1, Integer::sum);
+                case PROTECT -> protectedIds.add(target.getPlayerId());
+                case INVESTIGATE_FACTION -> investigations.put(actor.getPlayerId(),
+                        new NightResult.Investigation(target.getPlayerId(), target.isPirate()));
+                default -> { } // 아직 게임 로직에 연결되지 않은 능력은 무시
             }
         }
 

@@ -1,4 +1,4 @@
-﻿package com.WhoisntCitizen_server.member.controller;
+package com.WhoisntCitizen_server.member.controller;
 
 import com.WhoisntCitizen_server.member.dto.MemberDto;
 import com.WhoisntCitizen_server.member.service.MemberService;
