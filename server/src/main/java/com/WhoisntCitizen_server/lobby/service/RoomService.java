@@ -62,6 +62,8 @@ public class RoomService {
         return roomLockManager.withLock(roomId, () -> {
             Room room = findRoom(roomId);
 
+            // 게임은 시작할 때 참가자 명단을 고정하므로, 진행 중인 방에는 새로 들어올 수 없다.
+            if (room.isInGame()) throw new IllegalStateException("게임이 진행 중인 방입니다.");
             if (room.containsPlayer(user.getId())) throw new IllegalStateException("이미 참가 중입니다.");
             if (room.isFull()) throw new IllegalStateException("방이 가득 찼습니다.");
 
@@ -80,6 +82,9 @@ public class RoomService {
             Room room = findRoom(roomId);
 
             if (!room.containsPlayer(userId)) throw new IllegalStateException("해당 방에 참가 중이지 않습니다.");
+            // 게임 중에 나가면 방에서는 빠지지만 게임에는 살아 있는 플레이어로 남아 진행이 꼬인다.
+            // 게임 중 퇴장(사망 처리 등) 규칙이 정해지기 전까지는 게임이 끝난 뒤에만 나갈 수 있다.
+            if (room.isInGame()) throw new IllegalStateException("게임 중에는 방을 나갈 수 없습니다.");
 
             room.removePlayer(userId); // 방장이면 다음 사람에게 위임
 
