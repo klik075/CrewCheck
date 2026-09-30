@@ -1,0 +1,33 @@
+# 로컬 개발용 MySQL + Redis
+# 실행: docker compose up -d   /  종료: docker compose down   (데이터까지 삭제: docker compose down -v)
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: whoisntcitizen-mysql
+    environment:
+      MYSQL_DATABASE: mafia
+      MYSQL_USER: mafia
+      MYSQL_PASSWORD: mafia1234
+      MYSQL_ROOT_PASSWORD: root1234
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot1234"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: whoisntcitizen-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  mysql-data:

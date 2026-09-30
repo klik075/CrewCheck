@@ -9,8 +9,8 @@ import com.WhoisntCitizen_server.game.dto.StartGameRequest;
 import com.WhoisntCitizen_server.game.dto.StartGameResponse;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
-import com.WhoisntCitizen_server.game.entity.Role;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
+import com.WhoisntCitizen_server.jobs.domain.RoleDefinition;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -44,7 +44,7 @@ public class GameService {
             }
         }
 
-        List<Role> roles = roleAssigner.assign(entries.size());
+        List<RoleDefinition> roles = roleAssigner.assign(entries.size());
         List<GamePlayer> players = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
             players.add(new GamePlayer(entries.get(i).playerId(), entries.get(i).nickname(), roles.get(i)));
@@ -72,12 +72,12 @@ public class GameService {
         Game game = findGame(gameId);
         synchronized (game) {
             GamePlayer me = game.getPlayer(playerId);
-            List<Long> teammates = me.isMafia()
+            List<Long> teammates = me.isPirate()
                     ? game.getPlayers().stream()
-                        .filter(p -> p.isMafia() && !p.getPlayerId().equals(playerId))
+                        .filter(p -> p.isPirate() && !p.getPlayerId().equals(playerId))
                         .map(GamePlayer::getPlayerId).toList()
                     : List.of();
-            return new MyRoleResponse(me.getPlayerId(), me.getRole(), me.getRole().getTeam(), me.isAlive(), teammates);
+            return MyRoleResponse.of(me, teammates);
         }
     }
 
@@ -91,7 +91,7 @@ public class GameService {
                 return new GameResultResponse(false, null, game.getDay(), List.of());
             }
             List<GameResultResponse.PlayerResult> results = game.getPlayers().stream()
-                    .map(p -> new GameResultResponse.PlayerResult(p.getPlayerId(), p.getNickname(), p.getRole(), p.isAlive()))
+                    .map(GameResultResponse.PlayerResult::from)
                     .toList();
             return new GameResultResponse(true, game.getWinner(), game.getDay(), results);
         }

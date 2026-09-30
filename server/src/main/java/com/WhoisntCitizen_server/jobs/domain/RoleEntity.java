@@ -7,7 +7,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-/** 모든 플레이어에게 공개되는 직업 정의. 실제 배정 결과는 RoomPlayerEntity에 저장한다. */
+/** 모든 플레이어에게 공개되는 직업 정의. 게임 중에는 RoleCatalog가 RoleDefinition으로 캐시해 사용한다. */
 @Entity
 @Table(name = "roles")
 public class RoleEntity {

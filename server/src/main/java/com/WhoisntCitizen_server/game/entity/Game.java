@@ -1,6 +1,8 @@
 package com.WhoisntCitizen_server.game.entity;
 
 import com.WhoisntCitizen_server.common.exception.GameRuleException;
+import com.WhoisntCitizen_server.jobs.domain.ActionCode;
+import com.WhoisntCitizen_server.jobs.domain.Faction;
 import com.WhoisntCitizen_server.night.entity.NightResult;
 import com.WhoisntCitizen_server.vote.entity.ExecutionResult;
 import lombok.Getter;
@@ -35,7 +37,7 @@ public class Game {
 
     private NightResult lastNightResult;
     private ExecutionResult lastExecutionResult;
-    private Team winner;
+    private Faction winner;
 
     public Game(String roomId, List<GamePlayer> players) {
         this.gameId = UUID.randomUUID().toString();
@@ -68,7 +70,7 @@ public class Game {
         this.phaseVersion++;
     }
 
-    public void end(Team winner) {
+    public void end(Faction winner) {
         this.winner = winner;
         this.phase = GamePhase.ENDED;
         this.phaseEndsAt = null;
@@ -82,22 +84,18 @@ public class Game {
         GamePlayer actor = getAlivePlayer(actorId, "행동하는 플레이어");
         GamePlayer target = getAlivePlayer(targetId, "대상 플레이어");
 
-        switch (actor.getRole()) {
-            case MAFIA -> {
-                // 마피아는 마피아도 죽일 수 있다.
-//                if (target.isMafia()) {
-//                    throw new GameRuleException("마피아는 같은 마피아를 지목할 수 없습니다.");
-//                }
-            }
-            case POLICE -> {
-                if (actor.getPlayerId().equals(target.getPlayerId())) {
-                    throw new GameRuleException("경찰은 자신을 조사할 수 없습니다.");
-                }
-            }
-            case DOCTOR -> {
-                // 의사는 자신을 포함해 누구든 보호 가능
-            }
-            default -> throw new GameRuleException("밤에 사용할 능력이 없는 직업입니다.");
+        // 직업 이름이 아니라 DB에 연결된 ActionCode 규칙으로 검증한다.
+        if (!actor.getRole().hasNightAction()) {
+            throw new GameRuleException("밤에 사용할 능력이 없는 직업입니다.");
+        }
+        ActionCode code = actor.getRole().actionCode();
+        switch (code) {
+            // 현재 게임 로직이 처리하는 밤 능력: 공격(해적) / 조사(선장) / 보호(선의)
+            case SELECT_ATTACK_TARGET, INVESTIGATE_FACTION, PROTECT -> { }
+            default -> throw new GameRuleException("아직 지원하지 않는 능력입니다: " + code);
+        }
+        if (!code.allowsSelfTarget() && actor.getPlayerId().equals(target.getPlayerId())) {
+            throw new GameRuleException("자신을 대상으로 할 수 없는 능력입니다.");
         }
         nightActions.put(actorId, targetId);
     }

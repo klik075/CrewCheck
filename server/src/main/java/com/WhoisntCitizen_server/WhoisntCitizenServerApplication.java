@@ -1,11 +1,13 @@
-package com.WhoisntCitizen_server.jobs;
+package com.WhoisntCitizen_server;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class MafiaServerApplication {
+public class WhoisntCitizenServerApplication {
+
     public static void main(String[] args) {
-        SpringApplication.run(MafiaServerApplication.class, args);
+        SpringApplication.run(WhoisntCitizenServerApplication.class, args);
     }
+
 }
