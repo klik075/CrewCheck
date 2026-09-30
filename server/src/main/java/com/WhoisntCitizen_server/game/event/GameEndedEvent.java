@@ -16,6 +16,7 @@ public record GameEndedEvent(
         String roomId,
         Faction winner,
         int lastDay,
+        boolean recordStats,          // true면 회원 전적에 반영 (방에서 시작한 실제 게임)
         List<PlayerOutcome> outcomes
 ) {
     /** userId = User(프로필)의 id = 게임의 playerId */
@@ -32,6 +33,6 @@ public record GameEndedEvent(
                         p.isAlive(),
                         p.getRole().faction() == winner))
                 .toList();
-        return new GameEndedEvent(game.getGameId(), game.getRoomId(), winner, game.getDay(), outcomes);
+        return new GameEndedEvent(game.getGameId(), game.getRoomId(), winner, game.getDay(), game.isRecordStats(), outcomes);
     }
 }

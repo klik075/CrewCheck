@@ -41,7 +41,8 @@ public class GameService {
         List<GameParticipant> participants = request.players().stream()
                 .map(e -> new GameParticipant(e.playerId(), e.nickname()))
                 .toList();
-        return startGame(request.roomId(), participants);
+        // 개발용 게임: 가짜 playerId가 실제 User.id와 겹칠 수 있으므로 전적에 반영하지 않는다.
+        return start(request.roomId(), participants, false);
     }
 
     /**
@@ -50,6 +51,10 @@ public class GameService {
      * 인원 수(4~12명)는 RoleAssigner가 검사한다.
      */
     public StartGameResponse startGame(String roomId, List<GameParticipant> participants) {
+        return start(roomId, participants, true);
+    }
+
+    private StartGameResponse start(String roomId, List<GameParticipant> participants, boolean recordStats) {
         if (roomId == null || roomId.isBlank()) {
             throw new GameRuleException("roomId가 필요합니다.");
         }
@@ -74,7 +79,7 @@ public class GameService {
             players.add(new GamePlayer(p.userId(), p.nickname(), roles.get(i)));
         }
 
-        Game game = gameRepository.save(new Game(roomId, players));
+        Game game = gameRepository.save(new Game(roomId, players, recordStats));
         gameFlowService.begin(game);
 
         synchronized (game) {
