@@ -13,12 +13,14 @@ import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
 import com.WhoisntCitizen_server.member.entity.User;
 import com.WhoisntCitizen_server.member.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RoomService {
@@ -67,6 +69,7 @@ public class RoomService {
         // 읽기 → 검사 → 추가 → 저장을 같은 방 잠금 안에서 처리 (동시 입장 시 덮어쓰기 방지)
         return roomLockManager.withLock(roomId, () -> {
             Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
 
             // 게임은 시작할 때 참가자 명단을 고정하므로, 진행 중인 방에는 새로 들어올 수 없다.
             if (room.isInGame()) throw new IllegalStateException("게임이 진행 중인 방입니다.");
@@ -86,6 +89,7 @@ public class RoomService {
 
         roomLockManager.withLock(roomId, () -> {
             Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
 
             if (!room.containsPlayer(userId)) throw new IllegalStateException("해당 방에 참가 중이지 않습니다.");
             // 게임 중에 나가면 방에서는 빠지지만 게임에는 살아 있는 플레이어로 남아 진행이 꼬인다.
@@ -110,6 +114,7 @@ public class RoomService {
         // 입장/나가기와 같은 방 잠금 안에서 처리: 시작 도중 누가 들어오거나 나가지 못한다.
         return roomLockManager.withLock(roomId, () -> {
             Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
 
             if (!userId.equals(room.getHostUserId())) throw new IllegalStateException("방장만 게임을 시작할 수 있습니다.");
             if (room.isInGame()) throw new IllegalStateException("이미 게임이 진행 중인 방입니다.");
@@ -170,8 +175,42 @@ public class RoomService {
                 .map(Long::valueOf) //String을 Long으로 바꿈
                 .map(roomRepository::findById)// 각 id를 room으로 바꿈 Stream<String>에서 -> Stream<Room>이 됨
                 .filter(Objects::nonNull)
+                .map(this::recoverInListIfOrphaned) // 서버 재시작 등으로 게임이 사라진 방은 WAITING으로 복구해서 보여준다
+                .filter(Objects::nonNull)           // 복구 중 방이 삭제된 경우 제외
                 .map(RoomResponseDto::from)// Room -> RoomResponseDto 변환
                 .toList();
+    }
+
+    /**
+     * IN_GAME인데 그 게임이 메모리에 없거나 이미 끝난 방을 WAITING으로 되돌린다.
+     * - 서버 재시작: 진행 중인 게임(메모리)은 사라지지만 방(Redis)은 IN_GAME으로 남는다.
+     * - 종료 이벤트 처리 실패: 게임은 끝났는데 방 복귀가 안 된 경우.
+     * 반드시 해당 방의 잠금(roomLockManager) 안에서 호출한다.
+     *
+     * @return 복구했으면 true
+     */
+    private boolean recoverIfOrphaned(Room room) {
+        if (!room.isInGame() || gameService.isGameActive(room.getGameId())) {
+            return false;
+        }
+        log.warn("방 {}: 진행 중인 게임({})을 찾을 수 없어 대기 상태로 복구", room.getId(), room.getGameId());
+        room.finishGame();
+        roomRepository.save(room);
+        return true;
+    }
+
+    /** 방 목록 조회용: 복구가 필요한 방만 잠금을 잡고 다시 읽어서 복구한다. */
+    private Room recoverInListIfOrphaned(Room room) {
+        if (!room.isInGame() || gameService.isGameActive(room.getGameId())) {
+            return room; // 대부분의 방은 잠금 없이 그대로 반환
+        }
+        return roomLockManager.withLock(room.getId(), () -> {
+            Room latest = roomRepository.findById(room.getId()); // 잠금 안에서 최신 상태로 다시 확인
+            if (latest != null) {
+                recoverIfOrphaned(latest);
+            }
+            return latest;
+        });
     }
 
     private Room findRoom(Long roomId) {

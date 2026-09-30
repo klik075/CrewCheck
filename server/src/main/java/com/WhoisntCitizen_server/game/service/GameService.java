@@ -125,6 +125,23 @@ public class GameService {
         }
     }
 
+    /**
+     * 진행 중인 게임인지 확인한다 (메모리에 있고 아직 끝나지 않음).
+     * 로비가 "IN_GAME인데 게임이 사라진 방"(서버 재시작 등)을 찾아 복구할 때 사용한다.
+     */
+    public boolean isGameActive(String gameId) {
+        if (gameId == null) {
+            return false;
+        }
+        return gameRepository.findById(gameId)
+                .map(game -> {
+                    synchronized (game) {
+                        return !game.isEnded();
+                    }
+                })
+                .orElse(false);
+    }
+
     private Game findGame(String gameId) {
         return gameRepository.findById(gameId).orElseThrow(() -> new GameNotFoundException(gameId));
     }
