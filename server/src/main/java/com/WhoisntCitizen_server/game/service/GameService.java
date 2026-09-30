@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.exception.GameNotFoundException;
 import com.WhoisntCitizen_server.common.exception.GameRuleException;
+import com.WhoisntCitizen_server.game.dto.GameParticipant;
 import com.WhoisntCitizen_server.game.dto.GameResultResponse;
 import com.WhoisntCitizen_server.game.dto.GameStateResponse;
 import com.WhoisntCitizen_server.game.dto.MyRoleResponse;
@@ -32,26 +33,48 @@ public class GameService {
         this.gameFlowService = gameFlowService;
     }
 
-    /** 1. 게임 시작 + 2. 역할 배정 → 첫 밤 진입 */
+    /**
+     * 1. 게임 시작 (Postman 테스트용 API: POST /api/v1/games).
+     * 요청 DTO를 GameParticipant 목록으로 바꿔 서버 내부용 startGame에 위임한다.
+     */
     public StartGameResponse startGame(StartGameRequest request) {
-        List<StartGameRequest.PlayerEntry> entries = request.players();
+        List<GameParticipant> participants = request.players().stream()
+                .map(e -> new GameParticipant(e.playerId(), e.nickname()))
+                .toList();
+        return startGame(request.roomId(), participants);
+    }
 
-        //수정될 부분 - id 중복처리
+    /**
+     * 1. 게임 시작 + 2. 역할 배정 → 첫 밤 진입 (서버 내부용).
+     * 로비의 방 시작 처리(RoomService)가 Room의 참가자 목록으로 호출한다.
+     * 인원 수(4~12명)는 RoleAssigner가 검사한다.
+     */
+    public StartGameResponse startGame(String roomId, List<GameParticipant> participants) {
+        if (roomId == null || roomId.isBlank()) {
+            throw new GameRuleException("roomId가 필요합니다.");
+        }
+        if (participants == null || participants.isEmpty()) {
+            throw new GameRuleException("참가자가 없습니다.");
+        }
+
         Set<Long> ids = new HashSet<>();
-        for (StartGameRequest.PlayerEntry e : entries) {
-            if (!ids.add(e.playerId())) {
-                throw new GameRuleException("중복된 playerId가 있습니다: " + e.playerId());
+        for (GameParticipant p : participants) {
+            if (p.userId() == null) {
+                throw new GameRuleException("userId가 없는 참가자가 있습니다.");
+            }
+            if (!ids.add(p.userId())) {
+                throw new GameRuleException("중복된 playerId가 있습니다: " + p.userId());
             }
         }
 
-        List<RoleDefinition> roles = roleAssigner.assign(entries.size());
+        List<RoleDefinition> roles = roleAssigner.assign(participants.size());
         List<GamePlayer> players = new ArrayList<>();
-        for (int i = 0; i < entries.size(); i++) {
-            players.add(new GamePlayer(entries.get(i).playerId(), entries.get(i).nickname(), roles.get(i)));
+        for (int i = 0; i < participants.size(); i++) {
+            GameParticipant p = participants.get(i);
+            players.add(new GamePlayer(p.userId(), p.nickname(), roles.get(i)));
         }
 
-        //수정될 부분 - Repository DB 연동
-        Game game = gameRepository.save(new Game(request.roomId(), players));
+        Game game = gameRepository.save(new Game(roomId, players));
         gameFlowService.begin(game);
 
         synchronized (game) {
