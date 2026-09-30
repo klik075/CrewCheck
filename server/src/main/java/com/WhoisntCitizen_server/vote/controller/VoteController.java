@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/games/{gameId}")
+@RequestMapping("/api/v1/games/{gameId}")
 public class VoteController {
 
     private final VoteService voteService;

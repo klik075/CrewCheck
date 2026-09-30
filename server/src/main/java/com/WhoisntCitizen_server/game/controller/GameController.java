@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * X-Player-Id 헤더는 로그인 기능이 붙기 전 임시 식별 수단이다. 인증 도입 후 토큰에서 꺼내도록 교체.
  */
 @RestController
-@RequestMapping("/api/games")
+@RequestMapping("/api/v1/games")
 public class GameController {
 
     private final GameService gameService;

@@ -64,12 +64,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games",
+                  "raw": "{{baseUrl}}/api/v1/games",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games"
                   ]
                 },
@@ -114,12 +115,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "me"
@@ -161,12 +163,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "me"
@@ -208,12 +211,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "me"
@@ -255,12 +259,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "me"
@@ -302,12 +307,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "me"
@@ -349,12 +355,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "me"
@@ -391,12 +398,13 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}"
                   ]
@@ -439,12 +447,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-actions"
@@ -486,12 +495,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-actions"
@@ -533,12 +543,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-actions"
@@ -580,12 +591,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-actions"
@@ -628,12 +640,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-result",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-result"
@@ -668,12 +681,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-result",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-result"
@@ -707,12 +721,13 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}"
                   ]
@@ -748,12 +763,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -795,12 +811,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -842,12 +859,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -889,12 +907,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -936,12 +955,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -983,12 +1003,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -1021,12 +1042,13 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/execution-result",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/execution-result",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "execution-result"
@@ -1061,12 +1083,13 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}"
                   ]
@@ -1103,12 +1126,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-actions"
@@ -1150,12 +1174,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-actions"
@@ -1197,12 +1222,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-actions"
@@ -1240,12 +1266,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-result",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-result"
@@ -1280,12 +1307,13 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}"
                   ]
@@ -1321,12 +1349,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -1368,12 +1397,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -1415,12 +1445,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -1462,12 +1493,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -1500,12 +1532,13 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/result",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/result",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "result"
@@ -1550,12 +1583,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games",
+                  "raw": "{{baseUrl}}/api/v1/games",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games"
                   ]
                 },
@@ -1600,12 +1634,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "me"
@@ -1647,12 +1682,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "me"
@@ -1694,12 +1730,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "me"
@@ -1741,12 +1778,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "me"
@@ -1783,12 +1821,13 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}"
                   ]
@@ -1831,12 +1870,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-actions"
@@ -1878,12 +1918,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-actions"
@@ -1925,12 +1966,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-actions"
@@ -1968,12 +2010,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/night-result",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "night-result"
@@ -2008,12 +2051,13 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}"
                   ]
@@ -2049,12 +2093,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -2096,12 +2141,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -2143,12 +2189,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "votes"
@@ -2181,12 +2228,13 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/games/{{gameId}}/result",
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/result",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "api",
+                    "v1",
                     "games",
                     "{{gameId}}",
                     "result"
@@ -2231,12 +2279,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+              "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "games",
                 "{{gameId}}",
                 "night-actions"
@@ -2275,12 +2324,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/games/{{gameId}}/votes",
+              "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "games",
                 "{{gameId}}",
                 "votes"
@@ -2319,12 +2369,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+              "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "games",
                 "{{gameId}}",
                 "night-actions"
@@ -2363,12 +2414,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+              "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "games",
                 "{{gameId}}",
                 "night-actions"
@@ -2407,12 +2459,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/games/{{gameId}}/night-actions",
+              "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "games",
                 "{{gameId}}",
                 "night-actions"
@@ -2447,12 +2500,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/games",
+              "raw": "{{baseUrl}}/api/v1/games",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "games"
               ]
             },
@@ -2485,12 +2539,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/games",
+              "raw": "{{baseUrl}}/api/v1/games",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "games"
               ]
             },
@@ -2523,12 +2578,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/games",
+              "raw": "{{baseUrl}}/api/v1/games",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "games"
               ]
             },
@@ -2556,12 +2612,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/games/not-exist",
+              "raw": "{{baseUrl}}/api/v1/games/not-exist",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "games",
                 "not-exist"
               ]
@@ -2586,12 +2643,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/games/{{gameId}}/me",
+              "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "games",
                 "{{gameId}}",
                 "me"
@@ -2622,12 +2680,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/games/{{gameId}}",
+              "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "games",
                 "{{gameId}}"
               ]

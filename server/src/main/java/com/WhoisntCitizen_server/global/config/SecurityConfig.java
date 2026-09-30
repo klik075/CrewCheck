@@ -56,9 +56,11 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 						// 회원가입 / 로그인은 토큰 없이
 						.requestMatchers("/api/members/signup", "/api/members/login").permitAll()
+						// 게임 진행 API: 아직 X-Player-Id 헤더로 플레이어를 구분하므로 토큰 없이 허용 (JWT 적용 시 제거)
+						.requestMatchers("/api/v1/games/**").permitAll()
 						// 로비(/api/v1/rooms)와 직업 API(/api/v1/...)는 로그인한 유저만
 						.requestMatchers("/api/v1/**").authenticated()
-						// TODO: game / vote 모듈(/api/games/**)도 토큰 기반으로 옮기면 authenticated()로 변경
+						// TODO: 게임 API(/api/v1/games/**)를 토큰 기반으로 옮기면 위의 permitAll 제거
 						.anyRequest().permitAll())
 				.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}))
 				.exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
