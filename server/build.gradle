@@ -34,6 +34,7 @@ dependencies {
     // 비밀번호 암호화
     implementation 'org.springframework.security:spring-security-crypto'
     // JPA & Hibernate ORM (엔티티 매핑 및 DB 레포지토리 관리용)
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-authorization-server'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 }
 
