@@ -10,6 +10,8 @@ namespace WhoisntCitizen.LobbyTest
 {
     // 회원가입/로그인 + 로비(방 목록/생성/입장/퇴장/참가자 조회) 통합 테스트용 컨트롤러.
     // 로그인 토큰은 기존 AuthSession(static)에 저장하고, 로비 요청에는 Authorization: Bearer 헤더를 붙인다.
+    //
+    // 실제 게임 흐름(Title → Lobby → Game)과는 별개인 단독 테스트 씬이다. 씬 전환은 하지 않는다.
     public class LobbyTestController : MonoBehaviour
     {
         [Header("Server")]
@@ -214,8 +216,9 @@ namespace WhoisntCitizen.LobbyTest
                 return;
             }
 
-            AuthSession.SetSession(res.memberId, res.username, res.accessToken);
-            AppendLog($"로그인 성공: {res.username} (memberId={res.memberId}, token={AuthSession.TokenPreview()})", OkColor);
+            // 로비/게임에서 쓰는 userId, nickname까지 모두 세션에 저장한다.
+            AuthSession.SetSession(res.memberId, res.userId, res.username, res.nickname, res.accessToken);
+            AppendLog($"로그인 성공: {res.username} (memberId={res.memberId}, userId={res.userId}, token={AuthSession.TokenPreview()})", OkColor);
             RefreshLoginState();
             // 방 목록 갱신은 현재 요청이 끝난 뒤(isBusy 해제 후) 새 요청으로 보낸다.
             StartCoroutine(RunAfterCurrent(OnRefreshRoomsClicked));

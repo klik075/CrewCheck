@@ -1,25 +1,21 @@
-﻿using System.Collections;
-using TMPro;
+﻿using TMPro;
 using UnityEngine;
-using UnityEngine.Serialization;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using WhoisntCitizen.LobbyTest;
+using WhoisntCitizen.Common;
 using WhoisntCitizen.Network;
 
 namespace WhoisntCitizen.Title
 {
     // Title 씬: 로그인 / 회원가입 처리.
-    // 로그인 성공 시 AuthSession에 JWT를 저장하고 로비 씬으로 이동한다.
+    // 로그인 성공 시 AuthSession에 JWT와 유저 정보(userId, nickname 등)를 저장하고 로비 씬으로 이동한다.
     // 필드 연결은 Tools > Bind Title Scene (TitleSceneBindTool)이 자동으로 해 준다.
+    //
+    // 서버 주소/타임아웃은 ApiConfig에서, 씬 이름은 SceneLoader에서 한 번에 관리한다.
+    // (이전에 있던 baseUrl / timeoutSeconds / lobbySceneName 필드는 그쪽으로 옮겨서 제거했다)
     public class TitleController : MonoBehaviour
     {
-        [Header("Server")]
-        [SerializeField] private string baseUrl = ApiClient.DefaultBaseUrl;
-        [SerializeField] private int timeoutSeconds = 10;
-
-        [Header("Scene")]
-        [SerializeField] private string lobbySceneName = "Lobby";
+        private const string LoginPath = "/api/members/login";
+        private const string SignupPath = "/api/members/signup";
 
         [Header("Login")]
         [SerializeField] private TMP_InputField loginIdInput;
@@ -72,6 +68,14 @@ namespace WhoisntCitizen.Title
 
         private void Start()
         {
+            // 이미 로그인된 상태로 타이틀에 들어오면 로그인 화면을 건너뛰고 로비로 보낸다.
+            // (로그아웃 / 토큰 만료로 돌아온 경우는 세션이 비어 있어서 여기에 걸리지 않는다)
+            if (AuthSession.IsAuthenticated)
+            {
+                SceneLoader.Load(SceneType.Lobby);
+                return;
+            }
+
             if (registerPanel != null) registerPanel.SetActive(false);
             SetMessage(loginMessageText, "", infoColor);
             SetMessage(registerMessageText, "", infoColor);
@@ -113,8 +117,11 @@ namespace WhoisntCitizen.Title
             }
 
             SetMessage(loginMessageText, "로그인 중...", infoColor);
+            SetBusy(true);
+
+            // 로그인은 토큰이 필요 없는 요청이라 requireAuth: false
             var body = new LoginRequest { username = username, password = password };
-            StartCoroutine(Run(ApiClient.Send(baseUrl, "POST", "/api/members/login", body, false, timeoutSeconds, OnLoginResult)));
+            ApiClient.Post<AuthResponse>(LoginPath, body, OnLoginResult, requireAuth: false);
         }
 
         public void OnRegisterClicked()
@@ -144,43 +151,60 @@ namespace WhoisntCitizen.Title
             }
 
             SetMessage(registerMessageText, "가입 중...", infoColor);
+            SetBusy(true);
+
+            // 회원가입도 토큰이 필요 없는 요청. 응답 본문은 쓰지 않으므로 파싱 없는 Post를 사용한다.
             var body = new SignupRequest { username = username, password = password, nickname = nickname };
-            StartCoroutine(Run(ApiClient.Send(baseUrl, "POST", "/api/members/signup", body, false, timeoutSeconds,
-                result => OnRegisterResult(result, username))));
+            ApiClient.Post(SignupPath, body, result => OnRegisterResult(result, username), requireAuth: false);
         }
 
         // ---------- 응답 처리 ----------
 
-        private void OnLoginResult(ApiResult result)
+        private void OnLoginResult(ApiResult<AuthResponse> result)
         {
+            // 응답 전에 씬이 바뀌어 이 오브젝트가 파괴됐으면 아무것도 하지 않는다.
+            if (this == null) return;
+
             if (!result.success)
             {
+                SetBusy(false);
                 SetMessage(loginMessageText, result.message, errorColor);
                 return;
             }
 
-            AuthResponse res = SafeParse<AuthResponse>(result.body);
-            if (res == null || string.IsNullOrEmpty(res.accessToken))
+            AuthResponse res = result.data; // ApiClient가 이미 JSON을 AuthResponse로 파싱해 둔 값
+            if (string.IsNullOrEmpty(res.accessToken))
             {
+                SetBusy(false);
                 SetMessage(loginMessageText, "로그인 응답이 올바르지 않습니다.", errorColor);
                 return;
             }
 
-            AuthSession.SetSession(res.memberId, res.username, res.accessToken);
+            // 로비/게임에서 쓰는 userId, nickname까지 모두 세션에 저장한다.
+            //   userId   : 로비 UserInfoArea의 ID 표시, 방장 여부 판단(hostUserId == userId), 게임 playerId
+            //   nickname : 게임 내 표시 이름
+            AuthSession.SetSession(res.memberId, res.userId, res.username, res.nickname, res.accessToken);
+            Debug.Log($"[Title] 로그인 성공 - userId={res.userId}, username={res.username}, nickname={res.nickname}");
+
             loginPasswordInput.text = "";
             SetMessage(loginMessageText, "로그인 성공!", successColor);
 
-            if (!Application.CanStreamedLevelBeLoaded(lobbySceneName))
+            // 로비로 이동. 씬 이동 중에는 버튼을 잠근 상태로 둔다.
+            // 이동을 시작하지 못하면(Build Settings 누락) 원인을 보여주고 잠금을 푼다.
+            if (!SceneLoader.Load(SceneType.Lobby))
             {
+                SetBusy(false);
                 SetMessage(loginMessageText,
-                    $"로그인은 성공했지만 '{lobbySceneName}' 씬이 Build Settings에 없습니다. (Tools > Bind Title Scene 실행)", errorColor);
-                return;
+                    $"로그인은 성공했지만 '{SceneLoader.GetSceneName(SceneType.Lobby)}' 씬이 Build Settings에 없습니다. (Tools > Bind Title Scene 실행)",
+                    errorColor);
             }
-            SceneManager.LoadScene(lobbySceneName);
         }
 
         private void OnRegisterResult(ApiResult result, string username)
         {
+            if (this == null) return;
+            SetBusy(false);
+
             if (!result.success)
             {
                 SetMessage(registerMessageText, result.message, errorColor);
@@ -197,14 +221,11 @@ namespace WhoisntCitizen.Title
 
         // ---------- 공통 ----------
 
-        // 요청 하나를 실행하는 동안 중복 클릭을 막는다.
-        private IEnumerator Run(IEnumerator request)
+        // 요청 하나를 실행하는 동안 중복 클릭을 막는다. (요청 시작 시 true, 응답을 받으면 false)
+        private void SetBusy(bool busy)
         {
-            isBusy = true;
-            SetButtons(false);
-            yield return request;
-            isBusy = false;
-            SetButtons(true);
+            isBusy = busy;
+            SetButtons(!busy);
         }
 
         private void SetButtons(bool value)
@@ -240,13 +261,6 @@ namespace WhoisntCitizen.Title
         {
             if (button != null && button.onClick.GetPersistentEventCount() == 0)
                 button.onClick.AddListener(action);
-        }
-
-        private static T SafeParse<T>(string json) where T : class
-        {
-            if (string.IsNullOrEmpty(json)) return null;
-            try { return JsonUtility.FromJson<T>(json); }
-            catch (System.Exception) { return null; }
         }
     }
 }
