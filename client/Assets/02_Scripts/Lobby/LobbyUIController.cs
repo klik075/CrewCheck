@@ -14,7 +14,7 @@ namespace WhoisntCitizen.Lobby
     ///   1) UserInfoArea : Name = 로그인 아이디(username), ID = userId 표시
     ///   2) Button_CreatRoom : 방 만들기 팝업(CreateRoomPopup) 열기
     ///   3) Button_Refresh : 방 목록 새로고침
-    ///   4) RoomListArea : RoomItem 프리팹으로 방 목록 표시, Enter → 방 입장 → Game 씬
+    ///   4) RoomListArea : RoomItem 프리팹으로 방 목록 표시, Enter → 방 입장 → Room 씬
     ///   5) 자동 새로고침 : autoRefreshInterval초마다 조용히 목록 갱신 (팝업이 열려 있거나 요청 중이면 건너뜀)
     ///   6) 로그아웃 버튼 (선택) : 연결하면 세션을 비우고 타이틀 씬으로 이동
     ///
@@ -80,7 +80,7 @@ namespace WhoisntCitizen.Lobby
             }
 
             // 2) 로비에 들어왔다는 것은 어떤 방에도 들어가 있지 않다는 뜻이므로 방 세션을 비운다.
-            //    (Game 씬에서 로비로 돌아올 때는 Game 씬 쪽에서 먼저 방 나가기 API를 호출해야 한다)
+            //    (Room 씬에서 로비로 돌아올 때는 Room 씬 쪽에서 먼저 방 나가기 API를 호출한다)
             RoomSession.Clear();
 
             // 3) 화면 초기 상태
@@ -261,7 +261,7 @@ namespace WhoisntCitizen.Lobby
 
         /// <summary>
         /// RoomItem의 Enter 버튼을 눌렀을 때 호출된다.
-        /// 성공하면 방 정보를 RoomSession에 저장하고 Game 씬으로 이동한다.
+        /// 성공하면 방 정보를 RoomSession에 저장하고 Room 씬으로 이동한다.
         /// </summary>
         private void JoinRoom(RoomResponse room)
         {
@@ -276,13 +276,13 @@ namespace WhoisntCitizen.Lobby
 
                 if (result.success)
                 {
-                    EnterGameScene(result.data);
+                    EnterRoomScene(result.data);
                     return;
                 }
 
                 // 409 중에서 "이미 참가 중"인 경우는 실패가 아니다.
                 // (서버 재시작 후 같은 방에 다시 들어가는 경우 등 - 작업정리 문서 남은 과제 3번)
-                // 방 상세를 조회해서 내가 참가자 목록에 있으면 그대로 Game 씬으로 들어간다.
+                // 방 상세를 조회해서 내가 참가자 목록에 있으면 그대로 Room 씬으로 들어간다.
                 if (result.IsConflict)
                 {
                     CheckAlreadyJoined(room, result.message);
@@ -304,7 +304,7 @@ namespace WhoisntCitizen.Lobby
                 {
                     Debug.Log($"[Lobby] 이미 방 #{room.id}의 참가자라 그대로 입장합니다.");
                     RoomSession.Set(detail.data);
-                    GoToGameScene(detail.data.title);
+                    GoToRoomScene(detail.data.title);
                     return;
                 }
 
@@ -313,20 +313,20 @@ namespace WhoisntCitizen.Lobby
             });
         }
 
-        private void EnterGameScene(RoomResponse room)
+        private void EnterRoomScene(RoomResponse room)
         {
             RoomSession.Set(room);
             Debug.Log($"[Lobby] 방 입장 완료: #{room.id} {room.title} ({room.currentPlayers}/{room.maxPlayers})");
-            GoToGameScene(room.title);
+            GoToRoomScene(room.title);
         }
 
-        private void GoToGameScene(string roomTitle)
+        private void GoToRoomScene(string roomTitle)
         {
             statusMessage?.ShowSuccess($"'{roomTitle}' 방에 입장했습니다.", keep: true);
 
             // 씬 이동을 시작하지 못하면(Build Settings 누락 등) 잠금을 풀어서 다시 시도할 수 있게 한다.
-            if (!SceneLoader.Load(SceneType.Game))
-                OnJoinFailed("Game 씬으로 이동하지 못했습니다. (Build Settings 확인)");
+            if (!SceneLoader.Load(SceneType.Room))
+                OnJoinFailed("Room 씬으로 이동하지 못했습니다. (Build Settings 확인)");
         }
 
         private void OnJoinFailed(string message)

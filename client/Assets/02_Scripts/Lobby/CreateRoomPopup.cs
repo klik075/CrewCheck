@@ -13,7 +13,7 @@ namespace WhoisntCitizen.Lobby
     ///
     /// 동작
     ///   - LobbyUIController가 Button_CreatRoom 클릭 시 Open()을 호출한다.
-    ///   - Button_Create (또는 입력칸에서 Enter): 입력 검증 → 방 생성 요청 → 성공하면 Game 씬으로 이동
+    ///   - Button_Create (또는 입력칸에서 Enter): 입력 검증 → 방 생성 요청 → 성공하면 Room 씬으로 이동
     ///   - Button_Cancel (또는 ESC): 팝업 닫기
     ///
     /// 입력 검증 (서버 규칙과 동일하게 맞춤)
@@ -168,16 +168,16 @@ namespace WhoisntCitizen.Lobby
                     return;
                 }
 
-                // 3) 성공: 만든 사람은 방장으로 자동 입장된 상태 → 방 정보를 저장하고 Game 씬으로 이동
+                // 3) 성공: 만든 사람은 방장으로 자동 입장된 상태 → 방 정보를 저장하고 Room 씬으로 이동
                 RoomSession.Set(result.data);
                 statusMessage?.ShowSuccess($"'{result.data.title}' 방을 만들었습니다. 입장 중...", keep: true);
                 Debug.Log($"[Lobby] 방 생성 완료: #{result.data.id} {result.data.title} ({result.data.currentPlayers}/{result.data.maxPlayers})");
 
                 // 씬 이동이 시작되지 않으면(Build Settings 누락 등) 다시 누를 수 있게 잠금을 푼다.
-                if (!SceneLoader.Load(SceneType.Game))
+                if (!SceneLoader.Load(SceneType.Room))
                 {
                     SetRequesting(false);
-                    statusMessage?.ShowError("Game 씬으로 이동하지 못했습니다. (Build Settings 확인)", keep: true);
+                    statusMessage?.ShowError("Room 씬으로 이동하지 못했습니다. (Build Settings 확인)", keep: true);
                 }
             });
         }

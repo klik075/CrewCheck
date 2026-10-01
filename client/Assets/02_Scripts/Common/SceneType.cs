@@ -9,6 +9,7 @@ namespace WhoisntCitizen.Common
     {
         Title, // 로그인 / 회원가입
         Lobby, // 방 목록 / 방 생성
-        Game,  // 대기실 + 게임 진행 (다른 팀원 담당)
+        Room,  // 대기실: 참가자 목록, 방장 게임 시작, 나가기 (RoomUIController)
+        Game,  // 게임 진행 (GameScene, 다른 팀원 담당)
     }
 }
