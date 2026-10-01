@@ -28,7 +28,7 @@ namespace WhoisntCitizen.Chat
     /// 로비에서 방에 들어온 상태(RoomSession.HasRoom)면 그 방으로 바로 채팅을 시작합니다. (로그인·입장 생략)
     /// 로비 화면에서 로그인·방 입장을 마치고 들어오면 [개발용] 옵션은 꺼도 됩니다.
     /// </summary>
-    public class ChatUIController : MonoBehaviour
+    public class ChatUIController : MonoBehaviour, IChatSystemSender
     {
         [Header("References")]
         public ChatApiClient api;
@@ -608,6 +608,12 @@ namespace WhoisntCitizen.Chat
         public bool IsReady
         {
             get { return _ready; }
+        }
+
+        /// <summary>채팅 중인 로비 방 id (에디터 창 표시용)</summary>
+        public long RoomId
+        {
+            get { return api != null ? api.roomId : 0; }
         }
 
         bool ClearStatus()
