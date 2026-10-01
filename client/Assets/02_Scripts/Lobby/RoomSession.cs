@@ -29,6 +29,9 @@ namespace WhoisntCitizen.Lobby
         /// <summary>진행 중인 게임 id. 대기 중이면 null. (GameScene에서 사용)</summary>
         public static string GameId { get; private set; }
 
+        /// <summary>방금 끝낸 게임 id. 게임이 끝난 직후 방 상태가 아직 IN_GAME으로 보여도 같은 게임에 다시 들어가지 않게 한다.</summary>
+        public static string FinishedGameId { get; private set; }
+
         public static bool HasRoom => RoomId > 0;
 
         /// <summary>게임이 시작되어 gameId를 받은 상태인지</summary>
@@ -67,6 +70,13 @@ namespace WhoisntCitizen.Lobby
             GameId = string.IsNullOrEmpty(gameId) ? null : gameId;
         }
 
+        /// <summary>GameScene에서 게임을 마치고 대기실(Room)로 돌아갈 때 호출. 진행 중 게임 id를 비우고 끝낸 게임으로 기억한다.</summary>
+        public static void MarkGameFinished(string gameId)
+        {
+            if (!string.IsNullOrEmpty(gameId)) FinishedGameId = gameId;
+            GameId = null;
+        }
+
         /// <summary>방을 나갔거나 로그아웃했을 때 호출</summary>
         public static void Clear()
         {
@@ -75,6 +85,7 @@ namespace WhoisntCitizen.Lobby
             HostUserId = 0;
             MaxPlayers = 0;
             GameId = null;
+            FinishedGameId = null;
         }
     }
 }

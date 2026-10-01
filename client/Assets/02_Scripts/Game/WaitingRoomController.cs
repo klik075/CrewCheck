@@ -7,37 +7,44 @@ using WhoisntCitizen.Network;
 namespace WhoisntCitizen.Game
 {
     /// <summary>
-    /// Game 씬의 대기실. 방 상세(GET /api/v1/rooms/{roomId})를 1초마다 조회하다가 IN_GAME + gameId가 되면 GameController로 넘긴다.
-    /// 방장이 시작하면 응답의 gameId로 바로 들어가고, 다른 참가자는 polling으로 들어간다.
-    /// 게임이 끝나면 서버가 방을 WAITING으로 돌린다. 결과 화면에서 ReturnToWaitingRoom()을 부르면 다시 대기실이 된다.
-    /// 대기실 UI(G 단계)는 RoomUpdated·MessageRaised를 구독하고, 버튼은 StartGame·LeaveRoom·ReturnToWaitingRoom을 부른다.
+    /// GameScene의 게임 진입·복귀 담당. 대기실은 Room 씬(RoomUIController)이 맡는다.
+    ///
+    /// 흐름
+    ///   Lobby → Room 씬(대기실, 방장이 게임 시작) → RoomSession.GameId를 채워 GameScene으로 이동
+    ///   GameScene: 이 컴포넌트가 RoomSession.GameId로 GameController.BeginGame(gameId)
+    ///   결과 화면 "대기실로" / 서버에서 게임이 지워짐(404) → Room 씬으로 돌아간다
+    ///
+    /// 진입 규칙 (Start)
+    ///   1) 방 + gameId가 있으면 실제 서버 게임 (GameController의 가짜 서버 설정보다 우선)
+    ///   2) 방 없이 Play했고 GameController.useFakeServer가 켜져 있으면 가짜 서버로 바로 게임 (개발용)
+    ///   3) 방은 있는데 gameId가 없으면 방 상세를 한 번 조회해서 게임 중이면 들어가고, 아니면 Room 씬으로
+    ///   4) 방도 없으면 로비로
+    ///
+    /// 예전 GameScene 안 대기실(WaitingRoomView)은 더 쓰지 않는다. IsWaiting이 항상 false라 패널은 켜지지 않는다.
+    /// (WaitingRoomView가 참조하므로 StartGame·LeaveRoom과 이벤트는 남겨 둔다)
     /// </summary>
     [RequireComponent(typeof(GameController))]
     public sealed class WaitingRoomController : MonoBehaviour
     {
-        [SerializeField] private float pollIntervalSeconds = 1f;
-
         private GameController game;
-        private bool polling;
-        private bool roomInFlight;
+        private bool checkingRoom;
         private bool startInFlight;
         private bool leaveInFlight;
-        private float nextPollAt;
-        private string finishedGameId;
+        private bool leaving; // 다른 씬으로 이동 시작함
 
-        /// <summary>방 상세가 갱신됨 (참가자 목록, 방장, 상태). 대기실 UI가 다시 그린다.</summary>
+        /// <summary>방 상세가 갱신됨. (예전 대기실 UI 호환용)</summary>
         public event Action<RoomDetailResponse> RoomUpdated;
 
-        /// <summary>사용자에게 보여줄 안내 (게임 시작·나가기 실패, 방 조회 실패 등).</summary>
+        /// <summary>사용자에게 보여줄 안내. (예전 대기실 UI 호환용)</summary>
         public event Action<string> MessageRaised;
 
         /// <summary>마지막으로 받은 방 상세. 아직 없으면 null.</summary>
         public RoomDetailResponse Room { get; private set; }
 
-        /// <summary>대기실 화면인지 (false면 게임 중).</summary>
+        /// <summary>대기실 화면인지. 대기실은 Room 씬이 맡으므로 항상 false (GameScene 안 대기실 패널을 켜지 않는다).</summary>
         public bool IsWaiting
         {
-            get { return polling; }
+            get { return false; }
         }
 
         private void Awake()
@@ -48,18 +55,26 @@ namespace WhoisntCitizen.Game
 
         private void Start()
         {
-            if (game.UsesFakeServer)
+            if (RoomSession.HasRoom && RoomSession.HasGame && RoomSession.GameId != RoomSession.FinishedGameId)
             {
-                game.BeginFakeGame(); // 개발용: 로그인·방 없이 바로 게임
+                EnterGame(RoomSession.GameId);
                 return;
             }
             if (!RoomSession.HasRoom)
             {
-                Debug.LogWarning("[WaitingRoom] 들어가 있는 방이 없어서 로비로 돌아갑니다.");
-                SceneLoader.Load(SceneType.Lobby);
+                if (game.UsesFakeServer)
+                {
+                    game.BeginFakeGame(); // 개발용: 로그인·방 없이 바로 게임
+                    return;
+                }
+                Debug.LogWarning("[Game] 들어가 있는 방이 없어서 로비로 돌아갑니다.");
+                GoTo(SceneType.Lobby);
                 return;
             }
-            polling = true;
+
+            // 방은 있는데 gameId가 없음 → 방 상태를 한 번 확인
+            checkingRoom = true;
+            RoomApi.GetRoom(RoomSession.RoomId, OnRoom);
         }
 
         private void OnDestroy()
@@ -70,51 +85,60 @@ namespace WhoisntCitizen.Game
             }
         }
 
-        private void Update()
-        {
-            if (!polling || roomInFlight || Time.unscaledTime < nextPollAt)
-            {
-                return;
-            }
-            nextPollAt = Time.unscaledTime + pollIntervalSeconds;
-            roomInFlight = true;
-            RoomApi.GetRoom(RoomSession.RoomId, OnRoom);
-        }
-
         private void OnRoom(ApiResult<RoomDetailResponse> result)
         {
-            if (this == null)
+            if (this == null || !checkingRoom)
             {
                 return;
             }
-            roomInFlight = false;
-            if (!polling)
-            {
-                return;
-            }
+            checkingRoom = false;
             if (!result.success)
             {
                 Raise(result.message);
+                Debug.LogWarning("[Game] 방 상태를 확인하지 못해 대기실(Room)로 돌아갑니다: " + result.message);
+                GoTo(SceneType.Room);
                 return;
             }
             Room = result.data;
-            RoomSession.Set(result.data); // 방장이 바뀌었을 수 있다
+            RoomSession.Set(result.data);
             if (RoomUpdated != null)
             {
                 RoomUpdated(result.data);
             }
-            if (GameEntry.ShouldEnter(result.data.status, result.data.gameId, finishedGameId))
+            if (GameEntry.ShouldEnter(result.data.status, result.data.gameId, RoomSession.FinishedGameId))
             {
                 EnterGame(result.data.gameId);
+                return;
             }
+            GoTo(SceneType.Room); // 아직 게임 전 → 대기실로
         }
 
         // ================================================================ 버튼에서 부르는 입력
 
-        /// <summary>게임 시작 (방장만, 4명 이상). 실패하면 서버 메시지(409)를 알린다.</summary>
+        /// <summary>
+        /// 게임 결과 화면의 "대기실로" (GameScreen). 끝난 게임에 다시 들어가지 않도록 기억해 두고 Room 씬으로 돌아간다.
+        /// 가짜 서버로 하던 게임이면 새 판을 시작한다(개발용).
+        /// </summary>
+        public void ReturnToWaitingRoom()
+        {
+            bool fake = game.UsesFakeServer; // EndGame 전에 확인 (게임이 닫히면 가짜 여부를 알 수 없다)
+            if (game.Session != null)
+            {
+                RoomSession.MarkGameFinished(game.Session.GameId);
+            }
+            game.EndGame();
+            if (fake && !RoomSession.HasRoom)
+            {
+                game.BeginFakeGame(); // 개발용: 새 판
+                return;
+            }
+            GoTo(RoomSession.HasRoom ? SceneType.Room : SceneType.Lobby);
+        }
+
+        /// <summary>(예전 대기실 UI 호환용) 게임 시작 (방장만). 지금은 Room 씬의 시작 버튼을 쓴다.</summary>
         public void StartGame()
         {
-            if (!polling || startInFlight)
+            if (startInFlight || !RoomSession.HasRoom)
             {
                 return;
             }
@@ -131,17 +155,15 @@ namespace WhoisntCitizen.Game
                     Raise(result.message);
                     return;
                 }
-                if (polling)
-                {
-                    EnterGame(result.data.gameId);
-                }
+                RoomSession.SetGameId(result.data.gameId);
+                EnterGame(result.data.gameId);
             });
         }
 
-        /// <summary>방 나가기 → 로비. 게임 중에는 서버가 막는다(409).</summary>
+        /// <summary>(예전 대기실 UI 호환용) 방 나가기 → 로비. 게임 중에는 서버가 막는다(409).</summary>
         public void LeaveRoom()
         {
-            if (leaveInFlight)
+            if (leaveInFlight || !RoomSession.HasRoom)
             {
                 return;
             }
@@ -159,36 +181,33 @@ namespace WhoisntCitizen.Game
                     return;
                 }
                 RoomSession.Clear();
-                SceneLoader.Load(SceneType.Lobby);
+                GoTo(SceneType.Lobby);
             });
-        }
-
-        /// <summary>게임 결과 화면의 "대기실로". 끝난 게임에 다시 들어가지 않도록 기억해 두고 대기실 polling을 다시 시작한다.</summary>
-        public void ReturnToWaitingRoom()
-        {
-            if (game.Session != null)
-            {
-                finishedGameId = game.Session.GameId;
-            }
-            game.EndGame();
-            if (game.UsesFakeServer)
-            {
-                game.BeginFakeGame(); // 개발용: 새 판
-                return;
-            }
-            polling = true;
-            nextPollAt = 0;
         }
 
         private void EnterGame(string gameId)
         {
-            polling = false;
+            Debug.Log("[Game] 게임 시작: roomId=" + RoomSession.RoomId + ", gameId=" + gameId);
             game.BeginGame(gameId);
         }
 
         private void OnGameClosed()
         {
             ReturnToWaitingRoom();
+        }
+
+        private void GoTo(SceneType scene)
+        {
+            if (leaving)
+            {
+                return;
+            }
+            leaving = true;
+            if (!SceneLoader.Load(scene))
+            {
+                leaving = false;
+                Raise(scene + " 씬으로 이동하지 못했습니다. (Build Settings 확인)");
+            }
         }
 
         private void Raise(string message)

@@ -90,8 +90,9 @@ namespace WhoisntCitizen.Chat
         readonly List<LocalLine> _locals = new List<LocalLine>();
         long _localSeq;
 
-        // ChatLogView에 이미 그린 줄의 키 (뒤에 붙이기만 하면 되는지, 다시 그려야 하는지 판단)
-        readonly List<string> _renderedKeys = new List<string>();
+        // ChatLogView에 이미 그린 줄의 키. ChatLogView는 GameScreen(내 직업·개인 밤 결과 등)도 함께 쓰므로
+        // 지우고 다시 그리지 않고, 아직 안 그린 줄만 뒤에 붙인다.
+        readonly HashSet<string> _renderedKeys = new HashSet<string>();
         ScrollRect _scroll;
 
         static readonly Regex NoParseCloseTag = new Regex("</\\s*noparse\\s*>", RegexOptions.IgnoreCase);
@@ -107,6 +108,8 @@ namespace WhoisntCitizen.Chat
             if (chatLog == null) chatLog = FindFirstObjectByType<ChatLogView>(FindObjectsInactive.Include);
             if (bottomTab == null) bottomTab = FindFirstObjectByType<BottomTabController>(FindObjectsInactive.Include);
             if (chatLog != null) _scroll = chatLog.GetComponentInChildren<ScrollRect>(true);
+            // 씬에 미리 들어 있던 예시 줄 제거. GameScreen이 줄을 넣기 전(Awake)에 한 번만 한다.
+            if (chatLog != null) chatLog.Clear();
         }
 
         void OnEnable()
@@ -129,7 +132,6 @@ namespace WhoisntCitizen.Chat
                 enabled = false;
                 return;
             }
-            chatLog.Clear(); // 씬에 미리 들어 있던 예시 줄 제거
             foreach (var text in ChatNotice.TakePending()) AddLocal(Colored(localNoticePrefix + text, localNoticeColor));
             Render();
             StartCoroutine(Connect());
@@ -366,6 +368,7 @@ namespace WhoisntCitizen.Chat
             if (SameIds(sorted, _messages)) return;
 
             if (MaxId(sorted) < _lastLoggedSystemId) _lastLoggedSystemId = -1; // 서버/Redis 초기화
+            if (_lastId >= 0 && MaxId(sorted) < _lastId) _renderedKeys.RemoveWhere(k => k.StartsWith("m")); // id가 다시 매겨짐 → 새 메시지로 취급
             _messages.Clear();
             _messages.AddRange(sorted);
             TrimToMax();
@@ -459,8 +462,8 @@ namespace WhoisntCitizen.Chat
 
         // ================= 표시 (ChatLogView) =================
 
-        /// 메시지와 내 화면 전용 줄을 순서대로 합친 목록을 만들고,
-        /// 이미 그린 줄 뒤에 붙이기만 하면 되면 붙이고, 순서가 바뀌었으면(전체 동기화 등) 다시 그립니다.
+        /// 메시지와 내 화면 전용 줄을 순서대로 합친 목록에서 아직 그리지 않은 줄만 ChatLogView 뒤에 붙입니다.
+        /// (ChatLogView는 GameScreen과 함께 쓰므로 지우지 않음. 오래된 줄은 ChatLogView가 maxItems로 정리)
         void Render()
         {
             if (chatLog == null) return;
@@ -500,19 +503,10 @@ namespace WhoisntCitizen.Chat
                             || _scroll.content == null || _scroll.viewport == null
                             || _scroll.content.rect.height <= _scroll.viewport.rect.height + 1f;
 
-            bool appendOnly = keys.Count >= _renderedKeys.Count;
-            for (int i = 0; appendOnly && i < _renderedKeys.Count; i++)
-                if (keys[i] != _renderedKeys[i]) appendOnly = false;
-
-            if (!appendOnly)
+            for (int i = 0; i < keys.Count; i++)
             {
-                chatLog.Clear();
-                _renderedKeys.Clear();
-            }
-            for (int i = _renderedKeys.Count; i < keys.Count; i++)
-            {
+                if (!_renderedKeys.Add(keys[i])) continue; // 이미 그린 줄
                 chatLog.AddLine(lines[i]);
-                _renderedKeys.Add(keys[i]);
             }
 
             if (atBottom || _stickToBottom) chatLog.ScrollToLatest();

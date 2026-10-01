@@ -5,7 +5,7 @@ namespace WhoisntCitizen.Game
 {
     /// <summary>
     /// Game 씬의 게임 진행 담당 MonoBehaviour. 흐름은 GameSession(Core)이 하고, 여기서는 Unity 수명주기와 서버 선택만 맡는다.
-    /// - 실제 서버: WaitingRoomController가 방에서 gameId를 받아 BeginGame(gameId)를 부른다.
+    /// - 실제 서버: Room 씬(대기실)에서 받은 RoomSession.GameId로 WaitingRoomController가 BeginGame(gameId)를 부른다.
     /// - 가짜 서버(useFakeServer): 로그인·방 없이 BeginFakeGame()으로 바로 시작한다(Play만 누르면 된다).
     /// - UI(G 단계)는 IGameView를 구현해 gameView에 넣고, 버튼은 SubmitNightAction·SkipNightAction·Vote를 부른다.
     ///   gameView가 비어 있으면 같은 오브젝트·자식에서 IGameView를 찾고, 그래도 없으면 Console 로그(LogGameView)로 대신한다.
@@ -28,9 +28,14 @@ namespace WhoisntCitizen.Game
         /// <summary>진행 중인 게임. 대기실에 있으면 null.</summary>
         public GameSession Session { get; private set; }
 
+        /// <summary>
+        /// 가짜 서버 게임인지. 게임이 진행 중이면 실제로 시작한 쪽(BeginGame / BeginFakeGame)을 따르고,
+        /// 게임 전에는 인스펙터 설정(useFakeServer)을 돌려준다.
+        /// (Room 씬에서 들어온 실제 게임이면 useFakeServer가 켜져 있어도 false → GameScreen이 공개 안내를 중복으로 남기지 않음)
+        /// </summary>
         public bool UsesFakeServer
         {
-            get { return useFakeServer; }
+            get { return Session != null ? fakeApi != null : useFakeServer; }
         }
 
         /// <summary>서버에서 게임이 지워져(404) 닫혔다. WaitingRoomController가 받아서 대기실로 돌아간다.</summary>
