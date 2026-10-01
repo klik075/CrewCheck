@@ -1,0 +1,566 @@
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using TMPro;
+using UnityEngine;
+using UnityEngine.UI;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
+#endif
+
+namespace WhoisntCitizen.Chat
+{
+    /// <summary>
+    /// 채팅 UI 컨트롤러 (ChatPrac ChatScene을 WhoisntCitizen_server API에 맞게 옮김)
+    ///  - 최신 N개(기본 10개) 메시지 표시, 가로 초과 시 자동 줄바꿈
+    ///  - Enter: 전송 / Shift+Enter: 줄바꿈 (한글 IME 조합이 끝난 뒤 전송)
+    ///  - pollInterval초마다 afterId 이후 새 메시지만 받아 뒤에 붙이고, N회마다 전체 목록을 다시 받습니다
+    ///  - 시스템 메시지(입장·퇴장 알림, 공지)는 녹색으로 표시
+    ///  - 내 메시지 구분은 userId로 (개발용 로그인 응답 또는 내가 보낸 메시지의 응답에서 알아냄)
+    /// 시작 순서: 로그인(AuthSession에 토큰이 없을 때만, 개발용) → 로비 방 참가(개발용) → 메시지 조회/폴링
+    /// 로비 화면에서 로그인·방 입장을 마치고 들어오면 [개발용] 옵션은 꺼도 됩니다.
+    /// </summary>
+    public class ChatUIController : MonoBehaviour
+    {
+        [Header("References")]
+        public ChatApiClient api;
+        public TMP_InputField inputField;
+        public Button sendButton;
+        public TMP_Text messagesText;
+        public ScrollRect messagesScroll;
+        public LayoutElement inputBoxLayout;
+
+        [Header("Chat")]
+        public int maxMessages = 10;
+        [Tooltip("내 userId (프로필 id). -1이면 개발용 로그인 응답이나 첫 전송 응답으로 자동 설정. 로비에서 넘겨받으면 여기에 넣어 주세요.")]
+        public long myUserId = -1;
+
+        [Header("[개발용] 단독 실행 (로비 없이 이 씬만 플레이할 때)")]
+        [Tooltip("AuthSession에 토큰이 없으면 아래 계정으로 로그인 (Postman 0번 폴더의 테스트 계정)")]
+        public bool autoLogin = true;
+        public string devUsername = "tester1";
+        public string devPassword = "Test1234!";
+        [Tooltip("시작할 때 로비 방에 참가 (POST /api/v1/rooms/{roomId}/players). 이미 참가 중(409)이면 그대로 진행")]
+        public bool autoJoinRoom = true;
+        [Tooltip("방이 없으면(또는 roomId가 0 이하면) 새 방을 만들어 그 방으로 채팅")]
+        public bool createRoomIfMissing = true;
+        public string devRoomTitle = "채팅 테스트방";
+        public int devRoomMaxPlayers = 8;
+
+        [Header("Polling (새 메시지 자동 수신)")]
+        [Tooltip("새 메시지를 확인하는 간격(초). 0 이하면 자동 수신 끔")]
+        public float pollInterval = 2f;
+        [Tooltip("폴링 N회마다 한 번은 전체 목록을 다시 받아 동기화 (서버/Redis 초기화 대비)")]
+        public int fullSyncEveryPolls = 15;
+        [Tooltip("서버에 연결하지 못했을 때 로그인/입장을 다시 시도하는 간격(초)")]
+        public float retryInterval = 3f;
+
+        [Header("Input Box")]
+        [Tooltip("입력 박스 기본 높이 (54pt x 1.5)")]
+        public float baseInputHeight = 81f;
+        [Tooltip("Shift+Enter로 줄이 늘어날 때 입력 박스가 커지는 최대 줄 수 (넘으면 박스 안에서 스크롤)")]
+        public int maxVisibleInputLines = 4;
+
+        [Header("Style")]
+        public Color myNameColor = new Color(0.45f, 0.8f, 1f);
+        public Color otherNameColor = new Color(1f, 0.85f, 0.4f);
+        public Color errorColor = new Color(1f, 0.45f, 0.45f);
+        [Tooltip("시스템 메시지(입장 알림, 공지) 색")]
+        public Color systemColor = new Color(0.4f, 0.9f, 0.45f);
+        [Tooltip("시스템 메시지 앞에 붙는 말머리")]
+        public string systemPrefix = "[시스템] ";
+
+        readonly List<ChatMessage> _messages = new List<ChatMessage>();
+        string _status = "";       // 일시적인 오류 (다음 조회가 성공하면 지움)
+        string _fatal = "";        // 다시 시도해도 안 되는 오류 (로그인 실패, 방 없음 등, 화면에 계속 표시)
+        int _sendQueuedFrame = -1;
+        bool _sending;
+        bool _fetching;
+        bool _fetchAgain;
+        bool _fullSyncRequested;
+        bool _stickToBottom = true;
+        bool _ready;               // 로그인 + 방 참가가 끝나 채팅할 수 있는 상태
+        bool _connecting;
+        long _lastId = -1;         // 마지막으로 받은 메시지 id (-1: 아직 없음 → 전체 조회)
+        float _nextPollTime;
+        int _pollCount;
+        bool _imeComposing;
+#if ENABLE_INPUT_SYSTEM
+        Keyboard _imeKeyboard;
+#endif
+
+        static readonly Regex NoParseCloseTag = new Regex("</\\s*noparse\\s*>", RegexOptions.IgnoreCase);
+
+        void Awake()
+        {
+            if (api == null) api = GetComponent<ChatApiClient>();
+
+            inputField.lineType = TMP_InputField.LineType.MultiLineNewline;
+            inputField.textComponent.textWrappingMode = TextWrappingModes.Normal;
+            inputField.onValidateInput = ValidateInput;
+            inputField.onSelect.AddListener(_ => EnableIme(true));
+            inputField.onDeselect.AddListener(_ => EnableIme(false));
+            sendButton.onClick.AddListener(Send);
+
+            messagesText.textWrappingMode = TextWrappingModes.Normal;
+            messagesText.richText = true;
+        }
+
+        void OnEnable()
+        {
+            SubscribeIme();
+        }
+
+        void OnDisable()
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (_imeKeyboard != null) _imeKeyboard.onIMECompositionChange -= OnImeComposition;
+            _imeKeyboard = null;
+#endif
+            _imeComposing = false;
+        }
+
+        void Start()
+        {
+            Render();
+            StartCoroutine(Connect());
+            inputField.ActivateInputField();
+        }
+
+        void Update()
+        {
+            SubscribeIme(); // 키보드가 나중에 연결된 경우 대비
+            UpdateInputHeight();
+
+            if (!_ready || pollInterval <= 0f || Time.unscaledTime < _nextPollTime) return;
+            _nextPollTime = Time.unscaledTime + pollInterval;
+            if (_fetching) return; // 이미 조회 중이면 이번 폴링은 건너뜀
+
+            _pollCount++;
+            bool fullSync = fullSyncEveryPolls > 0 && _pollCount % fullSyncEveryPolls == 0;
+            RequestFetch(fullSync);
+        }
+
+        void LateUpdate()
+        {
+            // Enter 입력 후 최소 한 프레임 뒤, 한글 IME 조합이 확정된 뒤에 전송
+            if (_sendQueuedFrame >= 0 && Time.frameCount > _sendQueuedFrame && !IsImeComposing())
+            {
+                _sendQueuedFrame = -1;
+                Send();
+            }
+        }
+
+        // ---------------- 연결 (로그인 → 방 참가) ----------------
+
+        IEnumerator Connect()
+        {
+            if (_connecting) yield break;
+            _connecting = true;
+            _ready = false;
+
+            while (true)
+            {
+                string err = null;
+                long code = 0;
+
+                // 1) 로그인 (로비에서 이미 로그인했다면 건너뜀)
+                if (!AuthSession.IsAuthenticated)
+                {
+                    if (!autoLogin)
+                    {
+                        Fail("로그인 정보가 없습니다. 로비에서 로그인하거나 [개발용] autoLogin을 켜 주세요.");
+                        break;
+                    }
+                    yield return api.Login(devUsername, devPassword,
+                        r =>
+                        {
+                            AuthSession.SetSession(r.memberId, devUsername, r.accessToken);
+                            myUserId = r.userId;
+                        },
+                        (e, c) => { err = e; code = c; });
+                    if (err != null)
+                    {
+                        if (code >= 400 && code < 500) { Fail(err); break; } // 계정 정보 오류는 재시도해도 같음
+                        SetError(err);
+                        yield return new WaitForSecondsRealtime(retryInterval);
+                        continue;
+                    }
+                }
+
+                // 2) 로비 방 참가
+                if (autoJoinRoom)
+                {
+                    bool needCreate = api.roomId <= 0 && createRoomIfMissing;
+                    if (!needCreate)
+                    {
+                        err = null; code = 0;
+                        yield return api.JoinRoom(null, (e, c) => { err = e; code = c; });
+                        if (err != null)
+                        {
+                            if (code == 401) { AuthSession.Clear(); continue; } // 토큰 만료 → 다시 로그인
+                            if (code == 409)
+                            {
+                                // 이미 참가 중이면 그대로 진행. (방이 가득 찼거나 게임 중이면 전송 시 403으로 안내됨)
+                                Debug.Log("[Chat] " + err);
+                            }
+                            else if ((code == 400 || code == 404) && createRoomIfMissing)
+                            {
+                                Debug.LogWarning("[Chat] " + err + " → 새 방을 만듭니다.");
+                                needCreate = true;
+                            }
+                            else if (code >= 400 && code < 500) { Fail(err); break; }
+                            else
+                            {
+                                SetError(err);
+                                yield return new WaitForSecondsRealtime(retryInterval);
+                                continue;
+                            }
+                        }
+                    }
+
+                    if (needCreate)
+                    {
+                        err = null; code = 0;
+                        long newId = -1;
+                        yield return api.CreateRoom(devRoomTitle, devRoomMaxPlayers, id => newId = id, (e, c) => { err = e; code = c; });
+                        if (err != null)
+                        {
+                            if (code == 401) { AuthSession.Clear(); continue; }
+                            if (code >= 400 && code < 500) { Fail(err); break; }
+                            SetError(err);
+                            yield return new WaitForSecondsRealtime(retryInterval);
+                            continue;
+                        }
+                        api.roomId = newId;
+                        Debug.Log("[Chat] 새 방을 만들었습니다. roomId=" + newId);
+                    }
+                }
+
+                // 3) 채팅 시작
+                _ready = true;
+                _fatal = "";
+                ClearStatus();
+                _nextPollTime = Time.unscaledTime + pollInterval;
+                RequestFetch(true);
+                break;
+            }
+
+            _connecting = false;
+        }
+
+        /// <summary>토큰이 만료되는 등 401을 받으면 다시 연결합니다.</summary>
+        void HandleUnauthorized()
+        {
+            _ready = false;
+            AuthSession.Clear();
+            StartCoroutine(Connect());
+        }
+
+        // ---------------- 입력 처리 ----------------
+
+        char ValidateInput(string text, int charIndex, char addedChar)
+        {
+            if (addedChar == '\n' || addedChar == '\r')
+            {
+                if (IsShiftHeld()) return '\n'; // Shift+Enter → 줄바꿈
+                _sendQueuedFrame = Time.frameCount; // Enter → 전송 (IME 조합 확정 후 LateUpdate에서 처리)
+                return '\0';
+            }
+            return addedChar;
+        }
+
+        static bool IsShiftHeld()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var kb = Keyboard.current;
+            if (kb != null && kb.shiftKey.isPressed) return true;
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+            if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) return true;
+#endif
+            return false;
+        }
+
+        bool IsImeComposing()
+        {
+            // 이 프로젝트는 Active Input Handling = Input System 이므로 키보드의 IME 조합 이벤트로 판단합니다.
+            if (_imeComposing) return true;
+#if ENABLE_LEGACY_INPUT_MANAGER
+            if (!string.IsNullOrEmpty(Input.compositionString)) return true;
+#endif
+            return false;
+        }
+
+        void SubscribeIme()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var kb = Keyboard.current;
+            if (kb == _imeKeyboard) return;
+            if (_imeKeyboard != null) _imeKeyboard.onIMECompositionChange -= OnImeComposition;
+            _imeKeyboard = kb;
+            _imeComposing = false;
+            if (kb != null) kb.onIMECompositionChange += OnImeComposition;
+#endif
+        }
+
+#if ENABLE_INPUT_SYSTEM
+        void OnImeComposition(IMECompositionString composition)
+        {
+            _imeComposing = composition.Count > 0;
+        }
+#endif
+
+        static void EnableIme(bool on)
+        {
+            // 입력 박스가 활성화되면 한글 IME 조합 입력을 켭니다
+#if ENABLE_INPUT_SYSTEM
+            var kb = Keyboard.current;
+            if (kb != null) kb.SetIMEEnabled(on);
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+            Input.imeCompositionMode = on ? IMECompositionMode.On : IMECompositionMode.Auto;
+#endif
+        }
+
+        public void Send()
+        {
+            string text = inputField.text.Trim();
+            if (string.IsNullOrEmpty(text) || _sending) { FocusInput(); return; }
+            if (!_ready)
+            {
+                SetError(string.IsNullOrEmpty(_fatal) ? "아직 서버에 연결 중입니다." : _fatal);
+                FocusInput();
+                return;
+            }
+
+            _sending = true;
+            sendButton.interactable = false;
+            inputField.text = "";
+            FocusInput();
+
+            StartCoroutine(api.PostMessage(text,
+                senderId =>
+                {
+                    if (senderId >= 0 && senderId != myUserId) { myUserId = senderId; Render(); }
+                    _sending = false;
+                    sendButton.interactable = true;
+                    _status = "";
+                    _stickToBottom = true; // 내가 보낸 메시지는 항상 보이도록
+                    RequestFetch();
+                },
+                (err, code) =>
+                {
+                    _sending = false;
+                    sendButton.interactable = true;
+                    inputField.text = text; // 실패 시 입력 내용 복구
+                    inputField.caretPosition = text.Length;
+                    SetError(err);
+                    if (code == 401) HandleUnauthorized();
+                }));
+        }
+
+        void FocusInput()
+        {
+            inputField.ActivateInputField();
+            inputField.Select();
+        }
+
+        void UpdateInputHeight()
+        {
+            if (inputBoxLayout == null) return;
+            var tc = inputField.textComponent;
+            int lines = Mathf.Max(1, tc.textInfo != null ? tc.textInfo.lineCount : 1);
+            float lineH = tc.font != null && tc.font.faceInfo.pointSize > 0
+                ? tc.font.faceInfo.lineHeight / tc.font.faceInfo.pointSize * tc.fontSize
+                : tc.fontSize * 1.2f;
+            float target = baseInputHeight + (Mathf.Min(lines, maxVisibleInputLines) - 1) * lineH;
+            if (!Mathf.Approximately(inputBoxLayout.preferredHeight, target))
+                inputBoxLayout.preferredHeight = target;
+        }
+
+        // ---------------- 조회/표시 ----------------
+
+        /// <param name="fullSync">true면 최신 목록 전체를 다시 받고, false면 마지막 id 이후 새 메시지만 받습니다</param>
+        public void RequestFetch(bool fullSync = false)
+        {
+            if (!_ready) return;
+            if (fullSync) _fullSyncRequested = true;
+            if (_fetching) { _fetchAgain = true; return; }
+            StartCoroutine(FetchRoutine());
+        }
+
+        IEnumerator FetchRoutine()
+        {
+            _fetching = true;
+            do
+            {
+                _fetchAgain = false;
+                bool full = _fullSyncRequested || _lastId < 0;
+                _fullSyncRequested = false;
+
+                long errCode = 0;
+                if (full)
+                    yield return api.FetchMessages(-1, maxMessages, OnFullListReceived, (e, c) => { errCode = c; SetError(e); });
+                else
+                    yield return api.FetchMessages(_lastId, 0, OnNewMessagesReceived, (e, c) => { errCode = c; SetError(e); });
+
+                if (errCode == 401) { HandleUnauthorized(); break; }
+            } while (_fetchAgain && _ready);
+            _fetching = false;
+        }
+
+        /// 전체 목록으로 교체 (시작 시 / 주기적 동기화)
+        void OnFullListReceived(List<ChatMessage> list)
+        {
+            bool statusChanged = ClearStatus();
+            var sorted = SortOldestFirst(list).ToList();
+            if (!statusChanged && SameIds(sorted, _messages)) return; // 바뀐 게 없으면 다시 그리지 않음
+
+            _messages.Clear();
+            _messages.AddRange(sorted);
+            TrimToMax();
+            _lastId = MaxId(_messages);
+            Render();
+        }
+
+        /// afterId 이후 새 메시지만 목록 뒤에 추가 (폴링 / 전송 직후)
+        void OnNewMessagesReceived(List<ChatMessage> list)
+        {
+            bool statusChanged = ClearStatus();
+            bool added = false;
+            foreach (var m in SortOldestFirst(list))
+            {
+                long id;
+                bool hasId = long.TryParse(m.id, out id);
+                if (hasId && id <= _lastId) continue; // 이미 받은 메시지
+                _messages.Add(m);
+                if (hasId && id > _lastId) _lastId = id;
+                added = true;
+            }
+            if (!added && !statusChanged) return;
+            TrimToMax();
+            Render();
+        }
+
+        bool ClearStatus()
+        {
+            if (string.IsNullOrEmpty(_status)) return false;
+            _status = "";
+            return true;
+        }
+
+        void TrimToMax()
+        {
+            if (_messages.Count > maxMessages)
+                _messages.RemoveRange(0, _messages.Count - maxMessages); // 최신 N개만 유지
+        }
+
+        static long MaxId(List<ChatMessage> list)
+        {
+            long max = -1, id;
+            foreach (var m in list)
+                if (long.TryParse(m.id, out id) && id > max) max = id;
+            return max;
+        }
+
+        static bool SameIds(List<ChatMessage> a, List<ChatMessage> b)
+        {
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++)
+                if (a[i].id != b[i].id) return false;
+            return true;
+        }
+
+        static IEnumerable<ChatMessage> SortOldestFirst(List<ChatMessage> list)
+        {
+            long dummy;
+            if (list.Count > 0 && list.All(m => long.TryParse(m.id, out dummy)))
+                return list.OrderBy(m => long.Parse(m.id));
+            return list; // 정렬 기준이 없으면 서버 순서(오래된 → 최신) 그대로
+        }
+
+        void SetError(string err)
+        {
+            if (err == _status) return; // 폴링 중 같은 오류가 반복되면 로그/화면 갱신 생략
+            Debug.LogWarning("[Chat] " + err);
+            _status = err;
+            Render();
+        }
+
+        void Fail(string err)
+        {
+            Debug.LogWarning("[Chat] " + err);
+            _fatal = err;
+            _status = "";
+            Render();
+        }
+
+        void Render()
+        {
+            // 사용자가 위로 스크롤해서 이전 메시지를 보고 있으면 자동으로 끌어내리지 않음
+            bool atBottom = messagesScroll == null
+                || messagesScroll.content == null || messagesScroll.viewport == null
+                || messagesScroll.content.rect.height <= messagesScroll.viewport.rect.height + 1f // 아직 스크롤할 만큼 길지 않음
+                || messagesScroll.verticalNormalizedPosition <= 0.01f;
+            bool scrollDown = atBottom || _stickToBottom;
+            _stickToBottom = false;
+
+            var sb = new StringBuilder();
+            string myHex = ColorUtility.ToHtmlStringRGB(myNameColor);
+            string otherHex = ColorUtility.ToHtmlStringRGB(otherNameColor);
+            string systemHex = ColorUtility.ToHtmlStringRGB(systemColor);
+            string errorHex = ColorUtility.ToHtmlStringRGB(errorColor);
+            string myId = myUserId >= 0 ? myUserId.ToString(CultureInfo.InvariantCulture) : null;
+
+            foreach (var m in _messages)
+            {
+                if (sb.Length > 0) sb.Append('\n');
+
+                if (m.IsSystem)
+                {
+                    // 시스템 메시지: 말머리 + 내용 전체를 녹색으로
+                    sb.Append("<color=#").Append(systemHex).Append(">")
+                      .Append(NoParse(systemPrefix + m.content))
+                      .Append("</color>");
+                    continue;
+                }
+
+                bool mine = myId != null && m.userId == myId;
+                sb.Append("<color=#").Append(mine ? myHex : otherHex).Append("><b>")
+                  .Append(NoParse(string.IsNullOrEmpty(m.nickname) ? "?" : m.nickname))
+                  .Append("</b></color>: ")
+                  .Append(NoParse(m.content));
+            }
+
+            AppendError(sb, _fatal, errorHex);
+            if (_status != _fatal) AppendError(sb, _status, errorHex);
+
+            messagesText.text = sb.ToString();
+
+            // 최신 메시지가 보이도록 아래로 스크롤
+            if (messagesScroll != null && scrollDown)
+            {
+                Canvas.ForceUpdateCanvases();
+                messagesScroll.verticalNormalizedPosition = 0f;
+            }
+        }
+
+        static void AppendError(StringBuilder sb, string err, string hex)
+        {
+            if (string.IsNullOrEmpty(err)) return;
+            if (sb.Length > 0) sb.Append('\n');
+            sb.Append("<color=#").Append(hex).Append(">").Append(NoParse(err)).Append("</color>");
+        }
+
+        static string NoParse(string s)
+        {
+            // 사용자가 입력한 <, > 등이 리치 텍스트 태그로 해석되지 않도록 처리 (닫는 태그는 대소문자·공백 무관하게 무력화)
+            return "<noparse>" + NoParseCloseTag.Replace(s ?? "", "</no parse>") + "</noparse>";
+        }
+    }
+}
