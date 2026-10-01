@@ -10,11 +10,14 @@ import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
+import com.WhoisntCitizen_server.lobby.event.RoomPlayerJoinedEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomPlayerLeftEvent;
 import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
 import com.WhoisntCitizen_server.member.entity.User;
 import com.WhoisntCitizen_server.member.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -34,6 +37,8 @@ public class RoomService {
     private final UserRepository userRepository;
     private final RoomLockManager roomLockManager;
     private final GameService gameService;
+    // 입장/퇴장 이벤트 발행 (채팅의 ChatLobbyEventListener가 받아 "OOO님이 입장했습니다." 시스템 메시지를 남긴다)
+    private final ApplicationEventPublisher eventPublisher;
 
     /*
      * memberId = JWT의 sub (로그인 계정 id)
@@ -59,6 +64,7 @@ public class RoomService {
         room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
 
         roomRepository.save(room);
+        eventPublisher.publishEvent(new RoomPlayerJoinedEvent(roomId, user.getId(), user.getNickname()));
         return RoomResponseDto.from(room);
     }
 
@@ -68,7 +74,7 @@ public class RoomService {
         User user = findUser(memberId);
 
         // 읽기 → 검사 → 추가 → 저장을 같은 방 잠금 안에서 처리 (동시 입장 시 덮어쓰기 방지)
-        return roomLockManager.withLock(roomId, () -> {
+        RoomResponseDto joined = roomLockManager.withLock(roomId, () -> {
             Room room = findRoom(roomId);
             recoverIfOrphaned(room);
 
@@ -82,13 +88,19 @@ public class RoomService {
             roomRepository.save(room);
             return RoomResponseDto.from(room);
         });
+
+        // 이벤트는 잠금 밖에서 발행한다. (채팅 저장 때문에 방 잠금을 오래 쥐지 않도록)
+        eventPublisher.publishEvent(new RoomPlayerJoinedEvent(roomId, user.getId(), user.getNickname()));
+        return joined;
     }
 
     // 방 나가기
     public void leaveRoom(Long roomId, Long memberId) {
-        Long userId = findUser(memberId).getId();
+        User user = findUser(memberId);
+        Long userId = user.getId();
 
-        roomLockManager.withLock(roomId, () -> {
+        // 반환값: 방이 남아 있으면 true, 마지막 사람이 나가 방이 삭제되면 false
+        boolean roomRemains = roomLockManager.withLock(roomId, () -> {
             Room room = findRoom(roomId);
             recoverIfOrphaned(room);
 
@@ -102,10 +114,16 @@ public class RoomService {
             // 아무도 없으면 방 삭제
             if (room.isEmpty()) {
                 roomRepository.delete(roomId);
-                return;
+                return false;
             }
             roomRepository.save(room);
+            return true;
         });
+
+        // 방이 삭제된 경우에는 볼 사람이 없으므로 퇴장 알림을 남기지 않는다.
+        if (roomRemains) {
+            eventPublisher.publishEvent(new RoomPlayerLeftEvent(roomId, userId, user.getNickname()));
+        }
     }
 
     // 게임 시작 (방장만)
