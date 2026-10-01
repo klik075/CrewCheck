@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 공개 직업 정보 API.
- * "이 게임에서 내 직업" 조회는 게임 상태에 속하므로 GameController(/api/games/{gameId}/me)가 담당한다.
+ * "이 게임에서 내 직업" 조회는 게임 상태에 속하므로 GameController(/api/v1/games/{gameId}/me)가 담당한다.
  */
 @RestController
 @RequestMapping("/api/v1")

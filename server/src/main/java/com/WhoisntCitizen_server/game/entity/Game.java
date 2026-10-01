@@ -24,6 +24,8 @@ public class Game {
 
     private final String gameId;
     private final String roomId;
+    // 전적(User.playCount/winCount)에 반영할 게임인지. 방에서 시작한 실제 게임만 true, 개발용 테스트 게임은 false
+    private final boolean recordStats;
     private final Map<Long, GamePlayer> players; // 입장 순서 유지
     private final Instant createdAt;
 
@@ -40,8 +42,13 @@ public class Game {
     private Faction winner;
 
     public Game(String roomId, List<GamePlayer> players) {
+        this(roomId, players, false);
+    }
+
+    public Game(String roomId, List<GamePlayer> players, boolean recordStats) {
         this.gameId = UUID.randomUUID().toString();
         this.roomId = roomId;
+        this.recordStats = recordStats;
         this.players = new LinkedHashMap<>();
         for (GamePlayer p : players) {
             this.players.put(p.getPlayerId(), p);
