@@ -71,7 +71,7 @@ namespace WhoisntCitizen.Game
         /// <summary>공개 안내(페이즈·밤 결과 요약·처형 결과·승리)를 이 화면이 직접 남길지. 실제 서버면 서버 채팅이 보낸다.</summary>
         private bool AnnouncePublic
         {
-            get { return controller != null && (controller.UsesFakeServer || announcePublicWithRealServer); }
+            get { return controller != null && (controller.IsFakeGame || announcePublicWithRealServer); }
         }
 
         // ================================================================ Unity

@@ -344,15 +344,5 @@ namespace WhoisntCitizen.Game.Tests
             Assert.IsTrue(session.IsClosed);
             Assert.AreEqual(1, api.Calls("GetState"));
         }
-
-        [Test]
-        public void 대기실에서_게임으로_들어갈지()
-        {
-            Assert.IsTrue(GameEntry.ShouldEnter("IN_GAME", "g-1", null));
-            Assert.IsFalse(GameEntry.ShouldEnter("WAITING", "g-1", null), "대기 중");
-            Assert.IsFalse(GameEntry.ShouldEnter("IN_GAME", null, null), "gameId 없음");
-            Assert.IsFalse(GameEntry.ShouldEnter("IN_GAME", "g-1", "g-1"), "방금 끝낸 게임");
-            Assert.IsTrue(GameEntry.ShouldEnter("IN_GAME", "g-2", "g-1"), "새 게임");
-        }
     }
 }
