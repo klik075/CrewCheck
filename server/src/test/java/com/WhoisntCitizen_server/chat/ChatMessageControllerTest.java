@@ -60,6 +60,7 @@ class ChatMessageControllerTest {
 
     static final RoleDefinition SAILOR = new RoleDefinition("CREW_SAILOR", "선원", Faction.CREW, null);
     static final RoleDefinition RAIDER = new RoleDefinition("PIRATE_RAIDER", "해적", Faction.PIRATE, null);
+    static final RoleDefinition PARROT = new RoleDefinition("PIRATE_PARROT", "앵무새", Faction.PIRATE, null);
 
     MockMvc mvc;
     ChatLobbyEventListener lobbyEvents;
@@ -354,5 +355,141 @@ class ChatMessageControllerTest {
                 .andExpect(jsonPath("$", hasSize(2)))
                 .andExpect(jsonPath("$[0].message").value("지수 아직 살아 있지?"))
                 .andExpect(jsonPath("$[1].message").value("나도 죽었어"));
+    }
+
+    // ---------- 게임 중 채팅: 밤에는 해적만 (전체 채팅에서 함께 진행) ----------
+
+    /** 철수(해적)·민수(해적)·지수(선원) 게임을 시작하고 phase로 바꾼다. */
+    private Game startPirateGame(GamePhase phase) {
+        Game game = new Game(String.valueOf(ROOM_ID), List.of(
+                new GamePlayer(CHULSOO_USER, "철수", RAIDER),
+                new GamePlayer(MINSU_USER, "민수", RAIDER),
+                new GamePlayer(JISU_USER, "지수", SAILOR)));
+        game.changePhase(phase, Instant.now().plusSeconds(60));
+        games.save(game);
+        room.startGame(game.getGameId());
+        return game;
+    }
+
+    @Test
+    void 밤에_해적이_입력한_채팅은_전체_채팅으로_오가지만_해적에게만_보인다() throws Exception {
+        startPirateGame(GamePhase.NIGHT);
+
+        send(ROOM_ID, "오늘 밤은 지수를 노리자")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.type").value("USER"))
+                .andExpect(jsonPath("$.nightChat").value(true));
+
+        loginAs(MINSU_MEMBER); // 다른 해적
+        getMessages()
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].type").value("USER"))
+                .andExpect(jsonPath("$[0].nightChat").value(true))
+                .andExpect(jsonPath("$[0].message").value("오늘 밤은 지수를 노리자"));
+
+        loginAs(JISU_MEMBER); // 선원
+        getMessages().andExpect(jsonPath("$", hasSize(0)));
+
+        loginAs(YOUNGHEE_MEMBER); // 게임 참가자 아님
+        getMessages().andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    void 밤에는_해적이_아닌_생존자는_채팅을_입력할_수_없다() throws Exception {
+        startPirateGame(GamePhase.NIGHT);
+
+        loginAs(JISU_MEMBER);
+        send(ROOM_ID, "누구 있어요?")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(ChatMessageService.NIGHT_BLOCKED_MESSAGE));
+
+        loginAs(CHULSOO_MEMBER);
+        getMessages().andExpect(jsonPath("$", hasSize(0))); // 저장되지 않음
+    }
+
+    @Test
+    void 낮에는_누구나_입력하고_모두에게_보인다() throws Exception {
+        startPirateGame(GamePhase.DAY);
+
+        send(ROOM_ID, "저는 선원입니다")
+                .andExpect(jsonPath("$.type").value("USER"))
+                .andExpect(jsonPath("$.nightChat").value(false));
+        loginAs(JISU_MEMBER);
+        send(ROOM_ID, "저도요").andExpect(status().isCreated());
+
+        getMessages().andExpect(jsonPath("$", hasSize(2)));
+    }
+
+    @Test
+    void 해적은_밤에_오간_채팅을_낮에도_사망한_뒤에도_읽을_수_있고_선원은_낮에도_읽을_수_없다() throws Exception {
+        Game game = startPirateGame(GamePhase.NIGHT);
+        send(ROOM_ID, "밤의 작전");
+
+        game.changePhase(GamePhase.DAY, Instant.now().plusSeconds(60));
+        game.getPlayer(MINSU_USER).kill();
+
+        loginAs(MINSU_MEMBER); // 낮 + 사망한 해적
+        getMessages()
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].message").value("밤의 작전"));
+
+        loginAs(JISU_MEMBER); // 낮이 되어도 선원에게는 보이지 않는다
+        getMessages().andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    void 사망자는_밤에도_사망자_채팅을_할_수_있다() throws Exception {
+        Game game = startPirateGame(GamePhase.NIGHT);
+        game.getPlayer(MINSU_USER).kill(); // 사망한 해적
+        game.getPlayer(JISU_USER).kill();  // 사망한 선원
+
+        loginAs(JISU_MEMBER);
+        send(ROOM_ID, "밤에도 말할 수 있네").andExpect(jsonPath("$.type").value("DEAD"));
+        loginAs(MINSU_MEMBER);
+        send(ROOM_ID, "나 죽었어").andExpect(jsonPath("$.type").value("DEAD"));
+
+        loginAs(CHULSOO_MEMBER); // 살아 있는 해적에게는 사망자 채팅이 보이지 않는다
+        getMessages().andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    void 앵무새는_접선한_뒤부터_밤에_입력할_수_있고_접선_뒤의_밤_채팅만_읽는다() throws Exception {
+        Game game = new Game(String.valueOf(ROOM_ID), List.of(
+                new GamePlayer(CHULSOO_USER, "철수", RAIDER),
+                new GamePlayer(MINSU_USER, "민수", PARROT),
+                new GamePlayer(JISU_USER, "지수", SAILOR)));
+        game.changePhase(GamePhase.NIGHT, Instant.now().plusSeconds(60));
+        games.save(game);
+        room.startGame(game.getGameId());
+
+        send(ROOM_ID, "앵무새는 누구지?").andExpect(status().isCreated());
+
+        // 접선 전: 밤 채팅이 보이지 않고 입력도 할 수 없다
+        loginAs(MINSU_MEMBER);
+        getMessages().andExpect(jsonPath("$", hasSize(0)));
+        send(ROOM_ID, "조용한 밤이네요").andExpect(status().isForbidden());
+
+        Thread.sleep(5);
+        game.getPlayer(MINSU_USER).markContacted(Instant.now());
+        Thread.sleep(5);
+
+        // 접선 후: 입력할 수 있고, 접선 뒤의 밤 채팅만 읽는다
+        send(ROOM_ID, "접선 완료").andExpect(status().isCreated());
+        getMessages()
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].message").value("접선 완료"));
+
+        loginAs(CHULSOO_MEMBER); // 해적은 처음부터 모든 밤 채팅을 읽는다
+        getMessages().andExpect(jsonPath("$", hasSize(2)));
+    }
+
+    @Test
+    void 게임이_끝나면_밤에_오간_채팅은_보이지_않는다() throws Exception {
+        startPirateGame(GamePhase.NIGHT);
+        send(ROOM_ID, "밤의 작전");
+
+        room.finishGame();
+
+        getMessages().andExpect(jsonPath("$", hasSize(0)));
     }
 }

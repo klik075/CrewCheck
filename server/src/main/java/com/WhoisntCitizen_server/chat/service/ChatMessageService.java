@@ -8,6 +8,7 @@ import com.WhoisntCitizen_server.chat.repository.ChatMessageRepository;
 import com.WhoisntCitizen_server.common.exception.ForbiddenException;
 import com.WhoisntCitizen_server.common.exception.NotFoundException;
 import com.WhoisntCitizen_server.game.entity.Game;
+import com.WhoisntCitizen_server.game.entity.GamePhase;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.lobby.domain.room.Room;
@@ -29,11 +30,14 @@ import java.util.List;
  *  - memberId = JWT의 sub → member.User(프로필)로 바꿔 userId로 사용
  *  - 닉네임   = 로비 방 참가자(RoomPlayer)의 nickname
  *
- * 게임 중 채팅 규칙
- *  - 사망자 채팅: 진행 중인 게임에서 사망한 플레이어가 보낸 메시지는 DEAD로 저장하고,
- *    진영·직업과 관계없이 같은 게임에서 사망한 플레이어에게만 보여 줍니다. (살아 있는 플레이어·관전자에게는 숨김)
- *    사망자는 자신이 사망한 뒤에 오간 사망자 채팅만 볼 수 있습니다. (먼저 죽은 사람들끼리 나눈 대화는 볼 수 없음)
- *    게임이 끝나면(방이 대기 상태로 돌아가면) 그 게임의 사망자 채팅은 아무에게도 보이지 않습니다.
+ * 게임 중 채팅 규칙 (게임이 끝나 방이 대기 상태로 돌아가면 그 게임의 사망자·해적 채팅은 아무에게도 보이지 않습니다)
+ *  - 사망자 채팅(DEAD): 진행 중인 게임에서 사망한 플레이어가 보낸 메시지.
+ *    진영·직업과 관계없이 같은 게임의 사망자에게만 보이고, 사망자는 자신이 사망한 뒤에 오간 대화만 볼 수 있습니다.
+ *  - 밤 채팅 규칙: 밤(NIGHT)에는 살아 있는 해적만 전체 채팅에 입력할 수 있고(그 밖의 생존자는 403),
+ *    밤에 입력한 채팅(pirateOnly)은 해적에게만 보입니다. 해적은 낮이든 사망한 뒤든 언제든 읽을 수 있습니다.
+ *    해적 여부는 Game.knownPirateAllies와 같은 규칙입니다: 해적은 처음부터, 앵무새는 접선한 뒤부터 해적으로 취급하고
+ *    앵무새는 접선한 뒤에 오간 밤 채팅만 읽을 수 있습니다. (isPirate()를 쓰면 접선 전 앵무새가 드러남)
+ *  - 사망자 규칙이 먼저입니다: 사망자는 밤에도 사망자 채팅을 할 수 있고, 사망한 해적이 밤에 보내면 사망자 채팅이 됩니다.
  */
 @Service
 public class ChatMessageService {
@@ -43,6 +47,21 @@ public class ChatMessageService {
 
     /** 숨긴 메시지 때문에 결과가 비지 않도록 더 읽어 올 때, 한 번 조회에서 읽는 최대 메시지 수 (방당 보관 개수와 같은 규모) */
     static final int MAX_SCAN = 1000;
+
+    /** 밤에 해적이 아닌 생존자가 채팅을 보냈을 때 (403) */
+    public static final String NIGHT_BLOCKED_MESSAGE = "밤에는 해적만 채팅할 수 있습니다.";
+
+    /** 게임 중 보낸 메시지에 적용되는 규칙 */
+    private enum Rule {
+        /** 모두에게 보이는 채팅 */
+        PUBLIC,
+        /** 사망자 채팅 (사망자에게만) */
+        DEAD,
+        /** 밤에 해적이 보낸 채팅 (해적에게만) */
+        NIGHT_PIRATE,
+        /** 밤이라 보낼 수 없음 (해적이 아닌 생존자) */
+        NIGHT_BLOCKED
+    }
 
     private final ChatMessageRepository repository;
     private final LobbyRoomRepository roomRepository;
@@ -63,7 +82,7 @@ public class ChatMessageService {
      * 채팅 조회. 오래된 순(messageId 오름차순)으로 반환합니다.
      * - afterId가 없으면: 최신 limit개
      * - afterId가 있으면: 그 messageId 이후에 들어온 메시지 최대 limit개 (폴링용)
-     * - 조회하는 사람(memberId)에게 보이지 않는 메시지(사망자 채팅 등)는 빼고, 그만큼 더 읽어서 limit개를 채웁니다.
+     * - 조회하는 사람(memberId)에게 보이지 않는 메시지(사망자·해적 채팅)는 빼고, 그만큼 더 읽어서 limit개를 채웁니다.
      * 로비 방이 없으면 404
      */
     public List<ChatMessageSummary> getMessages(long roomId, Long memberId, Long afterId, Integer limit) {
@@ -81,7 +100,8 @@ public class ChatMessageService {
      * 채팅 전송
      * 404: 로비 방이 존재하지 않음 / 403: 현재 채팅할 수 없는 플레이어(로비 방 참가자가 아님)
      * 400: 프로필(User)이 없는 계정 (로비와 동일)
-     * 진행 중인 게임에서 사망한 플레이어가 보내면 사망자 채팅(DEAD)으로 저장합니다.
+     * 403: 밤에는 해적만 채팅할 수 있음 (사망자는 밤에도 사망자 채팅 가능)
+     * 게임 중이면 보낸 사람의 상태에 따라 정해집니다: 사망자 → DEAD, 밤의 해적 → 해적에게만 보이는 전체 채팅, 그 밖 → 전체 채팅
      */
     public ChatMessageResponse send(long roomId, Long memberId, String message) {
         Room room = getRoom(roomId);
@@ -94,14 +114,15 @@ public class ChatMessageService {
                 .orElseThrow(() -> new ForbiddenException("현재 채팅할 수 없는 플레이어입니다. (방 참가자가 아님)"));
 
         Game game = activeGame(room);
-        if (game != null && isDeadIn(game, player.getUserId())) {
-            ChatMessage saved = repository.save(roomId, MessageType.DEAD,
-                    player.getUserId(), player.getNickname(), message.trim(), game.getGameId());
-            return ChatMessageResponse.from(saved);
+        Rule rule = game == null ? Rule.PUBLIC : ruleOf(game, player.getUserId());
+        if (rule == Rule.NIGHT_BLOCKED) {
+            throw new ForbiddenException(NIGHT_BLOCKED_MESSAGE);
         }
 
-        ChatMessage saved = repository.save(roomId, MessageType.USER,
-                player.getUserId(), player.getNickname(), message.trim());
+        MessageType type = rule == Rule.DEAD ? MessageType.DEAD : MessageType.USER;
+        String gameId = rule == Rule.PUBLIC ? null : game.getGameId();
+        ChatMessage saved = repository.save(roomId, type,
+                player.getUserId(), player.getNickname(), message.trim(), gameId, rule == Rule.NIGHT_PIRATE);
         return ChatMessageResponse.from(saved);
     }
 
@@ -154,16 +175,18 @@ public class ChatMessageService {
 
     /**
      * 조회하는 사람 기준으로 메시지가 보이는지 판단합니다.
-     * 일반·시스템 메시지는 모두에게 보입니다. 사망자 채팅은 그 게임이 진행 중이고, 조회하는 사람이 그 게임에서 사망했으며,
-     * 그 사람이 사망한 뒤에 보낸 메시지일 때만 보입니다.
-     * (조회하는 사람의 프로필·게임 상태는 사망자 채팅이 있을 때만 확인해 DB 조회를 줄입니다)
+     *  - 일반·시스템 메시지: 모두에게 보임
+     *  - 사망자 채팅: 같은 진행 중 게임에서 사망했고, 사망한 뒤에 보낸 메시지
+     *  - 밤에 해적이 보낸 채팅: 같은 진행 중 게임의 해적이고, 해적으로 취급된 뒤에 보낸 메시지 (해적은 처음부터, 앵무새는 접선 시각부터)
+     * (조회하는 사람의 프로필·게임 상태는 숨김 대상 메시지가 있을 때만 확인해 DB 조회를 줄입니다)
      */
     private final class Visibility {
         private final Room room;
         private final Long memberId;
         private boolean resolved;
-        private String deadInGameId; // 조회하는 사람이 사망한 진행 중 게임 id (아니면 null)
-        private Instant diedAt;      // 그 게임에서 조회하는 사람이 사망한 시각
+        private String gameId;        // 조회하는 사람이 참가 중인 진행 중 게임 id (아니면 null)
+        private Instant diedAt;       // 그 게임에서 사망한 시각 (살아 있으면 null)
+        private Instant pirateSince;  // 밤 채팅을 읽을 수 있게 된 시각 (해적이 아니면 null)
 
         Visibility(Room room, Long memberId) {
             this.room = room;
@@ -171,11 +194,13 @@ public class ChatMessageService {
         }
 
         boolean canSee(ChatMessage m) {
-            if (m.type() != MessageType.DEAD) return true;
+            boolean dead = m.type() == MessageType.DEAD;
+            boolean pirateOnly = m.visibleToPiratesOnly();
+            if (!dead && !pirateOnly) return true;
             resolve();
-            if (deadInGameId == null || !deadInGameId.equals(m.gameId())) return false;
-            // 내가 죽기 전에 다른 사망자들이 나눈 대화는 보지 않는다
-            return m.createdAt() != null && !toInstant(m).isBefore(diedAt);
+            if (gameId == null || !gameId.equals(m.gameId()) || m.createdAt() == null) return false;
+            Instant since = dead ? diedAt : pirateSince;
+            return since != null && !toInstant(m).isBefore(since);
         }
 
         private void resolve() {
@@ -186,15 +211,17 @@ public class ChatMessageService {
             if (game == null) return;
             Long userId = userRepository.findByMemberId(memberId).map(User::getId).orElse(null);
             if (userId == null) return;
-            Instant died = diedAtIn(game, userId);
-            if (died != null) {
-                deadInGameId = game.getGameId();
-                diedAt = died;
+            synchronized (game) {
+                GamePlayer me = findPlayer(game, userId);
+                if (me == null) return; // 게임 참가자가 아님 (관전자 등)
+                gameId = game.getGameId();
+                if (!me.isAlive()) diedAt = me.getDiedAt() != null ? me.getDiedAt() : Instant.EPOCH;
+                pirateSince = pirateChatSince(me);
             }
         }
     }
 
-    /** 메시지 createdAt(서버 기본 시간대의 LocalDateTime)을 사망 시각과 비교할 수 있게 Instant로 바꿉니다. */
+    /** 메시지 createdAt(서버 기본 시간대의 LocalDateTime)을 사망·접선 시각과 비교할 수 있게 Instant로 바꿉니다. */
     private static Instant toInstant(ChatMessage m) {
         return m.createdAt().atZone(ZoneId.systemDefault()).toInstant();
     }
@@ -211,26 +238,39 @@ public class ChatMessageService {
         }
     }
 
-    /** 게임 참가자이고 사망했는지. (게임에 참가하지 않은 사람은 false) */
-    private static boolean isDeadIn(Game game, Long userId) {
+    /**
+     * 게임 중 보낸 메시지의 규칙
+     *  - 사망자 → DEAD (밤에도 가능)
+     *  - 밤: 해적 → NIGHT_PIRATE, 그 밖(게임 참가자가 아닌 사람 포함) → NIGHT_BLOCKED
+     *  - 그 밖 → PUBLIC
+     */
+    private static Rule ruleOf(Game game, Long userId) {
         synchronized (game) {
-            for (GamePlayer p : game.getPlayers()) {
-                if (p.getPlayerId().equals(userId)) return !p.isAlive();
+            GamePlayer p = findPlayer(game, userId);
+            if (p != null && !p.isAlive()) return Rule.DEAD;
+            if (game.getPhase() == GamePhase.NIGHT) {
+                return p != null && pirateChatSince(p) != null ? Rule.NIGHT_PIRATE : Rule.NIGHT_BLOCKED;
             }
-            return false;
+            return Rule.PUBLIC;
         }
     }
 
-    /** 게임에서 사망한 시각. 살아 있거나 참가자가 아니면 null */
-    private static Instant diedAtIn(Game game, Long userId) {
-        synchronized (game) {
-            for (GamePlayer p : game.getPlayers()) {
-                if (p.getPlayerId().equals(userId)) {
-                    return p.isAlive() ? null : (p.getDiedAt() != null ? p.getDiedAt() : Instant.EPOCH);
-                }
-            }
-            return null;
+    /**
+     * 밤 채팅을 읽을 수 있게 된 시각(해적으로 취급되기 시작한 시각). 해적이 아니면 null.
+     * 해적은 게임 시작부터(EPOCH), 앵무새는 해적과 접선한 시각부터. (Game.knownPirateAllies와 같은 규칙)
+     */
+    private static Instant pirateChatSince(GamePlayer p) {
+        if (p.isRaider()) return Instant.EPOCH;
+        if (p.isParrot() && p.isContacted()) return p.getContactedAt();
+        return null;
+    }
+
+    /** 게임 참가자. 없으면 null (호출하는 쪽에서 game을 잠근 상태) */
+    private static GamePlayer findPlayer(Game game, Long userId) {
+        for (GamePlayer p : game.getPlayers()) {
+            if (p.getPlayerId().equals(userId)) return p;
         }
+        return null;
     }
 
     private Room getRoom(long roomId) {
