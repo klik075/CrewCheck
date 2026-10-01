@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.exception.GameNotFoundException;
 import com.WhoisntCitizen_server.common.exception.GameRuleException;
+import com.WhoisntCitizen_server.game.dto.DevRoleView;
 import com.WhoisntCitizen_server.game.dto.GameParticipant;
 import com.WhoisntCitizen_server.game.dto.GameResultResponse;
 import com.WhoisntCitizen_server.game.dto.GameStateResponse;
@@ -74,9 +75,17 @@ public class GameService {
 
         List<RoleDefinition> roles = roleAssigner.assign(participants.size());
         List<GamePlayer> players = new ArrayList<>();
+
+        // for (int i = 0; i < entries.size(); i++) {
+        //     RoleDefinition role = roles.get(i);
+        //     // 원숭이는 여기서 위장 직업이 정해지고 게임 끝까지 바뀌지 않는다.
+        //     players.add(new GamePlayer(entries.get(i).playerId(), entries.get(i).nickname(),
+        //             role, roleAssigner.shownRoleOf(role)));
+
         for (int i = 0; i < participants.size(); i++) {
             GameParticipant p = participants.get(i);
-            players.add(new GamePlayer(p.userId(), p.nickname(), roles.get(i)));
+            RoleDefinition role = roles.get(i);
+            players.add(new GamePlayer(p.userId(), p.nickname(), role, roleAssigner.shownRoleOf(role)));
         }
 
         Game game = gameRepository.save(new Game(roomId, players, recordStats));
@@ -100,11 +109,10 @@ public class GameService {
         Game game = findGame(gameId);
         synchronized (game) {
             GamePlayer me = game.getPlayer(playerId);
-            List<Long> teammates = me.isPirate()
-                    ? game.getPlayers().stream()
-                        .filter(p -> p.isPirate() && !p.getPlayerId().equals(playerId))
-                        .map(GamePlayer::getPlayerId).toList()
-                    : List.of();
+            // isPirate()로 거르면 접선 전 앵무새가 드러나므로 접선 규칙이 들어간 knownPirateAllies를 쓴다.
+            List<Long> teammates = game.knownPirateAllies(me).stream()
+                    .map(GamePlayer::getPlayerId)
+                    .toList();
             return MyRoleResponse.of(me, teammates);
         }
     }
@@ -140,6 +148,14 @@ public class GameService {
                     }
                 })
                 .orElse(false);
+    }
+
+    /** 개발용(local 전용 API에서만 호출): 전원의 실제 직업과 보이는 직업. */
+    public List<DevRoleView> getDevRoles(String gameId) {
+        Game game = findGame(gameId);
+        synchronized (game) {
+            return game.getPlayers().stream().map(DevRoleView::from).toList();
+        }
     }
 
     private Game findGame(String gameId) {

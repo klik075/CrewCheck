@@ -1,16 +1,34 @@
 package com.WhoisntCitizen_server.night.dto;
 
+import com.WhoisntCitizen_server.jobs.domain.ActionCode;
+import com.WhoisntCitizen_server.jobs.domain.Faction;
+import com.WhoisntCitizen_server.night.entity.ReportType;
+
+import java.util.List;
+
 /**
  * 4. 밤 결과 공개.
- * investigation은 요청자가 경찰이고 그날 밤 조사했을 때만 채워진다.
+ * reports는 요청자 본인이 그날 밤 받은 결과만 담는다. 없으면 빈 목록.
  */
 public record NightResultResponse(
         int day,
         Long killedPlayerId,
         String killedNickname,
         boolean protectedByDoctor,
-        Investigation investigation
+        List<ReportView> reports
 ) {
-    public record Investigation(Long targetId, String targetNickname, boolean mafia) {
+    /**
+     * type별로 채워지는 필드. 나머지는 null(목록은 빈 목록).
+     * FACTION → faction, CORPSE_ROLE → roleCode/roleName, VISITORS → players, ACTIONS → actions
+     */
+    public record ReportView(ReportType type, Long targetId, String targetNickname,
+                             Faction faction, String roleCode, String roleName,
+                             List<PlayerRef> players, List<ActionView> actions) {
+    }
+
+    public record PlayerRef(Long playerId, String nickname) {
+    }
+
+    public record ActionView(ActionCode actionCode, Long targetId, String targetNickname) {
     }
 }
