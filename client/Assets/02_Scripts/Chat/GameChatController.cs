@@ -22,6 +22,7 @@ namespace WhoisntCitizen.Chat
     ///  - pollInterval초마다 afterId 이후 새 메시지만 받아 기록 뒤에 붙이고, N회마다 전체 목록으로 동기화
     ///  - 서버 시스템 메시지(입장·퇴장, 게임 진행 안내, 공지) → [시스템] + Unity 콘솔 [Chat][시스템]
     ///  - 내 화면 전용 안내(ChatNotice: 로그인, 방 입장, 연결 상태 등) → [안내] + Unity 콘솔 [Chat][안내]
+    ///  - 사망자 채팅(type=DEAD, 서버가 사망자에게만 보내 줌) → 닉네임·내용 모두 회색
     ///  - 오류는 채팅용 문장으로 바꿔 표시하고 콘솔에는 원문도 남김. 401이면 다시 로그인
     ///  - SendSystemMessage(): 공지 전송 (에디터 창 Tools > Chat > System Message Console)
     ///
@@ -64,6 +65,8 @@ namespace WhoisntCitizen.Chat
         public string systemPrefix = "[시스템] ";
         public Color localNoticeColor = new Color(0.62f, 0.91f, 0.63f);
         public string localNoticePrefix = "[안내] ";
+        [Tooltip("사망자 채팅(type=DEAD) 글자색. 닉네임과 내용 모두 이 색으로 표시합니다")]
+        public Color deadColor = new Color(0.6f, 0.6f, 0.6f);
 
         [Header("Console (Unity 콘솔 연동)")]
         public bool logSystemMessagesToConsole = true;
@@ -493,6 +496,13 @@ namespace WhoisntCitizen.Chat
                 if (m.IsSystem)
                 {
                     lines.Add(Colored(systemPrefix + m.content, systemColor));
+                }
+                else if (m.IsDead)
+                {
+                    // 사망자 채팅: 서버가 사망자에게만 보내 준다. 내 것·남의 것 구분 없이 전부 회색
+                    lines.Add("<color=#" + ColorUtility.ToHtmlStringRGB(deadColor) + "><b>"
+                              + NoParse(string.IsNullOrEmpty(m.nickname) ? "?" : m.nickname)
+                              + "</b>: " + NoParse(m.content) + "</color>");
                 }
                 else
                 {

@@ -13,7 +13,7 @@ namespace WhoisntCitizen.Chat
     public class ChatMessage
     {
         public string id;         // messageId
-        public string type;       // USER(일반) / SYSTEM(입장·퇴장 알림, 공지)
+        public string type;       // USER(일반) / SYSTEM(입장·퇴장 알림, 공지) / DEAD(사망자 채팅: 서버가 사망자에게만 보내 줌)
         public string userId;     // 시스템 메시지는 "0" (서버 ChatMessage.SYSTEM_USER_ID)
         public string nickname;   // 시스템 메시지는 "SYSTEM"
         public string content;    // message
@@ -22,6 +22,12 @@ namespace WhoisntCitizen.Chat
         public bool IsSystem
         {
             get { return string.Equals(type, "SYSTEM", StringComparison.OrdinalIgnoreCase); }
+        }
+
+        /// 게임 중 사망자가 보낸 메시지. 서버가 같은 게임의 사망자에게만 내려 주므로 받은 것은 그대로 (회색으로) 표시하면 됩니다.
+        public bool IsDead
+        {
+            get { return string.Equals(type, "DEAD", StringComparison.OrdinalIgnoreCase); }
         }
     }
 

@@ -82,6 +82,8 @@ namespace WhoisntCitizen.Chat
         public Color localNoticeColor = new Color(0.62f, 0.91f, 0.63f);
         [Tooltip("내 화면 전용 안내 앞에 붙는 말머리")]
         public string localNoticePrefix = "[안내] ";
+        [Tooltip("사망자 채팅(type=DEAD) 글자색. 닉네임과 내용 모두 이 색으로 표시합니다")]
+        public Color deadColor = new Color(0.6f, 0.6f, 0.6f);
 
         [Header("Console (Unity 콘솔 연동)")]
         [Tooltip("채팅창에 새로 표시되는 시스템 메시지를 Unity 콘솔에도 출력")]
@@ -706,6 +708,17 @@ namespace WhoisntCitizen.Chat
                     // 시스템 메시지: 말머리 + 내용 전체를 녹색으로
                     sb.Append("<color=#").Append(systemHex).Append(">")
                       .Append(NoParse(systemPrefix + m.content))
+                      .Append("</color>");
+                    continue;
+                }
+
+                if (m.IsDead)
+                {
+                    // 사망자 채팅: 서버가 사망자에게만 보내 준다. 닉네임과 내용 모두 회색
+                    sb.Append("<color=#").Append(ColorUtility.ToHtmlStringRGB(deadColor)).Append("><b>")
+                      .Append(NoParse(string.IsNullOrEmpty(m.nickname) ? "?" : m.nickname))
+                      .Append("</b>: ")
+                      .Append(NoParse(m.content))
                       .Append("</color>");
                     continue;
                 }
