@@ -1,8 +1,10 @@
 package com.WhoisntCitizen_server.member.service;
 
+import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
 import com.WhoisntCitizen_server.game.event.GameEndedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +18,7 @@ import org.springframework.stereotype.Component;
 public class UserStatsListener {
 
     private final UserStatsService userStatsService;
+    private final ApplicationEventPublisher eventPublisher; // 채팅 안내 (RoomNoticeEvent)
 
     @EventListener
     public void onGameEnded(GameEndedEvent event) {
@@ -28,6 +31,9 @@ public class UserStatsListener {
         try {
             int updated = userStatsService.recordGameResult(event);
             log.info("[{}] 전적 저장 완료: {}명 (승리: {})", event.gameId(), updated, event.winner());
+            if (updated > 0) {
+                eventPublisher.publishEvent(new RoomNoticeEvent(event.roomId(), "이번 게임의 전적이 저장되었습니다."));
+            }
         } catch (RuntimeException e) {
             log.error("[{}] 전적 저장 실패", event.gameId(), e);
         }

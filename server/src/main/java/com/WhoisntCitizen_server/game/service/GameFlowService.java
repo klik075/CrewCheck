@@ -1,6 +1,7 @@
 package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.config.GamePhaseProperties;
+import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
 import com.WhoisntCitizen_server.game.event.GameEndedEvent;
@@ -93,8 +94,14 @@ public class GameFlowService {
                 result.killedPlayerId(), result.protectedByDoctor());
 
         // 마피아의 처치로 승패가 갈릴 수 있으므로 밤 결과 직후에도 승리 조건을 검사한다.
-        if (!finishIfWinnerDecided(game)) {
+        // 채팅 안내 순서: 끝나면 "밤 결과 → 승리", 이어지면 "날이 밝았습니다 → 밤 결과"
+        String nightMessage = nightResultMessage(game, result);
+        if (winConditionChecker.check(game).isPresent()) {
+            announce(game, nightMessage);
+            finishIfWinnerDecided(game);
+        } else {
             moveTo(game, GamePhase.NIGHT_RESULT, phaseProps.nightResultSeconds());
+            announce(game, nightMessage);
         }
     }
 
@@ -124,9 +131,15 @@ public class GameFlowService {
         log.info("[{}] day {} 처형 결과: executed={}, tie={}", game.getGameId(), game.getDay(),
                 result.executedPlayerId(), result.tie());
 
-        if (!finishIfWinnerDecided(game)) {                         // 8. 승리 조건 검사
+        // 채팅 안내 순서: 끝나면 "처형 결과 → 승리", 이어지면 "투표가 끝났습니다 → 처형 결과"
+        String executionMessage = executionResultMessage(game, result);
+        if (winConditionChecker.check(game).isPresent()) {        // 8. 승리 조건 검사
+            announce(game, executionMessage);
+            finishIfWinnerDecided(game);
+        } else {
             // 처형 결과를 잠깐 보여준 뒤 타이머 종료 시 다음 밤으로 (9. 반복)
             moveTo(game, GamePhase.EXECUTION, phaseProps.executionSeconds());
+            announce(game, executionMessage);
         }
     }
 
@@ -139,6 +152,7 @@ public class GameFlowService {
         game.end(winner.get());
         gameRepository.save(game);
         log.info("[{}] 게임 종료. 승리: {}", game.getGameId(), winner.get());
+        announce(game, winMessage(winner.get()));
         publishGameEnded(game);
         scheduleCleanup(game.getGameId());
         return true;
@@ -183,6 +197,7 @@ public class GameFlowService {
         gameRepository.save(game);
         scheduleTimeout(game.getGameId(), game.getPhaseVersion(), endsAt);
         log.info("[{}] -> {} (day {}, v{})", game.getGameId(), next, game.getDay(), game.getPhaseVersion());
+        announce(game, phaseMessage(game, next, seconds));
     }
 
     //페이즈 스케줄 등록
@@ -204,6 +219,10 @@ public class GameFlowService {
             }
             try {
                 log.info("[{}] {} 종료", game.getGameId(), game.getPhase());
+                // 전원이 제출하면 일찍 끝나는 밤/투표만 시간 초과를 알린다. (나머지 페이즈는 항상 시간으로 넘어감)
+                if (game.getPhase() == GamePhase.NIGHT || game.getPhase() == GamePhase.VOTE) {
+                    announce(game, "시간이 다 되어 다음 단계로 넘어갑니다.");
+                }
                 switch (game.getPhase()) {
                     case NIGHT -> doResolveNight(game);
                     case NIGHT_RESULT -> enterDay(game);
@@ -216,5 +235,63 @@ public class GameFlowService {
                 log.error("[{}] 페이즈 전환 실패 (phase={})", gameId, game.getPhase(), e);
             }
         }
+    }
+
+    // ---------- 채팅 안내 (방 채팅창 시스템 메시지) ----------
+
+    /**
+     * 방 채팅창에 시스템 메시지로 남길 안내 문장을 발행한다. 채팅 모듈(ChatNoticeEventListener)이 받아 저장한다.
+     * 안내가 실패해도 게임 진행은 계속되도록 예외를 삼킨다.
+     */
+    private void announce(Game game, String message) {
+        if (message == null) {
+            return;
+        }
+        try {
+            eventPublisher.publishEvent(new RoomNoticeEvent(game.getRoomId(), message));
+        } catch (RuntimeException e) {
+            log.warn("[{}] 채팅 안내 발행 실패: {}", game.getGameId(), e.getMessage());
+        }
+    }
+
+    private static String phaseMessage(Game game, GamePhase phase, int seconds) {
+        return switch (phase) {
+            case NIGHT -> game.getDay() + "일차 밤이 되었습니다. " + seconds + "초 동안 능력을 사용해 주세요.";
+            case NIGHT_RESULT -> "날이 밝았습니다. 지난밤의 결과를 확인해 주세요.";
+            case DAY -> "낮이 되었습니다. " + seconds + "초 동안 자유롭게 토론해 주세요.";
+            case VOTE -> "투표 시간입니다. " + seconds + "초 안에 처형할 사람을 선택해 주세요.";
+            case EXECUTION -> "투표가 끝났습니다. 처형 결과를 확인해 주세요.";
+            default -> null;
+        };
+    }
+
+    private static String nightResultMessage(Game game, NightResult result) {
+        if (result.killedPlayerId() != null) {
+            return "지난밤 " + nicknameOf(game, result.killedPlayerId()) + "님이 해적의 습격을 받아 사망했습니다.";
+        }
+        if (result.protectedByDoctor()) {
+            return "지난밤 해적의 습격이 있었지만, 선의의 보호로 아무도 죽지 않았습니다.";
+        }
+        return "지난밤은 아무 일도 일어나지 않았습니다.";
+    }
+
+    private static String executionResultMessage(Game game, ExecutionResult result) {
+        if (result.executedPlayerId() != null) {
+            return "투표 결과 " + nicknameOf(game, result.executedPlayerId()) + "님이 처형되었습니다.";
+        }
+        if (result.tie()) {
+            return "투표가 동률로 끝나 아무도 처형되지 않았습니다.";
+        }
+        return "아무도 투표하지 않아 처형이 진행되지 않았습니다.";
+    }
+
+    private static String winMessage(Faction winner) {
+        return winner == Faction.CREW
+                ? "모든 해적이 사라졌습니다. 선원 팀이 승리했습니다!"
+                : "해적이 배를 장악했습니다. 해적 팀이 승리했습니다!";
+    }
+
+    private static String nicknameOf(Game game, Long playerId) {
+        return game.getPlayer(playerId).getNickname();
     }
 }

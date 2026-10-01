@@ -37,3 +37,7 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### postman
+postman/collections/
+postman/globals/
