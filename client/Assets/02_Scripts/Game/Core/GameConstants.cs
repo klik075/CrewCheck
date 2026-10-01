@@ -40,6 +40,8 @@ namespace WhoisntCitizen.Game
         public const string CorpseRole = "CORPSE_ROLE"; // roleCode, roleName
         public const string Visitors = "VISITORS";      // players
         public const string Actions = "ACTIONS";        // actions
+        public const string Block = "BLOCK";            // 갑판장: 대상을 차단함
+        public const string Blocked = "BLOCKED";        // 갑판장에게 차단당해 능력이 무효 (targetId 없음)
     }
 
     /// <summary>직업 코드 (roles.code). 이름은 서버가 roleName으로 내려주므로 아이콘·색 등에만 쓴다.</summary>

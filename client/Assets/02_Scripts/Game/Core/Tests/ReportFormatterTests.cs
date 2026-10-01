@@ -41,7 +41,7 @@ namespace WhoisntCitizen.Game.Tests
         {
             var r = GameJson.FromJson<NightResultDto>(GameJsonFixtures.NightResultKilledFaction);
 
-            CollectionAssert.AreEqual(new[] { "철수님은 해적 진영입니다." }, ReportFormatter.NightReports(r));
+            CollectionAssert.AreEqual(new[] { "철수님을 조사했습니다. 철수님은 해적 진영입니다." }, ReportFormatter.NightReports(r));
         }
 
         [Test]
@@ -51,9 +51,9 @@ namespace WhoisntCitizen.Game.Tests
 
             CollectionAssert.AreEqual(new[]
             {
-                "영희님을 찾아온 사람: 철수님, 민수님",
-                "민수님이 영희님을 보호했습니다.",
-                "지훈님의 직업은 원숭이입니다."
+                "영희님을 감시했습니다. 영희님을 찾아온 사람: 철수님, 민수님",
+                "민수님을 관찰했습니다.\n민수님이 영희님을 보호했습니다.",
+                "지훈님의 시체를 확인했습니다. 지훈님의 직업은 원숭이입니다."
             }, ReportFormatter.NightReports(r));
         }
 
@@ -63,8 +63,18 @@ namespace WhoisntCitizen.Game.Tests
             var visitors = new ReportDto { type = ReportTypes.Visitors, targetId = 12, targetNickname = "영희" };
             var actions = new ReportDto { type = ReportTypes.Actions, targetId = 13, targetNickname = "민수" };
 
-            Assert.AreEqual("영희님을 찾아온 사람이 없습니다.", ReportFormatter.Report(visitors));
-            Assert.AreEqual("민수님은 아무 행동도 하지 않았습니다.", ReportFormatter.Report(actions));
+            Assert.AreEqual("영희님을 감시했습니다. 영희님을 찾아온 사람이 없습니다.", ReportFormatter.Report(visitors));
+            Assert.AreEqual("민수님을 관찰했습니다. 민수님은 아무 행동도 하지 않았습니다.", ReportFormatter.Report(actions));
+        }
+
+        [Test]
+        public void 갑판장_차단_결과와_차단당한_사람_안내()
+        {
+            var block = new ReportDto { type = ReportTypes.Block, targetId = 12, targetNickname = "영희" };
+            var blocked = new ReportDto { type = ReportTypes.Blocked };
+
+            Assert.AreEqual("영희님을 차단했습니다. 영희님은 이번 밤 능력을 사용할 수 없습니다.", ReportFormatter.Report(block));
+            Assert.AreEqual("갑판장에 의해 차단되어 이번 밤 능력을 사용할 수 없었습니다.", ReportFormatter.Report(blocked));
         }
 
         [Test]
@@ -74,7 +84,7 @@ namespace WhoisntCitizen.Game.Tests
             report.actions.Add(new ActionViewDto { actionCode = ActionCodes.SelectAttackTarget, targetId = 12, targetNickname = "영희" });
             report.actions.Add(new ActionViewDto { actionCode = ActionCodes.ReadCorpseRole, targetId = 14, targetNickname = "지훈" });
 
-            Assert.AreEqual("철수님이 영희님을 공격 대상으로 골랐습니다.\n철수님이 지훈님의 시체를 확인했습니다.", ReportFormatter.Report(report));
+            Assert.AreEqual("철수님을 관찰했습니다.\n철수님이 영희님을 공격 대상으로 골랐습니다.\n철수님이 지훈님의 시체를 확인했습니다.", ReportFormatter.Report(report));
         }
 
         [Test]
@@ -92,7 +102,7 @@ namespace WhoisntCitizen.Game.Tests
         {
             var report = new ReportDto { type = ReportTypes.Faction, targetId = 12, faction = Factions.Crew };
 
-            Assert.AreEqual("플레이어 12님은 선원 진영입니다.", ReportFormatter.Report(report));
+            Assert.AreEqual("플레이어 12님을 조사했습니다. 플레이어 12님은 선원 진영입니다.", ReportFormatter.Report(report));
         }
 
         // ---------------------------------------------------------------- 접선 · 동료

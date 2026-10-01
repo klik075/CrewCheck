@@ -639,6 +639,12 @@ namespace WhoisntCitizen.Game
                 protectedByDoctor = saved
             };
             FakeAction mine = unblocked.Find(a => a.ActorId == MyPlayerId);
+            FakeAction mySubmitted = submitted.Find(a => a.ActorId == MyPlayerId);
+            if (mine == null && mySubmitted != null)
+            {
+                // 차단당함 (서버 BLOCKED). 원숭이도 진짜와 똑같이 받는다.
+                result.reports.Add(new ReportDto { type = ReportTypes.Blocked });
+            }
             if (mine != null)
             {
                 ReportDto report = Me.IsMonkey ? FakeReport(mine, aliveAtNightStart) : RealReport(mine, visits);
@@ -775,12 +781,16 @@ namespace WhoisntCitizen.Game
                     }
                     return report;
 
+                case ActionCodes.Block:
+                    report.type = ReportTypes.Block;
+                    return report;
+
                 default:
-                    return null; // 보호·공격·차단은 개인 결과가 없다
+                    return null; // 보호·공격은 전체 공개 결과로 알린다
             }
         }
 
-        /// <summary>원숭이의 가짜 결과 (서버 fakeReportOf). 선의·갑판장 위장은 진짜도 결과가 없으므로 null.</summary>
+        /// <summary>원숭이의 가짜 결과 (서버 fakeReportOf). 선의 위장은 진짜도 결과가 없으므로 null. 갑판장 위장은 진짜와 같은 차단 결과.</summary>
         private ReportDto FakeReport(FakeAction action, List<FakePlayer> aliveAtNightStart)
         {
             FakePlayer target = Find(action.TargetId);
@@ -830,6 +840,10 @@ namespace WhoisntCitizen.Game
                     string role = assigned[random.Next(assigned.Count)];
                     report.roleCode = role;
                     report.roleName = Roles[role].Name;
+                    return report;
+
+                case ActionCodes.Block:
+                    report.type = ReportTypes.Block;
                     return report;
 
                 default:
