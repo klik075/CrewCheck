@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.time.Clock;
 
 /** 1. 게임 시작, 2. 역할 배정/조회, 3·5·6·9 상태 조회, 8·9 게임 결과 */
 @Service
@@ -27,11 +28,13 @@ public class GameService {
     private final GameRepository gameRepository;
     private final RoleAssigner roleAssigner;
     private final GameFlowService gameFlowService;
+    private final Clock clock;
 
-    public GameService(GameRepository gameRepository, RoleAssigner roleAssigner, GameFlowService gameFlowService) {
+    public GameService(GameRepository gameRepository, RoleAssigner roleAssigner, GameFlowService gameFlowService, Clock clock) {
         this.gameRepository = gameRepository;
         this.roleAssigner = roleAssigner;
         this.gameFlowService = gameFlowService;
+        this.clock = clock;
     }
 
     /**
@@ -76,15 +79,10 @@ public class GameService {
         List<RoleDefinition> roles = roleAssigner.assign(participants.size());
         List<GamePlayer> players = new ArrayList<>();
 
-        // for (int i = 0; i < entries.size(); i++) {
-        //     RoleDefinition role = roles.get(i);
-        //     // 원숭이는 여기서 위장 직업이 정해지고 게임 끝까지 바뀌지 않는다.
-        //     players.add(new GamePlayer(entries.get(i).playerId(), entries.get(i).nickname(),
-        //             role, roleAssigner.shownRoleOf(role)));
-
         for (int i = 0; i < participants.size(); i++) {
             GameParticipant p = participants.get(i);
             RoleDefinition role = roles.get(i);
+            // 원숭이는 여기서 위장 직업이 정해지고 게임 끝까지 바뀌지 않는다.
             players.add(new GamePlayer(p.userId(), p.nickname(), role, roleAssigner.shownRoleOf(role)));
         }
 
@@ -100,7 +98,7 @@ public class GameService {
     public GameStateResponse getState(String gameId) {
         Game game = findGame(gameId);
         synchronized (game) {
-            return GameStateResponse.from(game);
+            return GameStateResponse.from(game, clock.instant()); // phaseEndsAt과 같은 Clock 기준
         }
     }
 
