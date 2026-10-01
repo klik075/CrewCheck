@@ -320,4 +320,39 @@ class ChatMessageControllerTest {
         loginAs(MINSU_MEMBER);
         send(ROOM_ID, "다음 판 해요").andExpect(jsonPath("$.type").value("USER"));
     }
+
+    @Test
+    void 사망자는_자신이_사망하기_전에_다른_사망자들이_나눈_대화를_볼_수_없다() throws Exception {
+        Game game = new Game(String.valueOf(ROOM_ID), List.of(
+                new GamePlayer(CHULSOO_USER, "철수", RAIDER),
+                new GamePlayer(MINSU_USER, "민수", SAILOR),
+                new GamePlayer(JISU_USER, "지수", SAILOR)));
+        game.changePhase(GamePhase.DAY, Instant.now().plusSeconds(60));
+        games.save(game);
+        room.startGame(game.getGameId());
+
+        // 1) 민수가 먼저 사망하고 혼자 사망자 채팅
+        game.getPlayer(MINSU_USER).kill();
+        loginAs(MINSU_MEMBER);
+        send(ROOM_ID, "지수 아직 살아 있지?").andExpect(jsonPath("$.type").value("DEAD"));
+        Thread.sleep(5);
+
+        // 2) 지수가 나중에 사망하고 사망자 채팅
+        game.getPlayer(JISU_USER).kill();
+        Thread.sleep(5);
+        loginAs(JISU_MEMBER);
+        send(ROOM_ID, "나도 죽었어").andExpect(jsonPath("$.type").value("DEAD"));
+
+        // 지수: 자신이 죽기 전 민수의 대화는 보이지 않고, 죽은 뒤의 대화만 보인다
+        getMessages()
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].message").value("나도 죽었어"));
+
+        // 민수: 자신이 죽은 뒤의 대화는 모두 보인다
+        loginAs(MINSU_MEMBER);
+        getMessages()
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].message").value("지수 아직 살아 있지?"))
+                .andExpect(jsonPath("$[1].message").value("나도 죽었어"));
+    }
 }

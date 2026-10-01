@@ -17,6 +17,8 @@ import com.WhoisntCitizen_server.member.entity.User;
 import com.WhoisntCitizen_server.member.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -30,6 +32,7 @@ import java.util.List;
  * 게임 중 채팅 규칙
  *  - 사망자 채팅: 진행 중인 게임에서 사망한 플레이어가 보낸 메시지는 DEAD로 저장하고,
  *    진영·직업과 관계없이 같은 게임에서 사망한 플레이어에게만 보여 줍니다. (살아 있는 플레이어·관전자에게는 숨김)
+ *    사망자는 자신이 사망한 뒤에 오간 사망자 채팅만 볼 수 있습니다. (먼저 죽은 사람들끼리 나눈 대화는 볼 수 없음)
  *    게임이 끝나면(방이 대기 상태로 돌아가면) 그 게임의 사망자 채팅은 아무에게도 보이지 않습니다.
  */
 @Service
@@ -151,7 +154,8 @@ public class ChatMessageService {
 
     /**
      * 조회하는 사람 기준으로 메시지가 보이는지 판단합니다.
-     * 일반·시스템 메시지는 모두에게 보입니다. 사망자 채팅은 그 게임이 진행 중이고 조회하는 사람이 그 게임에서 사망했을 때만 보입니다.
+     * 일반·시스템 메시지는 모두에게 보입니다. 사망자 채팅은 그 게임이 진행 중이고, 조회하는 사람이 그 게임에서 사망했으며,
+     * 그 사람이 사망한 뒤에 보낸 메시지일 때만 보입니다.
      * (조회하는 사람의 프로필·게임 상태는 사망자 채팅이 있을 때만 확인해 DB 조회를 줄입니다)
      */
     private final class Visibility {
@@ -159,6 +163,7 @@ public class ChatMessageService {
         private final Long memberId;
         private boolean resolved;
         private String deadInGameId; // 조회하는 사람이 사망한 진행 중 게임 id (아니면 null)
+        private Instant diedAt;      // 그 게임에서 조회하는 사람이 사망한 시각
 
         Visibility(Room room, Long memberId) {
             this.room = room;
@@ -167,25 +172,31 @@ public class ChatMessageService {
 
         boolean canSee(ChatMessage m) {
             if (m.type() != MessageType.DEAD) return true;
-            String deadGame = deadInGameId();
-            return deadGame != null && deadGame.equals(m.gameId());
+            resolve();
+            if (deadInGameId == null || !deadInGameId.equals(m.gameId())) return false;
+            // 내가 죽기 전에 다른 사망자들이 나눈 대화는 보지 않는다
+            return m.createdAt() != null && !toInstant(m).isBefore(diedAt);
         }
 
-        private String deadInGameId() {
-            if (!resolved) {
-                resolved = true;
-                deadInGameId = resolveDeadInGameId();
-            }
-            return deadInGameId;
-        }
-
-        private String resolveDeadInGameId() {
-            if (memberId == null) return null;
+        private void resolve() {
+            if (resolved) return;
+            resolved = true;
+            if (memberId == null) return;
             Game game = activeGame(room);
-            if (game == null) return null;
+            if (game == null) return;
             Long userId = userRepository.findByMemberId(memberId).map(User::getId).orElse(null);
-            return userId != null && isDeadIn(game, userId) ? game.getGameId() : null;
+            if (userId == null) return;
+            Instant died = diedAtIn(game, userId);
+            if (died != null) {
+                deadInGameId = game.getGameId();
+                diedAt = died;
+            }
         }
+    }
+
+    /** 메시지 createdAt(서버 기본 시간대의 LocalDateTime)을 사망 시각과 비교할 수 있게 Instant로 바꿉니다. */
+    private static Instant toInstant(ChatMessage m) {
+        return m.createdAt().atZone(ZoneId.systemDefault()).toInstant();
     }
 
     // ---------- 게임 상태 ----------
@@ -207,6 +218,18 @@ public class ChatMessageService {
                 if (p.getPlayerId().equals(userId)) return !p.isAlive();
             }
             return false;
+        }
+    }
+
+    /** 게임에서 사망한 시각. 살아 있거나 참가자가 아니면 null */
+    private static Instant diedAtIn(Game game, Long userId) {
+        synchronized (game) {
+            for (GamePlayer p : game.getPlayers()) {
+                if (p.getPlayerId().equals(userId)) {
+                    return p.isAlive() ? null : (p.getDiedAt() != null ? p.getDiedAt() : Instant.EPOCH);
+                }
+            }
+            return null;
         }
     }
 
