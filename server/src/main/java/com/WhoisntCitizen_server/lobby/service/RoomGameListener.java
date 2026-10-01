@@ -1,8 +1,10 @@
 package com.WhoisntCitizen_server.lobby.service;
 
+import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
 import com.WhoisntCitizen_server.game.event.GameEndedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Component;
 public class RoomGameListener {
 
     private final RoomService roomService;
+    private final ApplicationEventPublisher eventPublisher; // 채팅 안내 (RoomNoticeEvent)
 
     @EventListener
     public void onGameEnded(GameEndedEvent event) {
@@ -31,6 +34,7 @@ public class RoomGameListener {
 
             if (roomService.returnToWaiting(roomId, event.gameId())) {
                 log.info("[{}] 게임 종료 → 방 {} 대기 상태로 복귀 (승리: {})", event.gameId(), roomId, event.winner());
+                eventPublisher.publishEvent(RoomNoticeEvent.of(roomId, "게임이 끝나 대기실로 돌아왔습니다. 방장이 다시 게임을 시작할 수 있습니다."));
             } else {
                 log.info("[{}] 게임 종료 이벤트 무시: 방 {}이 없거나 이미 복귀됨", event.gameId(), roomId);
             }

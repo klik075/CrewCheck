@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.lobby.service;
 
+import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
 import com.WhoisntCitizen_server.game.dto.GameParticipant;
 import com.WhoisntCitizen_server.game.dto.StartGameResponse;
 import com.WhoisntCitizen_server.game.service.GameService;
@@ -224,6 +225,7 @@ public class RoomService {
         log.warn("방 {}: 진행 중인 게임({})을 찾을 수 없어 대기 상태로 복구", room.getId(), room.getGameId());
         room.finishGame();
         roomRepository.save(room);
+        eventPublisher.publishEvent(RoomNoticeEvent.of(room.getId(), "진행 중이던 게임을 찾을 수 없어 대기실로 돌아왔습니다."));
         return true;
     }
 
