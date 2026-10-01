@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using WhoisntCitizen.Common;
 using WhoisntCitizen.Network;
+using WhoisntCitizen.Chat; // ChatNotice: 내 화면 전용 안내 (채팅창 + 콘솔)
 
 namespace WhoisntCitizen.Title
 {
@@ -113,6 +114,7 @@ namespace WhoisntCitizen.Title
             if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
             {
                 SetMessage(loginMessageText, "아이디와 비밀번호를 입력하세요.", errorColor);
+                ChatNotice.Post("아이디와 비밀번호를 입력해 주세요.", false);
                 return;
             }
 
@@ -147,6 +149,7 @@ namespace WhoisntCitizen.Title
             if (nickname.Length < 2 || nickname.Length > 10)
             {
                 SetMessage(registerMessageText, "닉네임은 2~10자여야 합니다.", errorColor);
+                ChatNotice.Post("닉네임은 2~10자로 입력해 주세요.", false);
                 return;
             }
 
@@ -185,6 +188,7 @@ namespace WhoisntCitizen.Title
             //   nickname : 게임 내 표시 이름
             AuthSession.SetSession(res.memberId, res.userId, res.username, res.nickname, res.accessToken);
             Debug.Log($"[Title] 로그인 성공 - userId={res.userId}, username={res.username}, nickname={res.nickname}");
+            ChatNotice.Post($"{(string.IsNullOrEmpty(res.nickname) ? res.username : res.nickname)}님, 환영합니다.");
 
             loginPasswordInput.text = "";
             SetMessage(loginMessageText, "로그인 성공!", successColor);

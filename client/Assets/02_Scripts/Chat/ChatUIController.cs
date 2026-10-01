@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using TMPro;
+using WhoisntCitizen.Lobby; // RoomSession: 로비에서 입장한 방
 using UnityEngine;
 using UnityEngine.UI;
 #if ENABLE_INPUT_SYSTEM
@@ -21,8 +22,10 @@ namespace WhoisntCitizen.Chat
     ///  - pollInterval초마다 afterId 이후 새 메시지만 받아 뒤에 붙이고, N회마다 전체 목록을 다시 받습니다
     ///  - 시스템 메시지(입장·퇴장 알림, 공지)는 녹색으로 표시하고, Unity 콘솔에도 같은 내용을 출력
     ///  - SendSystemMessage(): 시스템 메시지(공지) 전송 (에디터 창 Tools > Chat > System Message Console에서 사용)
+    ///  - 내 화면 전용 안내(ChatNotice: 로그인, 방 입장·퇴장, 입력 오류, 연결 상태 등)는 [안내] 말머리로 표시하고 콘솔에도 출력
     ///  - 내 메시지 구분은 userId로 (개발용 로그인 응답 또는 내가 보낸 메시지의 응답에서 알아냄)
     /// 시작 순서: 로그인(AuthSession에 토큰이 없을 때만, 개발용) → 로비 방 참가(개발용) → 메시지 조회/폴링
+    /// 로비에서 방에 들어온 상태(RoomSession.HasRoom)면 그 방으로 바로 채팅을 시작합니다. (로그인·입장 생략)
     /// 로비 화면에서 로그인·방 입장을 마치고 들어오면 [개발용] 옵션은 꺼도 됩니다.
     /// </summary>
     public class ChatUIController : MonoBehaviour
@@ -75,6 +78,11 @@ namespace WhoisntCitizen.Chat
         [Tooltip("시스템 메시지 앞에 붙는 말머리")]
         public string systemPrefix = "[시스템] ";
 
+        [Tooltip("내 화면 전용 안내(ChatNotice) 색")]
+        public Color localNoticeColor = new Color(0.62f, 0.91f, 0.63f);
+        [Tooltip("내 화면 전용 안내 앞에 붙는 말머리")]
+        public string localNoticePrefix = "[안내] ";
+
         [Header("Console (Unity 콘솔 연동)")]
         [Tooltip("채팅창에 새로 표시되는 시스템 메시지를 Unity 콘솔에도 출력")]
         public bool logSystemMessagesToConsole = true;
@@ -93,6 +101,16 @@ namespace WhoisntCitizen.Chat
         long _lastId = -1;         // 마지막으로 받은 메시지 id (-1: 아직 없음 → 전체 조회)
         long _lastLoggedSystemId = -1; // 콘솔에 마지막으로 출력한 시스템 메시지 id (중복 출력 방지)
         bool _sendingSystem;
+        bool _joinBlockedByGame;   // 입장 시 "게임이 진행 중인 방" 409를 받음 (참가자가 아니면 전송 시 403)
+
+        /// 내 화면 전용 안내. anchor = 이 안내가 생겼을 때 마지막으로 받은 메시지 id (그 메시지 뒤에 표시)
+        class LocalNotice
+        {
+            public long anchor;
+            public string text;
+        }
+        const long UnresolvedAnchor = long.MinValue; // 첫 조회 전에 생긴 안내 → 첫 목록을 받은 뒤 맨 뒤에 붙임
+        readonly List<LocalNotice> _notices = new List<LocalNotice>();
         float _nextPollTime;
         int _pollCount;
         bool _imeComposing;
@@ -120,10 +138,12 @@ namespace WhoisntCitizen.Chat
         void OnEnable()
         {
             SubscribeIme();
+            ChatNotice.Posted += OnChatNotice;
         }
 
         void OnDisable()
         {
+            ChatNotice.Posted -= OnChatNotice;
 #if ENABLE_INPUT_SYSTEM
             if (_imeKeyboard != null) _imeKeyboard.onIMECompositionChange -= OnImeComposition;
             _imeKeyboard = null;
@@ -133,6 +153,8 @@ namespace WhoisntCitizen.Chat
 
         void Start()
         {
+            // 로비 등 채팅창이 없던 씬에서 쌓인 안내 (콘솔에는 그때 이미 출력됨)
+            foreach (var text in ChatNotice.TakePending()) AddNotice(text);
             Render();
             StartCoroutine(Connect());
             inputField.ActivateInputField();
@@ -175,32 +197,40 @@ namespace WhoisntCitizen.Chat
                 string err = null;
                 long code = 0;
 
+                if (AuthSession.IsAuthenticated && myUserId < 0 && AuthSession.UserId > 0)
+                    myUserId = AuthSession.UserId; // 타이틀/로비에서 로그인한 경우
+
                 // 1) 로그인 (로비에서 이미 로그인했다면 건너뜀)
                 if (!AuthSession.IsAuthenticated)
                 {
                     if (!autoLogin)
                     {
-                        Fail("로그인 정보가 없습니다. 로비에서 로그인하거나 [개발용] autoLogin을 켜 주세요.");
+                        Fail("로그인 후 이용할 수 있습니다.", "AuthSession에 토큰이 없고 [개발용] autoLogin이 꺼져 있음");
                         break;
                     }
                     yield return api.Login(devUsername, devPassword,
                         r =>
                         {
-                            AuthSession.SetSession(r.memberId, devUsername, r.accessToken);
+                            AuthSession.SetSession(r.memberId, r.userId, devUsername, r.nickname, r.accessToken);
                             myUserId = r.userId;
+                            ChatNotice.Post((string.IsNullOrEmpty(r.nickname) ? devUsername : r.nickname) + "님, 환영합니다.");
                         },
                         (e, c) => { err = e; code = c; });
                     if (err != null)
                     {
                         if (code >= 400 && code < 500) { Fail(err); break; } // 계정 정보 오류는 재시도해도 같음
-                        SetError(err);
+                        SetError(Friendly(err, code), err);
                         yield return new WaitForSecondsRealtime(retryInterval);
                         continue;
                     }
                 }
 
-                // 2) 로비 방 참가
-                if (autoJoinRoom)
+                // 2) 로비 방 참가 (로비에서 이미 입장한 방이 있으면 그 방을 그대로 사용)
+                if (RoomSession.HasRoom)
+                {
+                    api.roomId = RoomSession.RoomId;
+                }
+                else if (autoJoinRoom)
                 {
                     bool needCreate = api.roomId <= 0 && createRoomIfMissing;
                     if (!needCreate)
@@ -209,21 +239,37 @@ namespace WhoisntCitizen.Chat
                         yield return api.JoinRoom(null, (e, c) => { err = e; code = c; });
                         if (err != null)
                         {
-                            if (code == 401) { AuthSession.Clear(); continue; } // 토큰 만료 → 다시 로그인
+                            if (code == 401) { NotifyExpired(); continue; } // 토큰 만료 → 다시 로그인
                             if (code == 409)
                             {
-                                // 이미 참가 중이면 그대로 진행. (방이 가득 찼거나 게임 중이면 전송 시 403으로 안내됨)
-                                Debug.Log("[Chat] " + err);
+                                // 409 사유는 서버 메시지로 구분 (RoomService.joinRoom)
+                                if (err.Contains("가득"))
+                                {
+                                    Fail("방이 가득 차 입장할 수 없습니다.", err);
+                                    break;
+                                }
+                                if (err.Contains("게임이 진행 중"))
+                                {
+                                    // 이미 참가 중인 플레이어도 게임 중에는 이 409를 받으므로 일단 진행하고,
+                                    // 참가자가 아니면 전송할 때(403) 안내한다.
+                                    _joinBlockedByGame = true;
+                                    Debug.Log("[Chat] " + err);
+                                }
+                                else
+                                {
+                                    ChatNotice.Post("이미 참가 중인 방입니다. 채팅을 이어서 진행합니다.");
+                                }
                             }
                             else if ((code == 400 || code == 404) && createRoomIfMissing)
                             {
-                                Debug.LogWarning("[Chat] " + err + " → 새 방을 만듭니다.");
+                                Debug.LogWarning("[Chat] " + err);
+                                ChatNotice.Post("방을 찾을 수 없어 새 방을 만듭니다.");
                                 needCreate = true;
                             }
                             else if (code >= 400 && code < 500) { Fail(err); break; }
                             else
                             {
-                                SetError(err);
+                                SetError(Friendly(err, code), err);
                                 yield return new WaitForSecondsRealtime(retryInterval);
                                 continue;
                             }
@@ -237,14 +283,16 @@ namespace WhoisntCitizen.Chat
                         yield return api.CreateRoom(devRoomTitle, devRoomMaxPlayers, id => newId = id, (e, c) => { err = e; code = c; });
                         if (err != null)
                         {
-                            if (code == 401) { AuthSession.Clear(); continue; }
+                            if (code == 401) { NotifyExpired(); continue; }
                             if (code >= 400 && code < 500) { Fail(err); break; }
-                            SetError(err);
+                            SetError(Friendly(err, code), err);
                             yield return new WaitForSecondsRealtime(retryInterval);
                             continue;
                         }
                         api.roomId = newId;
+                        _joinBlockedByGame = false;
                         Debug.Log("[Chat] 새 방을 만들었습니다. roomId=" + newId);
+                        ChatNotice.Post("참가할 방이 없어 '" + devRoomTitle + "' 방을 새로 만들었습니다.");
                     }
                 }
 
@@ -264,8 +312,15 @@ namespace WhoisntCitizen.Chat
         void HandleUnauthorized()
         {
             _ready = false;
-            AuthSession.Clear();
+            NotifyExpired();
             StartCoroutine(Connect());
+        }
+
+        /// 로그인 만료 안내 + 세션 비우기 (autoLogin이 켜져 있으면 Connect가 다시 로그인)
+        void NotifyExpired()
+        {
+            AuthSession.Clear();
+            ChatNotice.Post("로그인 시간이 만료되었습니다. 다시 로그인해 주세요.");
         }
 
         // ---------------- 입력 처리 ----------------
@@ -340,7 +395,7 @@ namespace WhoisntCitizen.Chat
             if (string.IsNullOrEmpty(text) || _sending) { FocusInput(); return; }
             if (!_ready)
             {
-                SetError(string.IsNullOrEmpty(_fatal) ? "아직 서버에 연결 중입니다." : _fatal);
+                SetError(string.IsNullOrEmpty(_fatal) ? "서버와 연결이 끊어졌습니다. 다시 연결하는 중입니다..." : _fatal);
                 FocusInput();
                 return;
             }
@@ -366,7 +421,7 @@ namespace WhoisntCitizen.Chat
                     sendButton.interactable = true;
                     inputField.text = text; // 실패 시 입력 내용 복구
                     inputField.caretPosition = text.Length;
-                    SetError(err);
+                    SetError(Friendly(err, code), err);
                     if (code == 401) HandleUnauthorized();
                 }));
         }
@@ -412,9 +467,9 @@ namespace WhoisntCitizen.Chat
 
                 long errCode = 0;
                 if (full)
-                    yield return api.FetchMessages(-1, maxMessages, OnFullListReceived, (e, c) => { errCode = c; SetError(e); });
+                    yield return api.FetchMessages(-1, maxMessages, OnFullListReceived, (e, c) => { errCode = c; SetError(Friendly(e, c), e); });
                 else
-                    yield return api.FetchMessages(_lastId, 0, OnNewMessagesReceived, (e, c) => { errCode = c; SetError(e); });
+                    yield return api.FetchMessages(_lastId, 0, OnNewMessagesReceived, (e, c) => { errCode = c; SetError(Friendly(e, c), e); });
 
                 if (errCode == 401) { HandleUnauthorized(); break; }
             } while (_fetchAgain && _ready);
@@ -435,6 +490,7 @@ namespace WhoisntCitizen.Chat
             _messages.AddRange(sorted);
             TrimToMax();
             _lastId = MaxId(_messages);
+            ResolveNoticeAnchors();
             LogNewSystemMessages();
             Render();
         }
@@ -455,8 +511,42 @@ namespace WhoisntCitizen.Chat
             }
             if (!added && !statusChanged) return;
             TrimToMax();
+            ResolveNoticeAnchors();
             LogNewSystemMessages();
             Render();
+        }
+
+        // ---------------- 내 화면 전용 안내 (ChatNotice) ----------------
+
+        void OnChatNotice(string text)
+        {
+            AddNotice(text);
+            _stickToBottom = true;
+            Render();
+        }
+
+        /// 안내를 지금까지 받은 메시지 뒤에 붙입니다. (서버에 저장되지 않으므로 다른 사람에게는 보이지 않음)
+        void AddNotice(string text)
+        {
+            _notices.Add(new LocalNotice { anchor = _lastId >= 0 ? _lastId : UnresolvedAnchor, text = text });
+            if (_notices.Count > maxMessages) _notices.RemoveRange(0, _notices.Count - maxMessages);
+        }
+
+        /// 첫 목록을 받기 전에 생긴 안내는 받은 목록의 맨 뒤에 오도록 고정합니다.
+        void ResolveNoticeAnchors()
+        {
+            foreach (var n in _notices)
+                if (n.anchor == UnresolvedAnchor) n.anchor = _lastId;
+        }
+
+        /// 오류를 채팅창에 보여 줄 문장으로 바꿉니다. (원문은 콘솔에 함께 남김)
+        string Friendly(string err, long code)
+        {
+            if (code == 0) return "서버와 연결이 끊어졌습니다. 다시 연결하는 중입니다...";
+            if (code == 401) return "로그인 시간이 만료되었습니다. 다시 로그인해 주세요.";
+            if (code == 403 && err != null && err.StartsWith("전송 실패"))
+                return _joinBlockedByGame ? "게임이 진행 중이라 지금은 입장할 수 없습니다." : "지금은 채팅에 참여할 수 없습니다.";
+            return err;
         }
 
         /// 채팅창에 새로 들어온 시스템 메시지를 Unity 콘솔에도 출력 (이미 출력한 id는 건너뜀)
@@ -487,10 +577,11 @@ namespace WhoisntCitizen.Chat
             string reason = null;
             if (text.Length == 0) reason = "보낼 내용이 없습니다.";
             else if (_sendingSystem) reason = "이전 공지를 보내는 중입니다.";
-            else if (!_ready || !AuthSession.IsAuthenticated) reason = "아직 서버에 연결되지 않았습니다. (로그인·방 참가 후 사용)";
+            else if (!_ready || !AuthSession.IsAuthenticated) reason = "서버에 연결된 뒤 공지를 보낼 수 있습니다.";
             if (reason != null)
             {
-                Debug.LogWarning("[Chat] 공지 전송 불가: " + reason);
+                if (_ready && AuthSession.IsAuthenticated) Debug.LogWarning("[Chat] 공지 전송 불가: " + reason);
+                else ChatNotice.Post(reason); // 채팅창 + 콘솔
                 if (onDone != null) onDone(false, reason);
                 return;
             }
@@ -507,7 +598,7 @@ namespace WhoisntCitizen.Chat
                 (err, code) =>
                 {
                     _sendingSystem = false;
-                    SetError(err);
+                    SetError(Friendly(err, code), err);
                     if (onDone != null) onDone(false, err);
                     if (code == 401) HandleUnauthorized();
                 }));
@@ -556,18 +647,21 @@ namespace WhoisntCitizen.Chat
             return list; // 정렬 기준이 없으면 서버 순서(오래된 → 최신) 그대로
         }
 
-        void SetError(string err)
+        /// <param name="text">채팅창에 보여 줄 문장 (빨간 글씨, 다음 조회가 성공하면 사라짐)</param>
+        /// <param name="detail">콘솔에 함께 남길 원래 오류 (없으면 생략)</param>
+        void SetError(string text, string detail = null)
         {
-            if (err == _status) return; // 폴링 중 같은 오류가 반복되면 로그/화면 갱신 생략
-            Debug.LogWarning("[Chat] " + err);
-            _status = err;
+            if (text == _status) return; // 폴링 중 같은 오류가 반복되면 로그/화면 갱신 생략
+            Debug.LogWarning("[Chat] " + text + (string.IsNullOrEmpty(detail) || detail == text ? "" : "  (" + detail + ")"));
+            _status = text;
             Render();
         }
 
-        void Fail(string err)
+        /// 다시 시도해도 해결되지 않는 오류. 채팅창에 계속 표시됩니다.
+        void Fail(string text, string detail = null)
         {
-            Debug.LogWarning("[Chat] " + err);
-            _fatal = err;
+            Debug.LogWarning("[Chat] " + text + (string.IsNullOrEmpty(detail) || detail == text ? "" : "  (" + detail + ")"));
+            _fatal = text;
             _status = "";
             Render();
         }
@@ -588,9 +682,17 @@ namespace WhoisntCitizen.Chat
             string systemHex = ColorUtility.ToHtmlStringRGB(systemColor);
             string errorHex = ColorUtility.ToHtmlStringRGB(errorColor);
             string myId = myUserId >= 0 ? myUserId.ToString(CultureInfo.InvariantCulture) : null;
+            string noticeHex = ColorUtility.ToHtmlStringRGB(localNoticeColor);
+            int noticeIndex = 0;
 
             foreach (var m in _messages)
             {
+                // 이 메시지보다 먼저 생긴 내 화면 전용 안내를 앞에 끼워 넣음
+                long mid;
+                if (long.TryParse(m.id, out mid))
+                    while (noticeIndex < _notices.Count && _notices[noticeIndex].anchor != UnresolvedAnchor && _notices[noticeIndex].anchor < mid)
+                        AppendNotice(sb, _notices[noticeIndex++].text, noticeHex);
+
                 if (sb.Length > 0) sb.Append('\n');
 
                 if (m.IsSystem)
@@ -609,6 +711,9 @@ namespace WhoisntCitizen.Chat
                   .Append(NoParse(m.content));
             }
 
+            while (noticeIndex < _notices.Count)
+                AppendNotice(sb, _notices[noticeIndex++].text, noticeHex);
+
             AppendError(sb, _fatal, errorHex);
             if (_status != _fatal) AppendError(sb, _status, errorHex);
 
@@ -620,6 +725,12 @@ namespace WhoisntCitizen.Chat
                 Canvas.ForceUpdateCanvases();
                 messagesScroll.verticalNormalizedPosition = 0f;
             }
+        }
+
+        void AppendNotice(StringBuilder sb, string text, string hex)
+        {
+            if (sb.Length > 0) sb.Append('\n');
+            sb.Append("<color=#").Append(hex).Append(">").Append(NoParse(localNoticePrefix + text)).Append("</color>");
         }
 
         static void AppendError(StringBuilder sb, string err, string hex)

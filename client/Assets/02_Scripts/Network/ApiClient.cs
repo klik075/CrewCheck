@@ -111,6 +111,7 @@ namespace WhoisntCitizen.Network
             {
                 HandleUnauthorized();
                 onDone?.Invoke(new ApiResult { success = false, statusCode = 401, message = "로그인이 필요합니다." });
+                WhoisntCitizen.Chat.ChatNotice.Post("로그인 후 이용할 수 있습니다.", false);
                 yield break;
             }
 
@@ -224,6 +225,7 @@ namespace WhoisntCitizen.Network
         private static void HandleUnauthorized()
         {
             Debug.LogWarning("[Api] 인증이 없거나 만료되어 로그아웃합니다.");
+            WhoisntCitizen.Chat.ChatNotice.Post("로그인 시간이 만료되었습니다. 다시 로그인해 주세요.");
             AuthSession.Clear();
             RoomSession.Clear();
             Unauthorized?.Invoke();
