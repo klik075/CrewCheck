@@ -3,6 +3,7 @@ package com.WhoisntCitizen_server.game.service;
 import com.WhoisntCitizen_server.common.config.GamePhaseProperties;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
+import com.WhoisntCitizen_server.game.event.GameEndedEvent;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.jobs.domain.Faction;
 import com.WhoisntCitizen_server.night.entity.NightResult;
@@ -12,6 +13,7 @@ import com.WhoisntCitizen_server.vote.service.VoteResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
 
@@ -43,6 +45,7 @@ public class GameFlowService {
     private final TaskScheduler scheduler;
     private final GamePhaseProperties phaseProps;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
     public GameFlowService(GameRepository gameRepository,
                            NightActionResolver nightActionResolver,
@@ -50,7 +53,8 @@ public class GameFlowService {
                            WinConditionChecker winConditionChecker,
                            @Qualifier("gamePhaseScheduler") TaskScheduler scheduler,
                            GamePhaseProperties phaseProps,
-                           Clock clock) {
+                           Clock clock,
+                           ApplicationEventPublisher eventPublisher) {
         this.gameRepository = gameRepository;
         this.nightActionResolver = nightActionResolver;
         this.voteResolver = voteResolver;
@@ -58,6 +62,7 @@ public class GameFlowService {
         this.scheduler = scheduler;
         this.phaseProps = phaseProps;
         this.clock = clock;
+        this.eventPublisher = eventPublisher;
     }
 
     /** 1. 게임 시작 직후 첫 밤으로 진입. */
@@ -134,7 +139,40 @@ public class GameFlowService {
         game.end(winner.get());
         gameRepository.save(game);
         log.info("[{}] 게임 종료. 승리: {}", game.getGameId(), winner.get());
+        publishGameEnded(game);
+        scheduleCleanup(game.getGameId());
         return true;
+    }
+
+    /**
+     * 10. 끝난 게임 정리. 결과를 조회할 시간(endedRetentionSeconds)을 준 뒤 메모리에서 삭제한다.
+     * 삭제 후에는 해당 gameId로 조회하면 404(GAME_NOT_FOUND)가 된다.
+     * 이미 예약된 페이즈 타이머가 늦게 실행돼도 onPhaseTimeout이 게임을 못 찾으면 그냥 끝나므로 안전하다.
+     */
+    private void scheduleCleanup(String gameId) {
+        Instant at = clock.instant().plusSeconds(phaseProps.endedRetentionSeconds());
+        scheduler.schedule(() -> {
+            gameRepository.delete(gameId);
+            log.info("[{}] 종료된 게임을 메모리에서 삭제", gameId);
+        }, at);
+    }
+
+    /**
+     * 게임 종료 이벤트 발행.
+     * 이 메서드는 synchronized(game) 안에서 호출되므로, 이벤트 처리(로비 방 잠금, DB 저장)를
+     * 게임 잠금을 쥔 채로 실행하지 않도록 스케줄러 스레드에서 따로 발행한다.
+     * (게임 잠금 → 방 잠금 / 방 잠금 → 게임 잠금이 엇갈리며 생길 수 있는 교착 상태 방지)
+     * 리스너에서 예외가 나도 게임 진행 스레드에는 영향이 없다.
+     */
+    private void publishGameEnded(Game game) {
+        GameEndedEvent event = GameEndedEvent.from(game); // 잠금 안에서 현재 상태를 복사해 둔다
+        scheduler.schedule(() -> {
+            try {
+                eventPublisher.publishEvent(event);
+            } catch (RuntimeException e) {
+                log.error("[{}] 게임 종료 이벤트 처리 실패", event.gameId(), e);
+            }
+        }, clock.instant());
     }
 
     // ---------- 타이머 ----------

@@ -56,9 +56,8 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 						// 회원가입 / 로그인은 토큰 없이
 						.requestMatchers("/api/members/signup", "/api/members/login").permitAll()
-						// 로비(/api/v1/rooms)와 직업 API(/api/v1/...)는 로그인한 유저만
+						// 로비(/api/v1/rooms), 게임(/api/v1/games), 직업(/api/v1/roles) API는 로그인한 유저만
 						.requestMatchers("/api/v1/**").authenticated()
-						// TODO: game / vote 모듈(/api/games/**)도 토큰 기반으로 옮기면 authenticated()로 변경
 						.anyRequest().permitAll())
 				.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}))
 				.exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));

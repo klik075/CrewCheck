@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.exception.GameNotFoundException;
 import com.WhoisntCitizen_server.common.exception.GameRuleException;
+import com.WhoisntCitizen_server.game.dto.GameParticipant;
 import com.WhoisntCitizen_server.game.dto.GameResultResponse;
 import com.WhoisntCitizen_server.game.dto.GameStateResponse;
 import com.WhoisntCitizen_server.game.dto.MyRoleResponse;
@@ -32,29 +33,60 @@ public class GameService {
         this.gameFlowService = gameFlowService;
     }
 
-    /** 1. 게임 시작 + 2. 역할 배정 → 첫 밤 진입 */
+    /**
+     * 1. 게임 시작 (Postman 테스트용 API: POST /api/v1/games).
+     * 요청 DTO를 GameParticipant 목록으로 바꿔 서버 내부용 startGame에 위임한다.
+     */
     public StartGameResponse startGame(StartGameRequest request) {
-        List<StartGameRequest.PlayerEntry> entries = request.players();
+        List<GameParticipant> participants = request.players().stream()
+                .map(e -> new GameParticipant(e.playerId(), e.nickname()))
+                .toList();
+        // 개발용 게임: 가짜 playerId가 실제 User.id와 겹칠 수 있으므로 전적에 반영하지 않는다.
+        return start(request.roomId(), participants, false);
+    }
 
-        //수정될 부분 - id 중복처리
+    /**
+     * 1. 게임 시작 + 2. 역할 배정 → 첫 밤 진입 (서버 내부용).
+     * 로비의 방 시작 처리(RoomService)가 Room의 참가자 목록으로 호출한다.
+     * 인원 수(4~12명)는 RoleAssigner가 검사한다.
+     */
+    public StartGameResponse startGame(String roomId, List<GameParticipant> participants) {
+        return start(roomId, participants, true);
+    }
+
+    private StartGameResponse start(String roomId, List<GameParticipant> participants, boolean recordStats) {
+        if (roomId == null || roomId.isBlank()) {
+            throw new GameRuleException("roomId가 필요합니다.");
+        }
+        if (participants == null || participants.isEmpty()) {
+            throw new GameRuleException("참가자가 없습니다.");
+        }
+
         Set<Long> ids = new HashSet<>();
-        for (StartGameRequest.PlayerEntry e : entries) {
-            if (!ids.add(e.playerId())) {
-                throw new GameRuleException("중복된 playerId가 있습니다: " + e.playerId());
+        for (GameParticipant p : participants) {
+            if (p.userId() == null) {
+                throw new GameRuleException("userId가 없는 참가자가 있습니다.");
+            }
+            if (!ids.add(p.userId())) {
+                throw new GameRuleException("중복된 playerId가 있습니다: " + p.userId());
             }
         }
 
-        List<RoleDefinition> roles = roleAssigner.assign(entries.size());
+        List<RoleDefinition> roles = roleAssigner.assign(participants.size());
         List<GamePlayer> players = new ArrayList<>();
-        for (int i = 0; i < entries.size(); i++) {
-            RoleDefinition role = roles.get(i);
-            // 원숭이는 여기서 위장 직업이 정해지고 게임 끝까지 바뀌지 않는다.
-            players.add(new GamePlayer(entries.get(i).playerId(), entries.get(i).nickname(),
-                    role, roleAssigner.shownRoleOf(role)));
+        
+        // for (int i = 0; i < entries.size(); i++) {
+        //     RoleDefinition role = roles.get(i);
+        //     // 원숭이는 여기서 위장 직업이 정해지고 게임 끝까지 바뀌지 않는다.
+        //     players.add(new GamePlayer(entries.get(i).playerId(), entries.get(i).nickname(),
+        //             role, roleAssigner.shownRoleOf(role)));
+
+        for (int i = 0; i < participants.size(); i++) {
+            GameParticipant p = participants.get(i);
+            players.add(new GamePlayer(p.userId(), p.nickname(), roles.get(i), roleAssigner.shownRoleOf(role)));
         }
 
-        //수정될 부분 - Repository DB 연동
-        Game game = gameRepository.save(new Game(request.roomId(), players));
+        Game game = gameRepository.save(new Game(roomId, players, recordStats));
         gameFlowService.begin(game);
 
         synchronized (game) {
@@ -97,6 +129,23 @@ public class GameService {
                     .toList();
             return new GameResultResponse(true, game.getWinner(), game.getDay(), results);
         }
+    }
+
+    /**
+     * 진행 중인 게임인지 확인한다 (메모리에 있고 아직 끝나지 않음).
+     * 로비가 "IN_GAME인데 게임이 사라진 방"(서버 재시작 등)을 찾아 복구할 때 사용한다.
+     */
+    public boolean isGameActive(String gameId) {
+        if (gameId == null) {
+            return false;
+        }
+        return gameRepository.findById(gameId)
+                .map(game -> {
+                    synchronized (game) {
+                        return !game.isEnded();
+                    }
+                })
+                .orElse(false);
     }
 
     private Game findGame(String gameId) {
