@@ -84,6 +84,8 @@ namespace WhoisntCitizen.Chat
         public string localNoticePrefix = "[안내] ";
         [Tooltip("사망자 채팅(type=DEAD) 글자색. 닉네임과 내용 모두 이 색으로 표시합니다")]
         public Color deadColor = new Color(0.6f, 0.6f, 0.6f);
+        [Tooltip("밤에 해적이 입력한 채팅(nightChat)의 내용 글자색. 닉네임은 일반 채팅과 같은 색(내 것/남의 것)을 씁니다")]
+        public Color nightChatColor = new Color(1f, 0.6f, 0.2f);
 
         [Header("Console (Unity 콘솔 연동)")]
         [Tooltip("채팅창에 새로 표시되는 시스템 메시지를 Unity 콘솔에도 출력")]
@@ -547,7 +549,12 @@ namespace WhoisntCitizen.Chat
             if (code == 0) return "서버와 연결이 끊어졌습니다. 다시 연결하는 중입니다...";
             if (code == 401) return "로그인 시간이 만료되었습니다. 다시 로그인해 주세요.";
             if (code == 403 && err != null && err.StartsWith("전송 실패"))
-                return _joinBlockedByGame ? "게임이 진행 중이라 지금은 입장할 수 없습니다." : "지금은 채팅에 참여할 수 없습니다.";
+            {
+                if (_joinBlockedByGame) return "게임이 진행 중이라 지금은 입장할 수 없습니다.";
+                // 서버 안내 문장을 그대로 보여 준다 (예: "밤에는 해적만 채팅할 수 있습니다.")
+                int i = err.IndexOf("): ", System.StringComparison.Ordinal);
+                return i >= 0 ? err.Substring(i + 3) : "지금은 채팅에 참여할 수 없습니다.";
+            }
             return err;
         }
 
@@ -726,8 +733,14 @@ namespace WhoisntCitizen.Chat
                 bool mine = myId != null && m.userId == myId;
                 sb.Append("<color=#").Append(mine ? myHex : otherHex).Append("><b>")
                   .Append(NoParse(string.IsNullOrEmpty(m.nickname) ? "?" : m.nickname))
-                  .Append("</b></color>: ")
-                  .Append(NoParse(m.content));
+                  .Append("</b></color>: ");
+                // 밤에 해적이 입력한 채팅(서버가 해적에게만 보내 줌)은 내용만 주황색. 닉네임은 일반 채팅과 같은 규칙
+                if (m.nightChat)
+                    sb.Append("<color=#").Append(ColorUtility.ToHtmlStringRGB(nightChatColor)).Append(">")
+                      .Append(NoParse(m.content))
+                      .Append("</color>");
+                else
+                    sb.Append(NoParse(m.content));
             }
 
             while (noticeIndex < _notices.Count)

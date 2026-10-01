@@ -23,6 +23,7 @@ namespace WhoisntCitizen.Chat
     ///  - 서버 시스템 메시지(입장·퇴장, 게임 진행 안내, 공지) → [시스템] + Unity 콘솔 [Chat][시스템]
     ///  - 내 화면 전용 안내(ChatNotice: 로그인, 방 입장, 연결 상태 등) → [안내] + Unity 콘솔 [Chat][안내]
     ///  - 사망자 채팅(type=DEAD, 서버가 사망자에게만 보내 줌) → 닉네임·내용 모두 회색
+    ///  - 밤 채팅: 밤에는 해적만 입력할 수 있고(그 밖은 서버가 403 → 안내 문장 표시), 서버가 해적에게만 보내 줌 → 닉네임·내용 모두 주황색
     ///  - 오류는 채팅용 문장으로 바꿔 표시하고 콘솔에는 원문도 남김. 401이면 다시 로그인
     ///  - SendSystemMessage(): 공지 전송 (에디터 창 Tools > Chat > System Message Console)
     ///
@@ -67,6 +68,8 @@ namespace WhoisntCitizen.Chat
         public string localNoticePrefix = "[안내] ";
         [Tooltip("사망자 채팅(type=DEAD) 글자색. 닉네임과 내용 모두 이 색으로 표시합니다")]
         public Color deadColor = new Color(0.6f, 0.6f, 0.6f);
+        [Tooltip("밤에 해적이 입력한 채팅(nightChat)의 내용 글자색. 닉네임은 일반 채팅과 같은 색(내 것/남의 것)을 씁니다")]
+        public Color nightChatColor = new Color(1f, 0.6f, 0.2f);
 
         [Header("Console (Unity 콘솔 연동)")]
         public bool logSystemMessagesToConsole = true;
@@ -464,7 +467,12 @@ namespace WhoisntCitizen.Chat
             if (code == 0) return "서버와 연결이 끊어졌습니다. 다시 연결하는 중입니다...";
             if (code == 401) return "로그인 시간이 만료되었습니다. 다시 로그인해 주세요.";
             if (code == 403 && err != null && err.StartsWith("전송 실패"))
-                return _joinBlockedByGame ? "게임이 진행 중이라 지금은 입장할 수 없습니다." : "지금은 채팅에 참여할 수 없습니다.";
+            {
+                if (_joinBlockedByGame) return "게임이 진행 중이라 지금은 입장할 수 없습니다.";
+                // 서버 안내 문장을 그대로 보여 준다 (예: "밤에는 해적만 채팅할 수 있습니다.")
+                int i = err.IndexOf("): ", StringComparison.Ordinal);
+                return i >= 0 ? err.Substring(i + 3) : "지금은 채팅에 참여할 수 없습니다.";
+            }
             return err;
         }
 
@@ -507,9 +515,13 @@ namespace WhoisntCitizen.Chat
                 else
                 {
                     bool mine = myId != null && m.userId == myId;
+                    // 밤에 해적이 입력한 채팅(서버가 해적에게만 보내 줌)은 내용만 주황색. 닉네임은 일반 채팅과 같은 규칙
+                    string body = m.nightChat
+                        ? "<color=#" + ColorUtility.ToHtmlStringRGB(nightChatColor) + ">" + NoParse(m.content) + "</color>"
+                        : NoParse(m.content);
                     lines.Add("<color=#" + (mine ? myHex : otherHex) + "><b>"
                               + NoParse(string.IsNullOrEmpty(m.nickname) ? "?" : m.nickname)
-                              + "</b></color>: " + NoParse(m.content));
+                              + "</b></color>: " + body);
                 }
             }
             for (; li < _locals.Count; li++) { keys.Add("l" + _locals[li].seq); lines.Add(_locals[li].rich); }

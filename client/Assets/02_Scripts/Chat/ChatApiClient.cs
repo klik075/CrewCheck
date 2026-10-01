@@ -18,6 +18,7 @@ namespace WhoisntCitizen.Chat
         public string nickname;   // 시스템 메시지는 "SYSTEM"
         public string content;    // message
         public string createdAt;  // 전송 응답에만 있음 (조회 응답에는 없음)
+        public bool nightChat;    // 밤에 해적이 입력한 채팅 (type=USER, 서버가 해적에게만 보내 줌 → 내용을 주황색으로 표시)
 
         public bool IsSystem
         {
@@ -68,6 +69,7 @@ namespace WhoisntCitizen.Chat
         public string adminKey = "";
 
         [Header("JSON 필드명 (API 명세)")]
+        public string nightChatField = "nightChat";
         public string messageIdField = "messageId";
         public string typeField = "type";
         public string userIdField = "userId";
@@ -303,7 +305,8 @@ namespace WhoisntCitizen.Chat
                     userId = Str(d, userIdField),
                     nickname = Str(d, nicknameField),
                     content = Str(d, messageField),
-                    createdAt = Str(d, createdAtField)
+                    createdAt = Str(d, createdAtField),
+                    nightChat = Bool(d, nightChatField)
                 });
             }
             return result;
@@ -315,6 +318,15 @@ namespace WhoisntCitizen.Chat
             if (string.IsNullOrEmpty(key) || !d.TryGetValue(key, out v) || v == null) return "";
             if (v is double) return ((double)v).ToString(CultureInfo.InvariantCulture);
             return v.ToString();
+        }
+
+        static bool Bool(Dictionary<string, object> d, string key)
+        {
+            object v;
+            if (string.IsNullOrEmpty(key) || !d.TryGetValue(key, out v) || v == null) return false;
+            if (v is bool) return (bool)v;
+            bool b;
+            return bool.TryParse(v.ToString(), out b) && b;
         }
 
         static long Long(Dictionary<string, object> d, string key)
