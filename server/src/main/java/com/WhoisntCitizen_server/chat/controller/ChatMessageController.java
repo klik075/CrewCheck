@@ -30,6 +30,7 @@ import java.util.List;
  *          201 Created / 403 채팅할 수 없는 플레이어(방 참가자가 아님) / 404 방 없음
  *  - 조회: GET  /api/v1/rooms/{roomId}/messages[?limit=50][&afterId=100]
  *          200 OK / 404 방 없음
+ *          게임 중 사망자 채팅(type=DEAD)은 같은 게임에서 사망한 플레이어의 조회 결과에만 들어갑니다.
  *          (limit, afterId는 명세 추가 파라미터 - WebSocket 적용 전까지 폴링용)
  *  - 공지: POST /api/v1/rooms/{roomId}/system-messages  {"message":"..."}  (명세 추가 API)
  */
@@ -48,9 +49,11 @@ public class ChatMessageController {
 
     @GetMapping("/messages")
     public List<ChatMessageSummary> getMessages(@PathVariable long roomId,
+                                                @AuthenticationPrincipal Jwt jwt,
                                                 @RequestParam(required = false) Long afterId,
                                                 @RequestParam(required = false) Integer limit) {
-        return service.getMessages(roomId, afterId, limit);
+        // 조회하는 사람에 따라 보이는 메시지가 다름 (사망자 채팅은 사망자에게만)
+        return service.getMessages(roomId, jwt == null ? null : memberId(jwt), afterId, limit);
     }
 
     @PostMapping("/messages")

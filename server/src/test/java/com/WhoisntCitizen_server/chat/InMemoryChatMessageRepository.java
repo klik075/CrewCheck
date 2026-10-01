@@ -18,9 +18,9 @@ class InMemoryChatMessageRepository implements ChatMessageRepository {
     private final Map<Long, AtomicLong> seqs = new ConcurrentHashMap<>();
 
     @Override
-    public synchronized ChatMessage save(long roomId, MessageType type, Long userId, String nickname, String message) {
+    public synchronized ChatMessage save(long roomId, MessageType type, Long userId, String nickname, String message, String gameId) {
         long id = seqs.computeIfAbsent(roomId, k -> new AtomicLong()).incrementAndGet();
-        ChatMessage m = new ChatMessage(id, roomId, type, userId, nickname, message, LocalDateTime.now());
+        ChatMessage m = new ChatMessage(id, roomId, type, userId, nickname, message, LocalDateTime.now(), gameId);
         rooms.computeIfAbsent(roomId, k -> new ArrayList<>()).add(m);
         return m;
     }
