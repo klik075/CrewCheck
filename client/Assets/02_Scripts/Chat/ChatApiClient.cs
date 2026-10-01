@@ -51,7 +51,8 @@ namespace WhoisntCitizen.Chat
     public class ChatApiClient : MonoBehaviour
     {
         [Header("Server")]
-        public string baseUrl = "http://localhost:8080";
+        [Tooltip("비워 두면 ApiConfig.BaseUrl(로그인·로비와 같은 서버)을 씁니다. 다른 서버로 채팅만 테스트할 때만 입력하세요.")]
+        public string baseUrlOverride = "";
         public string apiPrefix = "/api/v1";
         [Tooltip("채팅할 로비 방 id (0 이하면 [개발용] 설정에 따라 새 방을 만듭니다)")]
         public long roomId = 1;
@@ -70,7 +71,7 @@ namespace WhoisntCitizen.Chat
 
         string Base
         {
-            get { return baseUrl.TrimEnd('/'); }
+            get { return (string.IsNullOrEmpty(baseUrlOverride) ? ApiConfig.BaseUrl : baseUrlOverride).TrimEnd('/'); }
         }
 
         string RoomUrl

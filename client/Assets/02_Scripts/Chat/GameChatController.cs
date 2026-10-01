@@ -14,7 +14,7 @@ namespace WhoisntCitizen.Chat
 {
     /// <summary>
     /// GameScene 채팅: ChatScene(ChatUIController)의 서버 기능을 GameScene UI에 연결합니다.
-    ///  - 화면: ChatLogView(채팅 기록) + BottomTabController(하단 탭의 채팅 입력/전송)
+    ///  - 화면: ChatLogView(채팅 기록) + BottomTabController(GameScene 하단 탭) 또는 ChatInputBar(Room 씬 입력 바)
     ///  - 서버: ChatApiClient (조회·전송·공지, JWT)
     ///
     /// 기능 (ChatScene과 동일)
@@ -33,6 +33,8 @@ namespace WhoisntCitizen.Chat
         public ChatApiClient api;
         public ChatLogView chatLog;
         public BottomTabController bottomTab;
+        [Tooltip("(Room 씬) [+] 없는 간단한 입력 바. GameScene은 bottomTab을 쓰고 이 칸은 비워 둔다")]
+        public ChatInputBar inputBar;
 
         [Header("Chat")]
         [Tooltip("화면에 남겨 두는 최근 메시지 수 (서버 조회 limit, 최대 200)")]
@@ -107,6 +109,7 @@ namespace WhoisntCitizen.Chat
             if (api == null) api = GetComponent<ChatApiClient>();
             if (chatLog == null) chatLog = FindFirstObjectByType<ChatLogView>(FindObjectsInactive.Include);
             if (bottomTab == null) bottomTab = FindFirstObjectByType<BottomTabController>(FindObjectsInactive.Include);
+            if (inputBar == null) inputBar = FindFirstObjectByType<ChatInputBar>(FindObjectsInactive.Include);
             if (chatLog != null) _scroll = chatLog.GetComponentInChildren<ScrollRect>(true);
             // 씬에 미리 들어 있던 예시 줄 제거. GameScreen이 줄을 넣기 전(Awake)에 한 번만 한다.
             if (chatLog != null) chatLog.Clear();
@@ -116,12 +119,14 @@ namespace WhoisntCitizen.Chat
         {
             ChatNotice.Posted += OnChatNotice;
             if (bottomTab != null) bottomTab.ChatSubmitted += Send;
+            if (inputBar != null) inputBar.ChatSubmitted += Send;
         }
 
         void OnDisable()
         {
             ChatNotice.Posted -= OnChatNotice;
             if (bottomTab != null) bottomTab.ChatSubmitted -= Send;
+            if (inputBar != null) inputBar.ChatSubmitted -= Send;
         }
 
         void Start()
