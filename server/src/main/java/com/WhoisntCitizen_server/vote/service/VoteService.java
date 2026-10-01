@@ -10,6 +10,9 @@ import com.WhoisntCitizen_server.vote.dto.VoteResponse;
 import com.WhoisntCitizen_server.vote.entity.ExecutionResult;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+import java.util.Map;
+
 /** 6. 투표 / 7. 처형 결과 */
 @Service
 public class VoteService {
@@ -44,8 +47,18 @@ public class VoteService {
                 throw new GameRuleException("아직 처형 결과가 없습니다.");
             }
             String name = executionResult.executedPlayerId() == null ? null : game.getPlayer(executionResult.executedPlayerId()).getNickname();
-            return new ExecutionResultResponse(executionResult.day(), executionResult.executedPlayerId(), name, executionResult.tie(), executionResult.voteCounts());
+            return new ExecutionResultResponse(executionResult.day(), executionResult.executedPlayerId(), name, executionResult.tie(),
+                    executionResult.voteCounts(), voteList(game, executionResult.voteCounts()));
         }
+    }
+
+    /** 득표 많은 순, 같으면 playerId 순. JsonUtility가 Map을 못 읽어서 클라이언트에는 이 목록을 쓴다. */
+    private List<ExecutionResultResponse.VoteCount> voteList(Game game, Map<Long, Integer> voteCounts) {
+        return voteCounts.entrySet().stream()
+                .sorted(Map.Entry.<Long, Integer>comparingByValue().reversed()
+                        .thenComparing(Map.Entry.comparingByKey()))
+                .map(e -> new ExecutionResultResponse.VoteCount(e.getKey(), game.getPlayer(e.getKey()).getNickname(), e.getValue()))
+                .toList();
     }
 
     private Game findGame(String gameId) {
