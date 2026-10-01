@@ -1,0 +1,37 @@
+# EC2 운영용 MySQL + Redis
+# 로컬 docker-compose.yml과 다른 점: 포트를 127.0.0.1에만 열어 외부에서 DB/Redis에 직접 붙지 못하게 한다.
+# 비밀번호는 같은 폴더의 .env 파일에서 읽는다. (예시: app.env.example 참고)
+# 실행: docker compose -f docker-compose.prod.yml --env-file .env up -d
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: whoisntcitizen-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: mafia
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: whoisntcitizen-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+
+volumes:
+  mysql-data:

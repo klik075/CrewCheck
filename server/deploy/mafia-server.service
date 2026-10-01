@@ -1,0 +1,18 @@
+# /etc/systemd/system/mafia-server.service
+# 서버가 죽으면 자동 재시작, EC2 재부팅 시 자동 실행.
+[Unit]
+Description=WhoisntCitizen Mafia Game Server
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=ec2-user
+WorkingDirectory=/opt/mafia
+EnvironmentFile=/opt/mafia/.env
+ExecStart=/usr/bin/java -Xms256m -Xmx512m -jar /opt/mafia/app.jar
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target

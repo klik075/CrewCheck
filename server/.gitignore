@@ -41,3 +41,7 @@ out/
 ### postman
 postman/collections/
 postman/globals/
+### env ###
+.env
+*.env
+!*.env.example
