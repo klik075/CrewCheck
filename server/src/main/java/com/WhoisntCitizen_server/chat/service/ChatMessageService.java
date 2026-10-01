@@ -86,7 +86,7 @@ public class ChatMessageService {
     /** 방 존재 여부를 확인하지 않고 시스템 메시지를 저장합니다. (로비 이벤트 처리용) */
     ChatMessage saveSystem(long roomId, String message) {
         return repository.save(roomId, MessageType.SYSTEM,
-                null, ChatMessage.SYSTEM_NICKNAME, message.trim());
+                ChatMessage.SYSTEM_USER_ID, ChatMessage.SYSTEM_NICKNAME, message.trim());
     }
 
     private Room getRoom(long roomId) {

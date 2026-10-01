@@ -174,6 +174,7 @@ class ChatMessageControllerTest {
         mvc.perform(get("/api/v1/rooms/{roomId}/messages", ROOM_ID))
                 .andExpect(jsonPath("$", hasSize(2)))
                 .andExpect(jsonPath("$[0].type").value("SYSTEM"))
+                .andExpect(jsonPath("$[0].userId").value(0))
                 .andExpect(jsonPath("$[0].message").value("영희님이 입장했습니다."))
                 .andExpect(jsonPath("$[1].message").value("영희님이 퇴장했습니다."));
     }
@@ -185,6 +186,7 @@ class ChatMessageControllerTest {
                         .content("{\"message\":\"밤이 되었습니다.\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.type").value("SYSTEM"))
+                .andExpect(jsonPath("$.userId").value(0))
                 .andExpect(jsonPath("$.message").value("밤이 되었습니다."));
     }
 
