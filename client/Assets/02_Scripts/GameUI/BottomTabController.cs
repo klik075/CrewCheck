@@ -21,6 +21,7 @@ namespace WhoisntCitizen.GameUI
     //   ├─ TabBar   : [+] [채팅 입력..........] [전송]
     //   └─ Drawer   : ChatKeyboardPanel / VotePanel 중 하나만 활성화
     // 닫힘: Drawer 높이만큼 아래로 내려가 탭 바만 보인다. 열림: y = 0.
+    // pushTargets(채팅 기록 등)의 아래쪽 끝은 항상 시트 윗변을 따라간다. (카카오톡처럼 밀어올리기)
     public class BottomTabController : MonoBehaviour
     {
         [Header("Sheet")]
@@ -37,9 +38,9 @@ namespace WhoisntCitizen.GameUI
         [SerializeField] private GameObject chatPanel;
         [SerializeField] private GameObject votePanel;
 
-        [Header("Etc")]
-        [Tooltip("서랍이 열려 있을 때 바깥(게임 화면)을 누르면 닫히게 하는 반투명 버튼")]
-        [SerializeField] private Button dimmer;
+        [Header("Push Up")]
+        [Tooltip("아래쪽 끝(offsetMin.y)이 시트 윗변을 따라 올라갈 UI. 부모 기준 하단 stretch로 배치된 채팅 기록 등")]
+        [SerializeField] private RectTransform[] pushTargets;
 
         public event Action<string> ChatSubmitted;
         public event Action<BottomTabMode> ModeChanged;
@@ -53,7 +54,6 @@ namespace WhoisntCitizen.GameUI
             if (sheet == null) sheet = (RectTransform)transform;
             ApplyContent(BottomTabMode.Closed);
             SetSheetY(-drawerHeight);
-            if (dimmer != null) dimmer.gameObject.SetActive(false);
         }
 
         private void OnEnable()
@@ -65,7 +65,6 @@ namespace WhoisntCitizen.GameUI
             }
             if (plusButton != null) plusButton.onClick.AddListener(OnPlusClicked);
             if (sendButton != null) sendButton.onClick.AddListener(OnSendClicked);
-            if (dimmer != null) dimmer.onClick.AddListener(Close);
         }
 
         private void OnDisable()
@@ -77,7 +76,6 @@ namespace WhoisntCitizen.GameUI
             }
             if (plusButton != null) plusButton.onClick.RemoveListener(OnPlusClicked);
             if (sendButton != null) sendButton.onClick.RemoveListener(OnSendClicked);
-            if (dimmer != null) dimmer.onClick.RemoveListener(Close);
         }
 
         // ---------- 외부에서 호출 ----------
@@ -97,7 +95,6 @@ namespace WhoisntCitizen.GameUI
 
             // 열 때는 내용을 먼저 바꾸고, 닫을 때는 다 내려간 뒤에 끈다.
             if (mode != BottomTabMode.Closed) ApplyContent(mode);
-            if (dimmer != null) dimmer.gameObject.SetActive(mode != BottomTabMode.Closed);
 
             Slide(mode == BottomTabMode.Closed ? -drawerHeight : 0f);
             ModeChanged?.Invoke(mode);
@@ -171,6 +168,15 @@ namespace WhoisntCitizen.GameUI
             Vector2 p = sheet.anchoredPosition;
             p.y = y;
             sheet.anchoredPosition = p;
+
+            // 시트 윗변 = 시트 위치 + 시트 높이(탭 바 + Drawer). 닫혀 있으면 탭 바 높이와 같다.
+            if (pushTargets == null) return;
+            float sheetTop = y + sheet.rect.height;
+            foreach (RectTransform target in pushTargets)
+            {
+                if (target == null) continue;
+                target.offsetMin = new Vector2(target.offsetMin.x, sheetTop);
+            }
         }
     }
 }
