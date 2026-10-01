@@ -16,7 +16,7 @@ namespace WhoisntCitizen.Lobby
     ///   });
     ///
     /// Lobby 씬은 GetRooms / CreateRoom / JoinRoom / GetRoom 을 사용한다.
-    /// GetRoom / GetPlayers / LeaveRoom / StartGame 은 Game 씬(대기 화면)에서 사용하도록 미리 만들어 둔 것이다.
+    /// GetRoom / LeaveRoom / StartGame 은 Room 씬(대기실, RoomUIController)에서 사용한다.
     /// </summary>
     public static class RoomApi
     {

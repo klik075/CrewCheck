@@ -57,7 +57,7 @@ namespace WhoisntCitizen.Lobby
 
     /// <summary>
     /// 방 상세 (서버 RoomDetailResponseDto). GET /api/v1/rooms/{roomId}
-    /// Game 씬의 대기 화면에서 주기적으로 조회해서, status가 IN_GAME이 되면 gameId로 게임을 시작한다.
+    /// Room 씬(대기실)에서 주기적으로 조회해서, status가 IN_GAME이 되면 gameId로 게임을 시작한다.
     /// </summary>
     [Serializable]
     public class RoomDetailResponse

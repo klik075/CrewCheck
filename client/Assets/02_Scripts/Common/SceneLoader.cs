@@ -31,7 +31,8 @@ namespace WhoisntCitizen.Common
         {
             { SceneType.Title, "Title" },   // 로그인 / 회원가입 (TitleController)
             { SceneType.Lobby, "Lobby" },
-            { SceneType.Game,  "Game" },
+            { SceneType.Room,  "Room" },      // 대기실 (RoomUIController)
+            { SceneType.Game,  "GameScene" }, // 게임 진행
         };
 
         private static SceneLoader instance;
