@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.game.controller;
 
+import com.WhoisntCitizen_server.game.dto.DevRoleView;
 import com.WhoisntCitizen_server.game.dto.StartGameRequest;
 import com.WhoisntCitizen_server.game.dto.StartGameResponse;
 import com.WhoisntCitizen_server.game.service.GameService;
@@ -7,10 +8,14 @@ import jakarta.validation.Valid;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 개발용 게임 생성 API (local 프로필에서만 등록된다).
@@ -35,5 +40,14 @@ public class DevGameController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(gameService.startGame(request));
+    }
+
+    /**
+     * 전원의 실제 직업 조회 (테스트 전용). 원숭이는 /me에서 위장 직업으로 보이므로,
+     * Postman이 누가 진짜 원숭이·앵무새인지 알아야 결과를 검증할 수 있다. prod에는 없다.
+     */
+    @GetMapping("/{gameId}/dev/roles")
+    public List<DevRoleView> roles(@PathVariable String gameId) {
+        return gameService.getDevRoles(gameId);
     }
 }

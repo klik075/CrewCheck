@@ -2,7 +2,7 @@
   "info": {
     "name": "MafiaGame Server",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "0번 폴더(테스트 계정 준비)를 가장 먼저 실행하세요. 게임 API는 모두 JWT(Authorization: Bearer)가 필요합니다.\n요청 헤더의 X-Act-As: {userId}는 서버로 가지 않고, 컬렉션 스크립트가 그 유저의 토큰으로 바꿔서 보냅니다.\n역할 분배: 마피아 max(1, 인원/3), 경찰 1, 의사 1, 나머지 시민.\n시나리오 A(6명, 시민 승리, 2일 진행)와 B(4명, 마피아 승리)는 각각 독립적으로 처음부터 폴더 순서대로 실행하세요.\n역할은 무작위라서 'x-2. 역할 확인'을 모두 실행하면 역할별 id 변수가 자동으로 채워집니다."
+    "description": "0번 폴더(테스트 계정 준비)를 가장 먼저 실행하세요. 게임 API는 모두 JWT(Authorization: Bearer)가 필요합니다.\n요청 헤더의 X-Act-As: {userId}는 서버로 가지 않고, 컬렉션 스크립트가 그 유저의 토큰으로 바꿔서 보냅니다.\n직업 구성(RoleAssigner): 4~6명은 해적·선장·선의·선원만, 7명부터 망루지기·원숭이, 8명 갑판장, 9명부터 앵무새·주정뱅이가 추가됩니다. 신규 직업은 시나리오 D(9명)에서 확인합니다.\n시나리오 A(6명, 시민 승리, 2일 진행)와 B(4명, 마피아 승리)는 각각 독립적으로 처음부터 폴더 순서대로 실행하세요.\n역할은 무작위라서 'x-2. 역할 확인'을 모두 실행하면 역할별 id 변수가 자동으로 채워집니다."
   },
   "variable": [
     {
@@ -72,12 +72,64 @@
     {
       "key": "roomId",
       "value": ""
+    },
+    {
+      "key": "p7Id",
+      "value": ""
+    },
+    {
+      "key": "p8Id",
+      "value": ""
+    },
+    {
+      "key": "p9Id",
+      "value": ""
+    },
+    {
+      "key": "j_monkeyShown",
+      "value": ""
+    },
+    {
+      "key": "j_raider1Id",
+      "value": ""
+    },
+    {
+      "key": "j_raider2Id",
+      "value": ""
+    },
+    {
+      "key": "j_parrotId",
+      "value": ""
+    },
+    {
+      "key": "j_captainId",
+      "value": ""
+    },
+    {
+      "key": "j_doctorId",
+      "value": ""
+    },
+    {
+      "key": "j_lookoutId",
+      "value": ""
+    },
+    {
+      "key": "j_boatswainId",
+      "value": ""
+    },
+    {
+      "key": "j_monkeyId",
+      "value": ""
+    },
+    {
+      "key": "j_drunkId",
+      "value": ""
     }
   ],
   "item": [
     {
       "name": "0. 테스트 계정 준비 (가장 먼저 1번 실행)",
-      "description": "테스터1~6 계정을 만들고(이미 있으면 400이어도 OK) 로그인해서 p1Id~p6Id(userId)와 token_{userId}를 저장합니다.\n서버/DB를 새로 띄웠다면 다시 실행하세요.",
+      "description": "테스터1~9 계정을 만들고(이미 있으면 400이어도 OK) 로그인해서 p1Id~p9Id(userId)와 token_{userId}를 저장합니다.\n시나리오 A·B·C는 1~6, 시나리오 D(신규 직업)는 1~9를 씁니다. 서버/DB를 새로 띄웠다면 다시 실행하세요.",
       "item": [
         {
           "name": "회원가입 - 테스터1",
@@ -614,6 +666,276 @@
                   "pm.collectionVariables.set('p6Id', r.userId);",
                   "pm.collectionVariables.set('token_' + r.userId, r.accessToken);",
                   "console.log('테스터6 userId =', r.userId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "회원가입 - 테스터7",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/members/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "members",
+                "signup"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"tester7\",\n  \"password\": \"Test1234!\",\n  \"nickname\": \"테스터7\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('가입 성공 또는 이미 가입됨', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "로그인 - 테스터7",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/members/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "members",
+                "login"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"tester7\",\n  \"password\": \"Test1234!\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('p7Id', r.userId);",
+                  "pm.collectionVariables.set('token_' + r.userId, r.accessToken);",
+                  "console.log('테스터7 userId =', r.userId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "회원가입 - 테스터8",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/members/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "members",
+                "signup"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"tester8\",\n  \"password\": \"Test1234!\",\n  \"nickname\": \"테스터8\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('가입 성공 또는 이미 가입됨', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "로그인 - 테스터8",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/members/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "members",
+                "login"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"tester8\",\n  \"password\": \"Test1234!\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('p8Id', r.userId);",
+                  "pm.collectionVariables.set('token_' + r.userId, r.accessToken);",
+                  "console.log('테스터8 userId =', r.userId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "회원가입 - 테스터9",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/members/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "members",
+                "signup"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"tester9\",\n  \"password\": \"Test1234!\",\n  \"nickname\": \"테스터9\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('가입 성공 또는 이미 가입됨', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "로그인 - 테스터9",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/members/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "members",
+                "login"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"tester9\",\n  \"password\": \"Test1234!\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('p9Id', r.userId);",
+                  "pm.collectionVariables.set('token_' + r.userId, r.accessToken);",
+                  "console.log('테스터9 userId =', r.userId);"
                 ]
               }
             }
@@ -1731,7 +2053,7 @@
                       "const r = pm.response.json();",
                       "console.log(r);",
                       "pm.test('사망자 없음, 의사 보호 성공', () => { pm.expect(r.killedPlayerId).to.be.null; pm.expect(r.protectedByDoctor).to.be.true; });",
-                      "pm.test('조사 결과: 마피아1은 마피아', () => { pm.expect(r.investigation.targetId).to.eql(Number(pm.collectionVariables.get('mafia1Id'))); pm.expect(r.investigation.mafia).to.be.true; });"
+                      "pm.test('조사 결과: 마피아1은 해적 진영', () => { const inv = r.reports.find(x => x.type === 'FACTION'); pm.expect(inv, 'FACTION 결과').to.exist; pm.expect(inv.targetId).to.eql(Number(pm.collectionVariables.get('mafia1Id'))); pm.expect(inv.faction).to.eql('PIRATE'); });"
                     ]
                   }
                 }
@@ -1771,7 +2093,7 @@
                       "pm.test('200', () => pm.response.to.have.status(200));",
                       "const r = pm.response.json();",
                       "console.log(r);",
-                      "pm.test('조사 결과는 안 보임', () => pm.expect(r.investigation).to.be.null);"
+                      "pm.test('조사 결과는 안 보임', () => pm.expect(r.reports).to.be.empty);"
                     ]
                   }
                 }
@@ -2357,7 +2679,7 @@
                       "const r = pm.response.json();",
                       "console.log(r);",
                       "pm.test('경찰 사망', () => pm.expect(r.killedPlayerId).to.eql(Number(pm.collectionVariables.get('policeId'))));",
-                      "pm.test('조사 결과: 마피아2는 마피아', () => { pm.expect(r.investigation.targetId).to.eql(Number(pm.collectionVariables.get('mafia2Id'))); pm.expect(r.investigation.mafia).to.be.true; });"
+                      "pm.test('조사 결과: 마피아2는 해적 진영', () => { const inv = r.reports.find(x => x.type === 'FACTION'); pm.expect(inv, 'FACTION 결과').to.exist; pm.expect(inv.targetId).to.eql(Number(pm.collectionVariables.get('mafia2Id'))); pm.expect(inv.faction).to.eql('PIRATE'); });"
                     ]
                   }
                 }
@@ -3553,7 +3875,7 @@
                       "const r = pm.response.json();",
                       "console.log(r);",
                       "pm.test('사망자 없음, 의사 보호 성공', () => { pm.expect(r.killedPlayerId).to.be.null; pm.expect(r.protectedByDoctor).to.be.true; });",
-                      "pm.test('조사 결과: 마피아1은 마피아', () => { pm.expect(r.investigation.targetId).to.eql(Number(pm.collectionVariables.get('mafia1Id'))); pm.expect(r.investigation.mafia).to.be.true; });"
+                      "pm.test('조사 결과: 마피아1은 해적 진영', () => { const inv = r.reports.find(x => x.type === 'FACTION'); pm.expect(inv.targetId).to.eql(Number(pm.collectionVariables.get('mafia1Id'))); pm.expect(inv.faction).to.eql('PIRATE');});"
                     ]
                   }
                 }
@@ -3593,7 +3915,7 @@
                       "pm.test('200', () => pm.response.to.have.status(200));",
                       "const r = pm.response.json();",
                       "console.log(r);",
-                      "pm.test('조사 결과는 안 보임', () => pm.expect(r.investigation).to.be.null);"
+                      "pm.test('조사 결과는 안 보임', () => pm.expect(r.reports).to.be.empty);"
                     ]
                   }
                 }
@@ -4179,7 +4501,7 @@
                       "const r = pm.response.json();",
                       "console.log(r);",
                       "pm.test('경찰 사망', () => pm.expect(r.killedPlayerId).to.eql(Number(pm.collectionVariables.get('policeId'))));",
-                      "pm.test('조사 결과: 마피아2는 마피아', () => { pm.expect(r.investigation.targetId).to.eql(Number(pm.collectionVariables.get('mafia2Id'))); pm.expect(r.investigation.mafia).to.be.true; });"
+                      "pm.test('조사 결과: 마피아2는 해적 진영', () => { const inv = r.reports.find(x => x.type === 'FACTION'); pm.expect(inv, 'FACTION 결과').to.exist; pm.expect(inv.targetId).to.eql(Number(pm.collectionVariables.get('mafia2Id'))); pm.expect(inv.faction).to.eql('PIRATE'); });"
                     ]
                   }
                 }
@@ -4923,7 +5245,7 @@
                       "const r = pm.response.json();",
                       "console.log(r);",
                       "pm.test('시민 사망', () => pm.expect(r.killedPlayerId).to.eql(Number(pm.collectionVariables.get('citizen1Id'))));",
-                      "pm.test('의사는 마피아 아님', () => pm.expect(r.investigation.mafia).to.be.false);"
+                      "pm.test('의사는 해적 아님', () => { const inv = r.reports.find(x => x.type === 'FACTION'); pm.expect(inv, 'FACTION 결과').to.exist; pm.expect(inv.faction).to.eql('CREW'); });"
                     ]
                   }
                 }
@@ -5141,6 +5463,3315 @@
                       "const r = pm.response.json();",
                       "console.log(r);",
                       "pm.test('마피아 승리', () => { pm.expect(r.ended).to.be.true; pm.expect(r.winner).to.eql('PIRATE'); });"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "시나리오 D - 신규 직업 (9명, 선원 승리)",
+      "description": "9인 구성에서 신규 직업 5종을 확인합니다: 앵무새(접선·관찰), 망루지기(방문자), 갑판장(차단), 원숭이(위장·가짜 결과), 주정뱅이(시체 직업).\n0번 폴더(테스터1~9)를 먼저 실행하세요. 개발용 API(local 전용)로 방 없이 게임을 만들고, 원숭이 정체는 /dev/roles로 확인합니다.\n흐름: 1일차 밤(앵무새 접선, 선장 차단당함, 원숭이 사망) → 해적1 처형 → 2일차 밤(해적2 차단, 주정뱅이가 원숭이 시체 확인) → 해적2 처형 → 3일차 밤(전원 넘기기) → 앵무새 처형 → 선원 승리.\nlocal 기준 밤결과·낮이 각 5초라 투표 전에 10초쯤 기다리세요.",
+      "item": [
+        {
+          "name": "D-1. 게임 시작 (9명)",
+          "item": [
+            {
+              "name": "게임 시작 (9명, 개발용)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games"
+                  ]
+                },
+                "description": "9인 구성: 해적 2, 앵무새, 선장, 선의, 망루지기, 갑판장, 원숭이, 주정뱅이 (모든 직업이 1번씩 나옴)",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"roomId\": \"room-jobs\",\n  \"players\": [\n    { \"playerId\": {{p1Id}}, \"nickname\": \"테스터1\" },\n    { \"playerId\": {{p2Id}}, \"nickname\": \"테스터2\" },\n    { \"playerId\": {{p3Id}}, \"nickname\": \"테스터3\" },\n    { \"playerId\": {{p4Id}}, \"nickname\": \"테스터4\" },\n    { \"playerId\": {{p5Id}}, \"nickname\": \"테스터5\" },\n    { \"playerId\": {{p6Id}}, \"nickname\": \"테스터6\" },\n    { \"playerId\": {{p7Id}}, \"nickname\": \"테스터7\" },\n    { \"playerId\": {{p8Id}}, \"nickname\": \"테스터8\" },\n    { \"playerId\": {{p9Id}}, \"nickname\": \"테스터9\" }\n  ]\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201', () => pm.response.to.have.status(201));",
+                      "const r = pm.response.json();",
+                      "pm.test('첫 페이즈는 NIGHT, 1일차', () => { pm.expect(r.phase).to.eql('NIGHT'); pm.expect(r.day).to.eql(1); });",
+                      "pm.collectionVariables.set('gameId', r.gameId);",
+                      "console.log('gameId =', r.gameId);"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "D-2. 역할 확인 (실제 직업 / 보이는 직업)",
+          "item": [
+            {
+              "name": "실제 직업 조회 (개발용) → 역할 변수 설정",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/dev/roles",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "dev",
+                    "roles"
+                  ]
+                },
+                "description": "local 전용 API. 원숭이는 /me에서 위장 직업으로 보이므로, 테스트가 누가 누구인지 알기 위해 실제 직업을 읽는다."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.table ? console.table(r) : console.log(r);",
+                      "const set = (k, v) => pm.collectionVariables.set('j_' + k + 'Id', v);",
+                      "const one = code => r.find(p => p.role === code);",
+                      "const raiders = r.filter(p => p.role === 'PIRATE_RAIDER').map(p => p.playerId).sort((a, b) => a - b);",
+                      "pm.test('9인 구성: 모든 직업이 맞는 수만큼 있음', () => {",
+                      "  pm.expect(r.length).to.eql(9); pm.expect(raiders.length).to.eql(2);",
+                      "  ['PIRATE_PARROT','CREW_CAPTAIN','CREW_DOCTOR','CREW_LOOKOUT','CREW_BOATSWAIN','CREW_MONKEY','CREW_DRUNK'].forEach(c => pm.expect(r.filter(p => p.role === c).length, c).to.eql(1));",
+                      "});",
+                      "set('raider1', raiders[0]); set('raider2', raiders[1]);",
+                      "set('parrot', one('PIRATE_PARROT').playerId); set('captain', one('CREW_CAPTAIN').playerId); set('doctor', one('CREW_DOCTOR').playerId);",
+                      "set('lookout', one('CREW_LOOKOUT').playerId); set('boatswain', one('CREW_BOATSWAIN').playerId); set('drunk', one('CREW_DRUNK').playerId);",
+                      "const monkey = one('CREW_MONKEY'); set('monkey', monkey.playerId); pm.collectionVariables.set('j_monkeyShown', monkey.shownRole);",
+                      "pm.test('원숭이는 다른 직업으로 위장', () => pm.expect(monkey.shownRole).to.be.oneOf(['CREW_CAPTAIN','CREW_DOCTOR','CREW_LOOKOUT','CREW_BOATSWAIN','CREW_DRUNK']));",
+                      "pm.test('나머지는 보이는 직업 = 실제 직업', () => r.filter(p => p.role !== 'CREW_MONKEY').forEach(p => pm.expect(p.shownRole).to.eql(p.role)));",
+                      "console.log('해적', raiders.join(','), '| 앵무새', one('PIRATE_PARROT').playerId, '| 원숭이', monkey.playerId, '(위장:', monkey.shownRole + ')');"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "해적1 /me - 동료는 해적2뿐 (접선 전 앵무새 안 보임)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_raider1Id}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('동료 = [해적2]', () => pm.expect(r.mafiaTeammateIds).to.eql([Number(pm.collectionVariables.get('j_raider2Id'))]));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "앵무새 /me - 해적 진영이지만 동료를 모름",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_parrotId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('PIRATE_PARROT, WATCH_ACTION', () => { pm.expect(r.role).to.eql('PIRATE_PARROT'); pm.expect(r.faction).to.eql('PIRATE'); pm.expect(r.actionCode).to.eql('WATCH_ACTION'); });",
+                      "pm.test('접선 전: contacted=false, 동료 없음', () => { pm.expect(r.contacted).to.be.false; pm.expect(r.mafiaTeammateIds).to.be.empty; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "원숭이 /me - 위장 직업이 보임",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_monkeyId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('위장 직업으로 보임', () => { pm.expect(r.role).to.eql(pm.collectionVariables.get('j_monkeyShown')); pm.expect(r.role).to.not.eql('CREW_MONKEY'); pm.expect(r.faction).to.eql('CREW'); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "주정뱅이 /me - 남은 횟수 2",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_drunkId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('READ_CORPSE_ROLE, 2회', () => { pm.expect(r.actionCode).to.eql('READ_CORPSE_ROLE'); pm.expect(r.remainingUses).to.eql(2); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "망루지기 /me",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_lookoutId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('WATCH_VISITORS', () => pm.expect(r.actionCode).to.eql('WATCH_VISITORS'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "갑판장 /me",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_boatswainId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('BLOCK', () => pm.expect(r.actionCode).to.eql('BLOCK'));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "D-3. 1일차 밤 (접선 · 차단 · 감시 · 위장)",
+          "item": [
+            {
+              "name": "앵무새 → 해적1 (즉시 접선)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_parrotId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "pm.test('알게 된 해적 = 해적1, 해적2', () => pm.expect([...r.contactedPirateIds].sort((a, b) => a - b)).to.eql([Number(pm.collectionVariables.get('j_raider1Id')), Number(pm.collectionVariables.get('j_raider2Id'))]));",
+                      "pm.test('접선 직후에는 밤이 끝나지 않음', () => pm.expect(r.phase).to.eql('NIGHT'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "앵무새 재제출 → 409 (접선한 밤은 행동 고정)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_parrotId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_captainId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409', () => pm.response.to.have.status(409));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "앵무새 넘기기 → 409 (행동 고정)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_parrotId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions/skip",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions",
+                    "skip"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409', () => pm.response.to.have.status(409));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "앵무새 /me - 접선 후 해적이 보임",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_parrotId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('contacted=true', () => pm.expect(r.contacted).to.be.true);",
+                      "pm.test('동료 = 해적1, 해적2', () => pm.expect([...r.mafiaTeammateIds].sort((a, b) => a - b)).to.eql([Number(pm.collectionVariables.get('j_raider1Id')), Number(pm.collectionVariables.get('j_raider2Id'))]));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "해적1 /me - 접선 후 앵무새가 보임",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_raider1Id}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('동료에 앵무새 포함', () => { pm.expect(r.mafiaTeammateIds).to.include(Number(pm.collectionVariables.get('j_parrotId'))); pm.expect(r.mafiaTeammateIds.length).to.eql(2); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "주정뱅이 → 살아 있는 사람 → 409 (시체만 가능)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_drunkId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_captainId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409', () => pm.response.to.have.status(409));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "갑판장 → 자기 자신 → 409",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_boatswainId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_boatswainId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409', () => pm.response.to.have.status(409));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "갑판장 → 선장 차단",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_boatswainId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_captainId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선장 → 해적1 조사 (차단당해 결과 없음 예정)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_captainId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선의 → 자기 보호",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_doctorId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_doctorId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "망루지기 → 원숭이 감시",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_lookoutId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_monkeyId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "원숭이(위장 능력) → 선의",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_monkeyId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_doctorId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "// 원숭이가 주정뱅이로 위장했으면 첫날 밤엔 시체가 없어 능력을 쓸 수 없다 → 이 요청을 건너뛴다.",
+                      "if (pm.collectionVariables.get('j_monkeyShown') === 'CREW_DRUNK') { console.log('원숭이(주정뱅이 위장): 첫날 밤 건너뜀'); pm.execution.skipRequest(); }"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "해적1 → 원숭이 공격",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_raider1Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_monkeyId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "해적2 → 원숭이 공격 (마지막 제출 → 밤 결과)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_raider2Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_monkeyId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('응답 phase = NIGHT_RESULT', () => pm.expect(pm.response.json().phase).to.eql('NIGHT_RESULT'));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "D-4. 1일차 밤 결과",
+          "item": [
+            {
+              "name": "밤 결과 - 선장 (차단당해 조사 결과 없음)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_captainId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('원숭이 사망, 보호 실패', () => { pm.expect(r.killedPlayerId).to.eql(Number(pm.collectionVariables.get('j_monkeyId'))); pm.expect(r.protectedByDoctor).to.be.false; });",
+                      "pm.test('차단당해 개인 결과 없음', () => pm.expect(r.reports).to.be.empty);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "밤 결과 - 망루지기 (원숭이 방문자 = 공격한 해적 1명)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_lookoutId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "const v = r.reports.find(x => x.type === 'VISITORS');",
+                      "pm.test('VISITORS 결과', () => pm.expect(v).to.exist);",
+                      "pm.test('대상 = 원숭이', () => pm.expect(v.targetId).to.eql(Number(pm.collectionVariables.get('j_monkeyId'))));",
+                      "pm.test('방문자 1명, 해적 중 한 명', () => { pm.expect(v.players.length).to.eql(1); pm.expect(v.players[0].playerId).to.be.oneOf([Number(pm.collectionVariables.get('j_raider1Id')), Number(pm.collectionVariables.get('j_raider2Id'))]); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "밤 결과 - 앵무새 (해적 지목은 결과 없음)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_parrotId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('개인 결과 없음', () => pm.expect(r.reports).to.be.empty);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "밤 결과 - 원숭이 (위장 직업에 맞는 가짜 결과)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_monkeyId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "const shown = pm.collectionVariables.get('j_monkeyShown');",
+                      "const expected = { CREW_CAPTAIN: 'FACTION', CREW_LOOKOUT: 'VISITORS' }[shown];",
+                      "pm.test('위장 직업 ' + shown + '에 맞는 결과', () => {",
+                      "  if (expected) { pm.expect(r.reports.length).to.eql(1); pm.expect(r.reports[0].type).to.eql(expected); }",
+                      "  else pm.expect(r.reports).to.be.empty; // 선의·갑판장 위장은 진짜도 결과가 없고, 주정뱅이 위장은 첫날 행동하지 않음",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "상태 확인 (생존 8명)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "페이즈가 바뀌었는지 확인할 때 실행하세요."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log('phase =', r.phase, '| day =', r.day, '| winner =', r.winner, '| 생존:', r.players.filter(p => p.alive).map(p => p.playerId).join(', '));",
+                      "pm.test('생존 8명', () => pm.expect(r.players.filter(p => p.alive).length).to.eql(8));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "D-5. 1일차 투표 (해적1 처형)",
+          "item": [
+            {
+              "name": "상태 확인 (VOTE가 될 때까지, 밤결과·낮 각 5초)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "페이즈가 바뀌었는지 확인할 때 실행하세요."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log('phase =', r.phase, '| day =', r.day, '| winner =', r.winner, '| 생존:', r.players.filter(p => p.alive).map(p => p.playerId).join(', '));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선장 → 해적1",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_captainId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선의 → 해적1",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_doctorId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "망루지기 → 해적1",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_lookoutId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "갑판장 → 해적1",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_boatswainId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "주정뱅이 → 해적1",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_drunkId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider1Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "해적1 → 선장",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_raider1Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_captainId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "해적2 → 선장",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_raider2Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_captainId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "앵무새 → 선장 (마지막 투표 → 처형)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_parrotId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_captainId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('응답 phase = EXECUTION', () => pm.expect(pm.response.json().phase).to.eql('EXECUTION'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "처형 결과 - 해적1",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/execution-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "execution-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "pm.test('해적1 처형', () => pm.expect(r.executedPlayerId).to.eql(Number(pm.collectionVariables.get('j_raider1Id'))));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "D-6. 2일차 밤 (연속 자기보호 금지 · 공격 차단 · 시체 확인)",
+          "item": [
+            {
+              "name": "상태 확인 (NIGHT, day 2)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "페이즈가 바뀌었는지 확인할 때 실행하세요."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log('phase =', r.phase, '| day =', r.day, '| winner =', r.winner, '| 생존:', r.players.filter(p => p.alive).map(p => p.playerId).join(', '));",
+                      "pm.test('2일차 밤', () => { pm.expect(r.phase).to.eql('NIGHT'); pm.expect(r.day).to.eql(2); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선의 → 자기 보호 → 409 (이틀 연속 금지)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_doctorId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_doctorId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409', () => pm.response.to.have.status(409));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선의 → 망루지기 보호",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_doctorId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_lookoutId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "주정뱅이 → 원숭이 시체",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_drunkId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_monkeyId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "갑판장 → 해적2 차단 (공격 무효)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_boatswainId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider2Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선장 → 앵무새 조사",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_captainId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_parrotId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "망루지기 → 선장 감시",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_lookoutId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_captainId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "앵무새 → 선장 관찰 (접선 후라 고정 안 됨)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_parrotId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_captainId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "해적2 → 망루지기 공격 (마지막 제출 → 밤 결과)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_raider2Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_lookoutId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('응답 phase = NIGHT_RESULT', () => pm.expect(pm.response.json().phase).to.eql('NIGHT_RESULT'));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "D-7. 2일차 밤 결과",
+          "item": [
+            {
+              "name": "밤 결과 - 주정뱅이 (시체의 실제 직업 = 원숭이)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_drunkId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('사망자 없음 (해적2 차단됨)', () => { pm.expect(r.killedPlayerId).to.be.null; pm.expect(r.protectedByDoctor).to.be.false; });",
+                      "const c = r.reports.find(x => x.type === 'CORPSE_ROLE');",
+                      "pm.test('원숭이 시체 → CREW_MONKEY', () => { pm.expect(c).to.exist; pm.expect(c.targetId).to.eql(Number(pm.collectionVariables.get('j_monkeyId'))); pm.expect(c.roleCode).to.eql('CREW_MONKEY'); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "주정뱅이 /me - 남은 횟수 1",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_drunkId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "me"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('remainingUses = 1', () => pm.expect(r.remainingUses).to.eql(1));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "밤 결과 - 선장 (앵무새는 해적 진영)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_captainId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "const f = r.reports.find(x => x.type === 'FACTION');",
+                      "pm.test('앵무새 → PIRATE', () => { pm.expect(f).to.exist; pm.expect(f.targetId).to.eql(Number(pm.collectionVariables.get('j_parrotId'))); pm.expect(f.faction).to.eql('PIRATE'); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "밤 결과 - 망루지기 (선장 방문자 = 앵무새)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_lookoutId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "const v = r.reports.find(x => x.type === 'VISITORS');",
+                      "pm.test('선장 방문자 = [앵무새]', () => { pm.expect(v).to.exist; pm.expect(v.players.map(p => p.playerId)).to.eql([Number(pm.collectionVariables.get('j_parrotId'))]); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "밤 결과 - 앵무새 (선장의 행동)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_parrotId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "const a = r.reports.find(x => x.type === 'ACTIONS');",
+                      "pm.test('선장은 앵무새를 조사', () => { pm.expect(a).to.exist; pm.expect(a.actions.length).to.eql(1); pm.expect(a.actions[0].actionCode).to.eql('INVESTIGATE_FACTION'); pm.expect(a.actions[0].targetId).to.eql(Number(pm.collectionVariables.get('j_parrotId'))); });"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "D-8. 2일차 투표 (해적2 처형, 앵무새 남음)",
+          "item": [
+            {
+              "name": "상태 확인 (VOTE가 될 때까지)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "페이즈가 바뀌었는지 확인할 때 실행하세요."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log('phase =', r.phase, '| day =', r.day, '| winner =', r.winner, '| 생존:', r.players.filter(p => p.alive).map(p => p.playerId).join(', '));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선장 → 해적2",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_captainId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider2Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선의 → 해적2",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_doctorId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider2Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "망루지기 → 해적2",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_lookoutId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider2Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "갑판장 → 해적2",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_boatswainId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider2Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "주정뱅이 → 해적2",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_drunkId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_raider2Id}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "해적2 → 선장",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_raider2Id}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_captainId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "앵무새 → 선장 (마지막 투표 → 처형)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_parrotId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_captainId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('응답 phase = EXECUTION', () => pm.expect(pm.response.json().phase).to.eql('EXECUTION'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "처형 결과 - 해적2",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/execution-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "execution-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "pm.test('해적2 처형', () => pm.expect(r.executedPlayerId).to.eql(Number(pm.collectionVariables.get('j_raider2Id'))));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "상태 확인 - 앵무새가 남아 게임 계속",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "페이즈가 바뀌었는지 확인할 때 실행하세요."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log('phase =', r.phase, '| day =', r.day, '| winner =', r.winner, '| 생존:', r.players.filter(p => p.alive).map(p => p.playerId).join(', '));",
+                      "pm.test('아직 승패 없음 (앵무새도 해적 진영)', () => pm.expect(r.winner).to.be.null);"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "D-9. 3일차 밤 (전원 넘기기)",
+          "item": [
+            {
+              "name": "상태 확인 (NIGHT, day 3)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "페이즈가 바뀌었는지 확인할 때 실행하세요."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log('phase =', r.phase, '| day =', r.day, '| winner =', r.winner, '| 생존:', r.players.filter(p => p.alive).map(p => p.playerId).join(', '));",
+                      "pm.test('3일차 밤', () => { pm.expect(r.phase).to.eql('NIGHT'); pm.expect(r.day).to.eql(3); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "앵무새 넘기기",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_parrotId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions/skip",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions",
+                    "skip"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선장 넘기기",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_captainId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions/skip",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions",
+                    "skip"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선의 넘기기",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_doctorId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions/skip",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions",
+                    "skip"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "망루지기 넘기기",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_lookoutId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions/skip",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions",
+                    "skip"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "갑판장 넘기기",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_boatswainId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions/skip",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions",
+                    "skip"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "주정뱅이 넘기기 (마지막 → 밤 결과)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_drunkId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-actions/skip",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-actions",
+                    "skip"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('응답 phase = NIGHT_RESULT', () => pm.expect(pm.response.json().phase).to.eql('NIGHT_RESULT'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "밤 결과 (아무 일 없음)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_captainId}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/night-result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "night-result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('사망자 없음, 개인 결과 없음', () => { pm.expect(r.killedPlayerId).to.be.null; pm.expect(r.reports).to.be.empty; });"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "D-10. 3일차 투표 (앵무새 처형 → 선원 승리)",
+          "item": [
+            {
+              "name": "상태 확인 (VOTE가 될 때까지)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}"
+                  ]
+                },
+                "description": "페이즈가 바뀌었는지 확인할 때 실행하세요."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log('phase =', r.phase, '| day =', r.day, '| winner =', r.winner, '| 생존:', r.players.filter(p => p.alive).map(p => p.playerId).join(', '));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선장 → 앵무새",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_captainId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_parrotId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "선의 → 앵무새",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_doctorId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_parrotId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "망루지기 → 앵무새",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_lookoutId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_parrotId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "갑판장 → 앵무새",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_boatswainId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_parrotId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "주정뱅이 → 앵무새",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_drunkId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_parrotId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "앵무새 → 선장 (마지막 투표 → 처형)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Act-As",
+                    "value": "{{j_parrotId}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/votes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "votes"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetId\": {{j_captainId}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('응답 phase = ENDED', () => pm.expect(pm.response.json().phase).to.eql('ENDED'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "게임 결과 - 선원 승리, 원숭이 정체 공개",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/result",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "games",
+                    "{{gameId}}",
+                    "result"
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "console.log(JSON.stringify(r));",
+                      "pm.test('CREW 승리', () => { pm.expect(r.ended).to.be.true; pm.expect(r.winner).to.eql('CREW'); });",
+                      "pm.test('결과에서는 원숭이가 실제 직업으로 공개', () => pm.expect(r.players.find(p => p.playerId === Number(pm.collectionVariables.get('j_monkeyId'))).role).to.eql('CREW_MONKEY'));",
+                      "pm.test('9명 공개', () => pm.expect(r.players.length).to.eql(9));"
                     ]
                   }
                 }
