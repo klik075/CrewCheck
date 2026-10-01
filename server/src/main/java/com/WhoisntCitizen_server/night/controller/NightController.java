@@ -38,8 +38,8 @@ public class NightController {
     /** 3. 이번 밤 능력을 쓰지 않고 넘기기 (NIGHT 페이즈에서만). 요청 본문 없음 */
     @PostMapping("/night-actions/skip")
     public NightActionResponse skipNightAction(@PathVariable String gameId,
-                                               @RequestHeader("X-Player-Id") Long playerId) {
-        return nightService.skipAction(gameId, playerId);
+                                               @AuthenticationPrincipal Jwt jwt) {
+        return nightService.skipAction(gameId, currentUser.userId(jwt));
     }
 
     /** 4. 밤 결과 공개 */

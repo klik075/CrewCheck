@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.exception.GameNotFoundException;
 import com.WhoisntCitizen_server.common.exception.GameRuleException;
+import com.WhoisntCitizen_server.game.dto.DevRoleView;
 import com.WhoisntCitizen_server.game.dto.GameParticipant;
 import com.WhoisntCitizen_server.game.dto.GameResultResponse;
 import com.WhoisntCitizen_server.game.dto.GameStateResponse;
@@ -74,7 +75,7 @@ public class GameService {
 
         List<RoleDefinition> roles = roleAssigner.assign(participants.size());
         List<GamePlayer> players = new ArrayList<>();
-        
+
         // for (int i = 0; i < entries.size(); i++) {
         //     RoleDefinition role = roles.get(i);
         //     // 원숭이는 여기서 위장 직업이 정해지고 게임 끝까지 바뀌지 않는다.
@@ -83,7 +84,8 @@ public class GameService {
 
         for (int i = 0; i < participants.size(); i++) {
             GameParticipant p = participants.get(i);
-            players.add(new GamePlayer(p.userId(), p.nickname(), roles.get(i), roleAssigner.shownRoleOf(role)));
+            RoleDefinition role = roles.get(i);
+            players.add(new GamePlayer(p.userId(), p.nickname(), role, roleAssigner.shownRoleOf(role)));
         }
 
         Game game = gameRepository.save(new Game(roomId, players, recordStats));
@@ -146,6 +148,14 @@ public class GameService {
                     }
                 })
                 .orElse(false);
+    }
+
+    /** 개발용(local 전용 API에서만 호출): 전원의 실제 직업과 보이는 직업. */
+    public List<DevRoleView> getDevRoles(String gameId) {
+        Game game = findGame(gameId);
+        synchronized (game) {
+            return game.getPlayers().stream().map(DevRoleView::from).toList();
+        }
     }
 
     private Game findGame(String gameId) {
