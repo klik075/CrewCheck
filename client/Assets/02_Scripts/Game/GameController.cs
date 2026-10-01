@@ -33,6 +33,12 @@ namespace WhoisntCitizen.Game
             get { return useFakeServer; }
         }
 
+        /// <summary>지금 진행 중인 게임이 가짜 서버 게임인지. Room 씬에서 넘어온 실제 게임이면 useFakeServer가 켜져 있어도 false.</summary>
+        public bool IsFakeGame
+        {
+            get { return fakeApi != null; }
+        }
+
         /// <summary>서버에서 게임이 지워져(404) 닫혔다. WaitingRoomController가 받아서 대기실로 돌아간다.</summary>
         public event Action GameClosed;
 
