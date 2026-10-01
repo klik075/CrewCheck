@@ -84,4 +84,34 @@ class NightServiceContactTest {
         verify(gameFlowService).resolveNight(game);
         assertThat(response.contactedPirateIds()).isEmpty();
     }
+
+    // ---------- 능력 사용 시스템 메시지 (해적 전용) ----------
+
+    @Test
+    void 해적이_공격_대상을_고르면_해적에게_알린다() {
+        nightService.submitAction(game.getGameId(), 1L, 3L);
+
+        verify(gameFlowService).announceToPirates(game, "해적님이 선원1님을 공격 대상으로 골랐습니다.");
+    }
+
+    @Test
+    void 해적이_공격_대상_선택을_넘기면_해적에게_알린다() {
+        nightService.skipAction(game.getGameId(), 1L);
+
+        verify(gameFlowService).announceToPirates(game, "해적님이 이번 밤 공격 대상 선택을 넘겼습니다.");
+    }
+
+    @Test
+    void 앵무새가_접선하면_해적에게_알린다() {
+        nightService.submitAction(game.getGameId(), 2L, 1L);
+
+        verify(gameFlowService).announceToPirates(game, "앵무새 앵무새님이 해적과 접선했습니다.");
+    }
+
+    @Test
+    void 접선하지_않은_앵무새의_행동은_알리지_않는다() {
+        nightService.submitAction(game.getGameId(), 2L, 3L);
+
+        verify(gameFlowService, never()).announceToPirates(any(), any());
+    }
 }

@@ -167,15 +167,18 @@ class MonkeyTest {
     }
 
     @Test
-    void 원숭이_선의_갑판장은_진짜처럼_결과가_없다() {
+    void 원숭이_선의는_결과가_없고_원숭이_갑판장은_진짜처럼_차단_결과를_받는다() {
         Game game = night(player(1, RAIDER), monkeyAs(2, DOCTOR), monkeyAs(3, BOATSWAIN), player(4, SAILOR));
+        game.recordNightAction(1L, 4L);
         game.recordNightAction(2L, 4L);
         game.recordNightAction(3L, 1L);
 
         NightResult result = resolver.resolve(game);
 
         assertThat(result.reportsFor(2L)).isEmpty();
-        assertThat(result.reportsFor(3L)).isEmpty();
+        assertThat(result.reportsFor(3L)).containsExactly(PrivateReport.block(1L));
+        assertThat(result.reportsFor(1L)).isEmpty(); // 원숭이의 차단은 효과가 없어 해적은 차단 안내를 받지 않는다
+        assertThat(result.killedPlayerId()).isEqualTo(4L);
     }
 
     @Test
@@ -187,7 +190,7 @@ class MonkeyTest {
 
         NightResult result = resolver.resolve(game);
 
-        assertThat(result.reportsFor(2L)).isEmpty();
+        assertThat(result.reportsFor(2L)).containsExactly(PrivateReport.blocked()); // 진짜처럼 차단 안내를 받는다
         assertThat(game.getPlayer(2L).remainingUses(ActionCode.READ_CORPSE_ROLE)).isEqualTo(2);
     }
 

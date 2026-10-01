@@ -3,6 +3,8 @@ package com.WhoisntCitizen_server.chat;
 import com.WhoisntCitizen_server.chat.controller.ChatMessageController;
 import com.WhoisntCitizen_server.chat.service.ChatLobbyEventListener;
 import com.WhoisntCitizen_server.chat.service.ChatMessageService;
+import com.WhoisntCitizen_server.chat.service.ChatNoticeEventListener;
+import com.WhoisntCitizen_server.common.event.PirateNoticeEvent;
 import com.WhoisntCitizen_server.common.exception.GlobalExceptionHandler;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
@@ -64,6 +66,7 @@ class ChatMessageControllerTest {
 
     MockMvc mvc;
     ChatLobbyEventListener lobbyEvents;
+    ChatNoticeEventListener noticeEvents;
     Room room;
     InMemoryGameRepository games;
 
@@ -91,6 +94,7 @@ class ChatMessageControllerTest {
         ChatMessageService messageService =
                 new ChatMessageService(new InMemoryChatMessageRepository(), lobbyRooms, users, games);
         lobbyEvents = new ChatLobbyEventListener(messageService);
+        noticeEvents = new ChatNoticeEventListener(messageService);
 
         mvc = MockMvcBuilders.standaloneSetup(new ChatMessageController(messageService, ""))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
@@ -490,6 +494,22 @@ class ChatMessageControllerTest {
 
         room.finishGame();
 
+        getMessages().andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    void 해적_전용_시스템_메시지는_해적에게만_보인다() throws Exception {
+        Game game = startPirateGame(GamePhase.NIGHT);
+        noticeEvents.onPirateNotice(new PirateNoticeEvent(String.valueOf(ROOM_ID), game.getGameId(),
+                "철수님이 지수님을 공격 대상으로 골랐습니다."));
+
+        loginAs(MINSU_MEMBER); // 해적
+        getMessages()
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].type").value("SYSTEM"))
+                .andExpect(jsonPath("$[0].message").value("철수님이 지수님을 공격 대상으로 골랐습니다."));
+
+        loginAs(JISU_MEMBER); // 선원
         getMessages().andExpect(jsonPath("$", hasSize(0)));
     }
 }

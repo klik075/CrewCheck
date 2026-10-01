@@ -138,6 +138,12 @@ public class ChatMessageService {
                 ChatMessage.SYSTEM_USER_ID, ChatMessage.SYSTEM_NICKNAME, message.trim());
     }
 
+    /** 같은 게임의 해적(접선한 앵무새 포함)에게만 보이는 시스템 메시지를 저장합니다. (해적 안내 이벤트 처리용) */
+    ChatMessage saveSystemForPirates(long roomId, String gameId, String message) {
+        return repository.save(roomId, MessageType.SYSTEM,
+                ChatMessage.SYSTEM_USER_ID, ChatMessage.SYSTEM_NICKNAME, message.trim(), gameId, true);
+    }
+
     // ---------- 조회: 보이는 메시지만 ----------
 
     /** afterId 이후 메시지를 앞에서부터 읽으며 보이는 것만 최대 size개 모읍니다. */

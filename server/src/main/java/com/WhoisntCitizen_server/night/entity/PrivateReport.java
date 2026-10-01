@@ -40,4 +40,14 @@ public record PrivateReport(
     public static PrivateReport actions(Long targetId, List<ObservedAction> actions) {
         return new PrivateReport(ReportType.ACTIONS, targetId, null, null, null, List.of(), List.copyOf(actions));
     }
+
+    /** 갑판장: 대상을 차단했다. */
+    public static PrivateReport block(Long targetId) {
+        return new PrivateReport(ReportType.BLOCK, targetId, null, null, null, List.of(), List.of());
+    }
+
+    /** 갑판장에게 차단당해 이번 밤 능력을 쓰지 못했다. 누가 막았는지는 알려 주지 않는다. */
+    public static PrivateReport blocked() {
+        return new PrivateReport(ReportType.BLOCKED, null, null, null, null, List.of(), List.of());
+    }
 }
