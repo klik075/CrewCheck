@@ -19,7 +19,8 @@ namespace WhoisntCitizen.Chat
     ///  - 최신 N개(기본 10개) 메시지 표시, 가로 초과 시 자동 줄바꿈
     ///  - Enter: 전송 / Shift+Enter: 줄바꿈 (한글 IME 조합이 끝난 뒤 전송)
     ///  - pollInterval초마다 afterId 이후 새 메시지만 받아 뒤에 붙이고, N회마다 전체 목록을 다시 받습니다
-    ///  - 시스템 메시지(입장·퇴장 알림, 공지)는 녹색으로 표시
+    ///  - 시스템 메시지(입장·퇴장 알림, 공지)는 녹색으로 표시하고, Unity 콘솔에도 같은 내용을 출력
+    ///  - SendSystemMessage(): 시스템 메시지(공지) 전송 (에디터 창 Tools > Chat > System Message Console에서 사용)
     ///  - 내 메시지 구분은 userId로 (개발용 로그인 응답 또는 내가 보낸 메시지의 응답에서 알아냄)
     /// 시작 순서: 로그인(AuthSession에 토큰이 없을 때만, 개발용) → 로비 방 참가(개발용) → 메시지 조회/폴링
     /// 로비 화면에서 로그인·방 입장을 마치고 들어오면 [개발용] 옵션은 꺼도 됩니다.
@@ -74,6 +75,10 @@ namespace WhoisntCitizen.Chat
         [Tooltip("시스템 메시지 앞에 붙는 말머리")]
         public string systemPrefix = "[시스템] ";
 
+        [Header("Console (Unity 콘솔 연동)")]
+        [Tooltip("채팅창에 새로 표시되는 시스템 메시지를 Unity 콘솔에도 출력")]
+        public bool logSystemMessagesToConsole = true;
+
         readonly List<ChatMessage> _messages = new List<ChatMessage>();
         string _status = "";       // 일시적인 오류 (다음 조회가 성공하면 지움)
         string _fatal = "";        // 다시 시도해도 안 되는 오류 (로그인 실패, 방 없음 등, 화면에 계속 표시)
@@ -86,6 +91,8 @@ namespace WhoisntCitizen.Chat
         bool _ready;               // 로그인 + 방 참가가 끝나 채팅할 수 있는 상태
         bool _connecting;
         long _lastId = -1;         // 마지막으로 받은 메시지 id (-1: 아직 없음 → 전체 조회)
+        long _lastLoggedSystemId = -1; // 콘솔에 마지막으로 출력한 시스템 메시지 id (중복 출력 방지)
+        bool _sendingSystem;
         float _nextPollTime;
         int _pollCount;
         bool _imeComposing;
@@ -421,10 +428,14 @@ namespace WhoisntCitizen.Chat
             var sorted = SortOldestFirst(list).ToList();
             if (!statusChanged && SameIds(sorted, _messages)) return; // 바뀐 게 없으면 다시 그리지 않음
 
+            long newMax = MaxId(sorted);
+            if (newMax < _lastLoggedSystemId) _lastLoggedSystemId = -1; // 서버/Redis 초기화로 id가 처음부터 다시 매겨진 경우
+
             _messages.Clear();
             _messages.AddRange(sorted);
             TrimToMax();
             _lastId = MaxId(_messages);
+            LogNewSystemMessages();
             Render();
         }
 
@@ -444,7 +455,68 @@ namespace WhoisntCitizen.Chat
             }
             if (!added && !statusChanged) return;
             TrimToMax();
+            LogNewSystemMessages();
             Render();
+        }
+
+        /// 채팅창에 새로 들어온 시스템 메시지를 Unity 콘솔에도 출력 (이미 출력한 id는 건너뜀)
+        void LogNewSystemMessages()
+        {
+            foreach (var m in _messages)
+            {
+                if (!m.IsSystem) continue;
+                long id;
+                if (!long.TryParse(m.id, out id) || id <= _lastLoggedSystemId) continue;
+                _lastLoggedSystemId = id;
+                if (logSystemMessagesToConsole)
+                    Debug.Log("<color=#" + ColorUtility.ToHtmlStringRGB(systemColor) + ">[Chat][시스템]</color> " + m.content
+                              + "  (room " + api.roomId + ", #" + id + ")");
+            }
+        }
+
+        // ---------------- 시스템 메시지(공지) 전송 ----------------
+
+        /// <summary>
+        /// 시스템 메시지(공지)를 서버에 보냅니다. 채팅창에는 녹색 [시스템] 메시지로 표시되고, 콘솔에도 출력됩니다.
+        /// 에디터 창(Tools > Chat > System Message Console)이나 다른 스크립트(게임 페이즈 알림 등)에서 호출합니다.
+        /// </summary>
+        /// <param name="onDone">(성공 여부, 오류 문구)</param>
+        public void SendSystemMessage(string text, System.Action<bool, string> onDone = null)
+        {
+            text = text == null ? "" : text.Trim();
+            string reason = null;
+            if (text.Length == 0) reason = "보낼 내용이 없습니다.";
+            else if (_sendingSystem) reason = "이전 공지를 보내는 중입니다.";
+            else if (!_ready || !AuthSession.IsAuthenticated) reason = "아직 서버에 연결되지 않았습니다. (로그인·방 참가 후 사용)";
+            if (reason != null)
+            {
+                Debug.LogWarning("[Chat] 공지 전송 불가: " + reason);
+                if (onDone != null) onDone(false, reason);
+                return;
+            }
+
+            _sendingSystem = true;
+            StartCoroutine(api.PostSystemMessage(text,
+                () =>
+                {
+                    _sendingSystem = false;
+                    _stickToBottom = true;
+                    RequestFetch(); // 채팅창 표시 + 콘솔 출력은 조회 결과로 처리 (다른 클라이언트와 같은 경로)
+                    if (onDone != null) onDone(true, null);
+                },
+                (err, code) =>
+                {
+                    _sendingSystem = false;
+                    SetError(err);
+                    if (onDone != null) onDone(false, err);
+                    if (code == 401) HandleUnauthorized();
+                }));
+        }
+
+        /// <summary>채팅을 주고받을 수 있는 상태인지 (에디터 창 표시용)</summary>
+        public bool IsReady
+        {
+            get { return _ready; }
         }
 
         bool ClearStatus()

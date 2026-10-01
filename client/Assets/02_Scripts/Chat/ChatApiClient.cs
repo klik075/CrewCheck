@@ -14,7 +14,7 @@ namespace WhoisntCitizen.Chat
     {
         public string id;         // messageId
         public string type;       // USER(일반) / SYSTEM(입장·퇴장 알림, 공지)
-        public string userId;     // 시스템 메시지는 빈 값 (서버에서 null)
+        public string userId;     // 시스템 메시지는 "0" (서버 ChatMessage.SYSTEM_USER_ID)
         public string nickname;   // 시스템 메시지는 "SYSTEM"
         public string content;    // message
         public string createdAt;  // 전송 응답에만 있음 (조회 응답에는 없음)
@@ -41,6 +41,8 @@ namespace WhoisntCitizen.Chat
     ///  - 조회: GET  /api/v1/rooms/{roomId}/messages[?limit=N][&amp;afterId=ID]   200 / 404 방 없음
     ///  - 전송: POST /api/v1/rooms/{roomId}/messages  {"message":"..."}
     ///          201 / 403 방 참가자가 아님 / 404 방 없음 / 400 프로필 없음
+    ///  - 공지: POST /api/v1/rooms/{roomId}/system-messages  {"message":"..."}  (헤더 X-Admin-Key, 서버 chat.admin-key가 비어 있으면 생략 가능)
+    ///          201 / 403 공지 권한 없음 / 404 방 없음
     ///  - [개발용] 로그인:  POST /api/members/login  {"username","password"}
     ///  - [개발용] 방 참가: POST /api/v1/rooms/{roomId}/players  (로비 API, 입장 시 서버가 시스템 메시지를 남김)
     ///  - [개발용] 방 생성: POST /api/v1/rooms  {"title","maxPlayers"}  (방장이 자동으로 참가)
@@ -55,6 +57,8 @@ namespace WhoisntCitizen.Chat
         public long roomId = 1;
         [Tooltip("요청 타임아웃(초)")]
         public int timeoutSeconds = 5;
+        [Tooltip("시스템 메시지(공지) 전송용 키. 서버 chat.admin-key(환경변수 CHAT_ADMIN_KEY)와 같은 값. 서버 값이 비어 있으면 비워 둬도 됩니다.")]
+        public string adminKey = "";
 
         [Header("JSON 필드명 (API 명세)")]
         public string messageIdField = "messageId";
@@ -133,6 +137,23 @@ namespace WhoisntCitizen.Chat
                 }
                 catch (Exception) { /* 응답을 못 읽어도 전송은 성공 */ }
                 if (onSuccess != null) onSuccess(senderId);
+            }
+        }
+
+        /// <summary>시스템 메시지(공지) 전송: {"message":"..."}. 채팅창에는 type=SYSTEM(녹색)으로 표시됩니다.</summary>
+        public IEnumerator PostSystemMessage(string message, Action onSuccess, Action<string, long> onError)
+        {
+            string body = "{" + MiniJson.Quote(messageField) + ":" + MiniJson.Quote(message) + "}";
+            using (var req = PostJson(RoomUrl + "/system-messages", body, true))
+            {
+                if (!string.IsNullOrEmpty(adminKey)) req.SetRequestHeader("X-Admin-Key", adminKey);
+                yield return req.SendWebRequest();
+                if (req.result != UnityWebRequest.Result.Success)
+                {
+                    if (onError != null) onError(ErrorText("공지 전송 실패", req), req.responseCode);
+                    yield break;
+                }
+                if (onSuccess != null) onSuccess();
             }
         }
 
