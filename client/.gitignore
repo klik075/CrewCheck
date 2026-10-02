@@ -37,6 +37,7 @@ ProfilerCaptures/
 *.csproj
 *.unityproj
 *.sln
+*.slnx
 *.suo
 *.tmp
 *.user
