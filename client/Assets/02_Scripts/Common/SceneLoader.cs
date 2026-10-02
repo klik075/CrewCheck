@@ -92,6 +92,41 @@ namespace WhoisntCitizen.Common
 
             instance = this;
             DontDestroyOnLoad(gameObject);
+            SceneManager.sceneLoaded += OnSceneLoaded;
+        }
+
+        private void OnDestroy()
+        {
+            if (instance == this) SceneManager.sceneLoaded -= OnSceneLoaded;
+        }
+
+        // Unity는 새 씬을 불러올 때 Awake → OnEnable → sceneLoaded 콜백 → Start 순서로 실행
+        // Unity가 제공하는 "씬 로드가 끝났을 때" 이벤트(sceneLoaded 콜백)에 등록하여 씬 로드가 완료되었음을 알린다.
+        // 여기서 로딩 완료를 표시해야 새 씬의 Start에서 IsLoading이 false로 보인다.
+        // (코루틴의 op.isDone 확인은 새 씬의 Start보다 늦게 돌아오기 때문)
+        private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            if (!IsLoading) return; // SceneLoader를 거치지 않은 로드(에디터에서 바로 플레이한 첫 씬 등)는 무시
+
+            IsLoading = false;
+            ProgressChanged?.Invoke(1f);
+            Debug.Log($"[SceneLoader] {scene.name} 씬 로드 완료");
+
+            if (TryGetSceneType(scene.name, out SceneType type)) LoadCompleted?.Invoke(type);
+        }
+
+        private static bool TryGetSceneType(string sceneName, out SceneType type)
+        {
+            foreach (var pair in SceneNames)
+            {
+                if (pair.Value == sceneName)
+                {
+                    type = pair.Key;
+                    return true;
+                }
+            }
+            type = default;
+            return false;
         }
 
         // ------------------------------------------------------------------
@@ -162,10 +197,7 @@ namespace WhoisntCitizen.Common
                 yield return null;
             }
 
-            ProgressChanged?.Invoke(1f);
-            IsLoading = false;
-            Debug.Log($"[SceneLoader] {sceneName} 씬 로드 완료");
-            LoadCompleted?.Invoke(sceneType);
+            // 완료 처리(IsLoading = false, LoadCompleted 호출)는 OnSceneLoaded에서 한다.
         }
     }
 }
