@@ -52,23 +52,26 @@ namespace WhoisntCitizen.Game
         public void ReturnToWaitingRoom()
         {
             bool fake = game.IsFakeGame;
+            string finishedGameId = game.Session != null ? game.Session.GameId : null;
             game.EndGame();
             if (fake)
             {
                 game.BeginFakeGame(); // 개발용: 새 판
                 return;
             }
-            Leave();
+            Leave(finishedGameId);
         }
 
-        private void Leave()
+        private void Leave(string finishedGameId = null)
         {
             if (leaving)
             {
                 return;
             }
             leaving = true;
-            RoomSession.SetGameId(null); // 끝난 게임. Room 씬이 방을 다시 조회해 채운다
+            // 끝난 게임. Room 씬이 방을 다시 조회해 채운다.
+            // 끝낸 게임 id를 기억해 두어, 서버가 방을 WAITING으로 돌리기 전에 Room 씬이 조회해도 같은 게임으로 다시 보내지 않는다.
+            RoomSession.MarkGameFinished(finishedGameId);
             if (!SceneLoader.Load(RoomSession.HasRoom ? SceneType.Room : SceneType.Lobby))
             {
                 leaving = false; // 다른 씬을 로딩 중이거나 Build Settings 누락: 다시 누를 수 있게 둔다

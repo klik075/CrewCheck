@@ -85,42 +85,55 @@ namespace WhoisntCitizen.Game
             return lines;
         }
 
-        /// <summary>개인 결과 한 건의 문구. 모르는 종류면 빈 문자열. ACTIONS에서 행동이 여러 개면 줄바꿈으로 잇는다.</summary>
+        /// <summary>갑판장에게 차단당한 사람에게 보여 주는 문구 (본인에게만)</summary>
+        public const string BlockedMessage = "갑판장에 의해 차단되어 이번 밤 능력을 사용할 수 없었습니다.";
+
+        /// <summary>
+        /// 개인 결과 한 건의 문구. 모르는 종류면 빈 문자열. 능력이 실제로 적용됐을 때만 서버가 보내므로 "~했습니다." + 결과로 쓴다.
+        /// ACTIONS에서 행동이 여러 개면 줄바꿈으로 잇는다.
+        /// </summary>
         public static string Report(ReportDto report)
         {
             string target = Name(report.targetNickname, report.targetId) + "님";
             switch (report.type)
             {
-                case ReportTypes.Faction:
-                    return target + "은 " + FactionName(report.faction) + "입니다.";
+                case ReportTypes.Faction: // 선장
+                    return target + "을 조사했습니다. " + target + "은 " + FactionName(report.faction) + "입니다.";
 
-                case ReportTypes.CorpseRole:
+                case ReportTypes.CorpseRole: // 주정뱅이
                     string role = string.IsNullOrEmpty(report.roleName) ? report.roleCode : report.roleName;
-                    return target + "의 직업은 " + role + "입니다.";
+                    return target + "의 시체를 확인했습니다. " + target + "의 직업은 " + role + "입니다.";
 
-                case ReportTypes.Visitors:
+                case ReportTypes.Visitors: // 망루지기
                     if (report.players.Count == 0)
                     {
-                        return target + "을 찾아온 사람이 없습니다.";
+                        return target + "을 감시했습니다. " + target + "을 찾아온 사람이 없습니다.";
                     }
                     var visitors = new List<string>();
                     foreach (PlayerRefDto v in report.players)
                     {
                         visitors.Add(Name(v.nickname, v.playerId) + "님");
                     }
-                    return target + "을 찾아온 사람: " + string.Join(", ", visitors.ToArray());
+                    return target + "을 감시했습니다. " + target + "을 찾아온 사람: " + string.Join(", ", visitors.ToArray());
 
-                case ReportTypes.Actions:
+                case ReportTypes.Actions: // 앵무새
                     if (report.actions.Count == 0)
                     {
-                        return target + "은 아무 행동도 하지 않았습니다.";
+                        return target + "을 관찰했습니다. " + target + "은 아무 행동도 하지 않았습니다.";
                     }
                     var actions = new List<string>();
+                    actions.Add(target + "을 관찰했습니다.");
                     foreach (ActionViewDto a in report.actions)
                     {
                         actions.Add(ActionSentence(target, a));
                     }
                     return string.Join("\n", actions.ToArray());
+
+                case ReportTypes.Block: // 갑판장
+                    return target + "을 차단했습니다. " + target + "은 이번 밤 능력을 사용할 수 없습니다.";
+
+                case ReportTypes.Blocked: // 차단당한 사람
+                    return BlockedMessage;
 
                 default:
                     return string.Empty;

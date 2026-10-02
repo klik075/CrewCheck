@@ -4,6 +4,7 @@ using UnityEngine.UI;
 using WhoisntCitizen.Common;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
+using WhoisntCitizen.Chat; // ChatNotice: 내 화면 전용 안내 (채팅창 + 콘솔)
 #endif
 
 namespace WhoisntCitizen.Lobby
@@ -172,6 +173,7 @@ namespace WhoisntCitizen.Lobby
                 RoomSession.Set(result.data);
                 statusMessage?.ShowSuccess($"'{result.data.title}' 방을 만들었습니다. 입장 중...", keep: true);
                 Debug.Log($"[Lobby] 방 생성 완료: #{result.data.id} {result.data.title} ({result.data.currentPlayers}/{result.data.maxPlayers})");
+                ChatNotice.Post($"'{result.data.title}' 방을 만들었습니다. (최대 {result.data.maxPlayers}명)");
 
                 // 씬 이동이 시작되지 않으면(Build Settings 누락 등) 다시 누를 수 있게 잠금을 푼다.
                 if (!SceneLoader.Load(SceneType.Room))
@@ -196,6 +198,7 @@ namespace WhoisntCitizen.Lobby
             if (string.IsNullOrEmpty(title))
             {
                 error = "방 제목을 입력하세요.";
+                ChatNotice.Post("방 제목을 입력해 주세요.", false);
                 return false;
             }
 

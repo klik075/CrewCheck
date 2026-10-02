@@ -5,6 +5,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UI;
+using WhoisntCitizen.Chat; // ChatNotice: 내 화면 전용 안내 (채팅창 + 콘솔)
 
 namespace WhoisntCitizen.LobbyTest
 {
@@ -128,6 +129,7 @@ namespace WhoisntCitizen.LobbyTest
             if (nickname.Length < 2 || nickname.Length > 10)
             {
                 AppendLog("[입력 오류] 닉네임은 2~10자여야 합니다.", FailColor);
+                ChatNotice.Post("닉네임은 2~10자로 입력해 주세요.", false);
                 return;
             }
 
@@ -144,6 +146,7 @@ namespace WhoisntCitizen.LobbyTest
             if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
             {
                 AppendLog("[입력 오류] 아이디와 비밀번호를 입력하세요.", FailColor);
+                ChatNotice.Post("아이디와 비밀번호를 입력해 주세요.", false);
                 return;
             }
 
@@ -159,6 +162,7 @@ namespace WhoisntCitizen.LobbyTest
             RefreshLoginState();
             ShowCurrentRoom();
             AppendLog("로그아웃했습니다.", OkColor);
+            ChatNotice.Post("로그아웃되었습니다.");
         }
 
         public void OnRefreshRoomsClicked()
@@ -175,6 +179,7 @@ namespace WhoisntCitizen.LobbyTest
             if (string.IsNullOrEmpty(title))
             {
                 AppendLog("[입력 오류] 방 제목을 입력하세요.", FailColor);
+                ChatNotice.Post("방 제목을 입력해 주세요.", false);
                 return;
             }
             if (!int.TryParse(maxPlayersInput != null ? maxPlayersInput.text : null, out int maxPlayers) || maxPlayers < 2)
@@ -219,6 +224,7 @@ namespace WhoisntCitizen.LobbyTest
             // 로비/게임에서 쓰는 userId, nickname까지 모두 세션에 저장한다.
             AuthSession.SetSession(res.memberId, res.userId, res.username, res.nickname, res.accessToken);
             AppendLog($"로그인 성공: {res.username} (memberId={res.memberId}, userId={res.userId}, token={AuthSession.TokenPreview()})", OkColor);
+            ChatNotice.Post($"{(string.IsNullOrEmpty(res.nickname) ? res.username : res.nickname)}님, 환영합니다.");
             RefreshLoginState();
             // 방 목록 갱신은 현재 요청이 끝난 뒤(isBusy 해제 후) 새 요청으로 보낸다.
             StartCoroutine(RunAfterCurrent(OnRefreshRoomsClicked));
@@ -249,6 +255,7 @@ namespace WhoisntCitizen.LobbyTest
                 if (roomIdInput != null) roomIdInput.text = room.id.ToString();
                 ShowCurrentRoom();
                 AppendLog($"방 생성됨: #{room.id} {room.title} ({room.currentPlayers}/{room.maxPlayers})", OkColor);
+                ChatNotice.Post($"'{room.title}' 방을 만들었습니다. (최대 {room.maxPlayers}명)");
             }
             StartCoroutine(RunAfterCurrent(OnRefreshRoomsClicked));
         }
@@ -258,6 +265,8 @@ namespace WhoisntCitizen.LobbyTest
             currentRoomId = roomId;
             ShowCurrentRoom();
             AppendLog($"방 #{roomId} 입장 완료", OkColor);
+            RoomInfoResponse joined = SafeParse<RoomInfoResponse>(result.body);
+            ChatNotice.Post($"'{(joined != null && !string.IsNullOrEmpty(joined.title) ? joined.title : "#" + roomId)}' 방에 입장했습니다.");
             StartCoroutine(RunAfterCurrent(OnRefreshRoomsClicked, OnPlayersClicked));
         }
 
@@ -267,6 +276,7 @@ namespace WhoisntCitizen.LobbyTest
             ShowCurrentRoom();
             playersText.text = "[참가자] (방에 없음)";
             AppendLog($"방 #{roomId} 퇴장 완료", OkColor);
+            ChatNotice.Post("방에서 나왔습니다.");
             StartCoroutine(RunAfterCurrent(OnRefreshRoomsClicked));
         }
 
@@ -301,6 +311,7 @@ namespace WhoisntCitizen.LobbyTest
             if (long.TryParse(text, out roomId) && roomId > 0) return true;
 
             AppendLog("[입력 오류] 방 번호(Room ID)를 숫자로 입력하세요.", FailColor);
+            ChatNotice.Post("방 번호를 숫자로 입력해 주세요.", false);
             return false;
         }
 
@@ -373,6 +384,7 @@ namespace WhoisntCitizen.LobbyTest
             if (needsAuth && !AuthSession.IsAuthenticated)
             {
                 AppendLog($"[{label}] 로그인이 필요합니다.", FailColor);
+                ChatNotice.Post("로그인 후 이용할 수 있습니다.", false);
                 yield break;
             }
 
@@ -400,6 +412,7 @@ namespace WhoisntCitizen.LobbyTest
                     RefreshLoginState();
                     ShowCurrentRoom();
                     AppendLog("토큰이 유효하지 않아 로그아웃되었습니다. 다시 로그인하세요.", FailColor);
+                    ChatNotice.Post("로그인 시간이 만료되었습니다. 다시 로그인해 주세요.");
                 }
 
                 if (result.success) onSuccess?.Invoke(result);

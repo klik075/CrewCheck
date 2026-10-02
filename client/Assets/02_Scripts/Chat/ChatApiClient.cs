@@ -13,15 +13,22 @@ namespace WhoisntCitizen.Chat
     public class ChatMessage
     {
         public string id;         // messageId
-        public string type;       // USER(일반) / SYSTEM(입장·퇴장 알림, 공지)
+        public string type;       // USER(일반) / SYSTEM(입장·퇴장 알림, 공지) / DEAD(사망자 채팅: 서버가 사망자에게만 보내 줌)
         public string userId;     // 시스템 메시지는 "0" (서버 ChatMessage.SYSTEM_USER_ID)
         public string nickname;   // 시스템 메시지는 "SYSTEM"
         public string content;    // message
         public string createdAt;  // 전송 응답에만 있음 (조회 응답에는 없음)
+        public bool nightChat;    // 밤에 해적이 입력한 채팅 (type=USER, 서버가 해적에게만 보내 줌 → 내용을 주황색으로 표시)
 
         public bool IsSystem
         {
             get { return string.Equals(type, "SYSTEM", StringComparison.OrdinalIgnoreCase); }
+        }
+
+        /// 게임 중 사망자가 보낸 메시지. 서버가 같은 게임의 사망자에게만 내려 주므로 받은 것은 그대로 (회색으로) 표시하면 됩니다.
+        public bool IsDead
+        {
+            get { return string.Equals(type, "DEAD", StringComparison.OrdinalIgnoreCase); }
         }
     }
 
@@ -51,7 +58,8 @@ namespace WhoisntCitizen.Chat
     public class ChatApiClient : MonoBehaviour
     {
         [Header("Server")]
-        public string baseUrl = "http://localhost:8080";
+        [Tooltip("비워 두면 ApiConfig.BaseUrl(로그인·로비와 같은 서버)을 씁니다. 다른 서버로 채팅만 테스트할 때만 입력하세요.")]
+        public string baseUrlOverride = "";
         public string apiPrefix = "/api/v1";
         [Tooltip("채팅할 로비 방 id (0 이하면 [개발용] 설정에 따라 새 방을 만듭니다)")]
         public long roomId = 1;
@@ -61,6 +69,7 @@ namespace WhoisntCitizen.Chat
         public string adminKey = "";
 
         [Header("JSON 필드명 (API 명세)")]
+        public string nightChatField = "nightChat";
         public string messageIdField = "messageId";
         public string typeField = "type";
         public string userIdField = "userId";
@@ -70,7 +79,7 @@ namespace WhoisntCitizen.Chat
 
         string Base
         {
-            get { return baseUrl.TrimEnd('/'); }
+            get { return (string.IsNullOrEmpty(baseUrlOverride) ? ApiConfig.BaseUrl : baseUrlOverride).TrimEnd('/'); }
         }
 
         string RoomUrl
@@ -296,7 +305,8 @@ namespace WhoisntCitizen.Chat
                     userId = Str(d, userIdField),
                     nickname = Str(d, nicknameField),
                     content = Str(d, messageField),
-                    createdAt = Str(d, createdAtField)
+                    createdAt = Str(d, createdAtField),
+                    nightChat = Bool(d, nightChatField)
                 });
             }
             return result;
@@ -308,6 +318,15 @@ namespace WhoisntCitizen.Chat
             if (string.IsNullOrEmpty(key) || !d.TryGetValue(key, out v) || v == null) return "";
             if (v is double) return ((double)v).ToString(CultureInfo.InvariantCulture);
             return v.ToString();
+        }
+
+        static bool Bool(Dictionary<string, object> d, string key)
+        {
+            object v;
+            if (string.IsNullOrEmpty(key) || !d.TryGetValue(key, out v) || v == null) return false;
+            if (v is bool) return (bool)v;
+            bool b;
+            return bool.TryParse(v.ToString(), out b) && b;
         }
 
         static long Long(Dictionary<string, object> d, string key)

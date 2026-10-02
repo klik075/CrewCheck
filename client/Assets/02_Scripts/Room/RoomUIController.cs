@@ -238,7 +238,8 @@ namespace WhoisntCitizen.Lobby
                 Render(room);
 
                 // 방장이 게임을 시작했다 → 모두 GameScene으로
-                if (room.IsInGame && !string.IsNullOrEmpty(room.gameId))
+                // (방금 끝내고 돌아온 게임은 서버가 아직 IN_GAME으로 보여 줄 수 있으므로 다시 들어가지 않는다)
+                if (room.IsInGame && !string.IsNullOrEmpty(room.gameId) && room.gameId != RoomSession.FinishedGameId)
                     GoToGameScene(room.gameId);
             });
         }

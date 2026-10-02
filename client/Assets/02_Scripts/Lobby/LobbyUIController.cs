@@ -4,6 +4,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using WhoisntCitizen.Common;
+using WhoisntCitizen.Chat; // ChatNotice: 내 화면 전용 안내 (채팅창 + 콘솔)
 
 namespace WhoisntCitizen.Lobby
 {
@@ -124,6 +125,7 @@ namespace WhoisntCitizen.Lobby
             if (isJoining || SceneLoader.IsLoading) return;
 
             AuthSession.Clear();
+            ChatNotice.Post("로그아웃되었습니다.");
             RoomSession.Clear();
             SceneLoader.Load(SceneType.Title);
         }
@@ -323,6 +325,7 @@ namespace WhoisntCitizen.Lobby
         private void GoToRoomScene(string roomTitle)
         {
             statusMessage?.ShowSuccess($"'{roomTitle}' 방에 입장했습니다.", keep: true);
+            ChatNotice.Post($"'{roomTitle}' 방에 입장했습니다.");
 
             // 씬 이동을 시작하지 못하면(Build Settings 누락 등) 잠금을 풀어서 다시 시도할 수 있게 한다.
             if (!SceneLoader.Load(SceneType.Room))
