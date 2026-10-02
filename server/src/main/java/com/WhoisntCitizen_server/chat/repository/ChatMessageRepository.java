@@ -8,8 +8,23 @@ import java.util.List;
 /** 채팅 메시지 저장소. 실제 구현은 {@link RedisChatMessageRepository}. */
 public interface ChatMessageRepository {
 
-    /** 새 메시지를 저장하고, id와 createdAt이 채워진 메시지를 반환합니다. */
-    ChatMessage save(long roomId, MessageType type, Long userId, String nickname, String message);
+    /**
+     * 새 메시지를 저장하고, id와 createdAt이 채워진 메시지를 반환합니다.
+     * gameId: 게임 중 일부에게만 보이는 메시지(사망자 채팅, 밤의 해적 채팅)면 그 게임 id, 아니면 null
+     * pirateOnly: 밤에 해적이 보내 해적에게만 보이는 메시지인지
+     */
+    ChatMessage save(long roomId, MessageType type, Long userId, String nickname, String message,
+                     String gameId, boolean pirateOnly);
+
+    /** 해적 전용이 아닌 메시지 저장 */
+    default ChatMessage save(long roomId, MessageType type, Long userId, String nickname, String message, String gameId) {
+        return save(roomId, type, userId, nickname, message, gameId, false);
+    }
+
+    /** 게임과 관계없는 메시지 저장 (gameId = null) */
+    default ChatMessage save(long roomId, MessageType type, Long userId, String nickname, String message) {
+        return save(roomId, type, userId, nickname, message, null);
+    }
 
     /** 방의 최신 메시지 limit개를 오래된 순(id 오름차순)으로 반환합니다. */
     List<ChatMessage> findLatest(long roomId, int limit);

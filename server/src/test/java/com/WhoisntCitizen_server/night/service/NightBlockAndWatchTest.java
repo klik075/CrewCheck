@@ -92,9 +92,38 @@ class NightBlockAndWatchTest {
     }
 
     @Test
-    void 차단당한_선장은_조사_결과를_받지_못한다() {
+    void 차단당한_선장은_조사_결과_대신_차단_안내를_받는다() {
         Game game = game(RAIDER, CAPTAIN, BOATSWAIN, SAILOR);
         game.recordNightAction(2L, 1L);
+        game.recordNightAction(3L, 2L);
+
+        NightResult result = resolver.resolve(game);
+
+        assertThat(result.reportsFor(2L)).containsExactly(PrivateReport.blocked());
+        assertThat(result.reportsFor(3L)).containsExactly(PrivateReport.block(2L)); // 갑판장은 차단 결과
+    }
+
+    @Test
+    void 차단당한_해적과_선의도_본인에게만_차단_안내를_받는다() {
+        Game game = game(RAIDER, DOCTOR, BOATSWAIN, BOATSWAIN, SAILOR);
+        game.recordNightAction(1L, 5L);
+        game.recordNightAction(2L, 5L);
+        game.recordNightAction(3L, 1L); // 해적 차단
+        game.recordNightAction(4L, 2L); // 선의 차단
+
+        NightResult result = resolver.resolve(game);
+
+        assertThat(result.killedPlayerId()).isNull();
+        assertThat(result.reportsFor(1L)).containsExactly(PrivateReport.blocked());
+        assertThat(result.reportsFor(2L)).containsExactly(PrivateReport.blocked());
+        assertThat(result.reportsFor(5L)).isEmpty();
+    }
+
+    @Test
+    void 능력을_넘긴_사람은_차단당해도_안내를_받지_않는다() {
+        Game game = game(RAIDER, CAPTAIN, BOATSWAIN, SAILOR);
+        game.recordNightAction(1L, 4L);
+        game.skipNightAction(2L);
         game.recordNightAction(3L, 2L);
 
         NightResult result = resolver.resolve(game);
@@ -111,7 +140,9 @@ class NightBlockAndWatchTest {
 
         NightResult result = resolver.resolve(game);
 
-        assertThat(result.reportsFor(4L)).isEmpty();
+        assertThat(result.reportsFor(4L)).containsExactly(PrivateReport.blocked());
+        assertThat(result.reportsFor(2L)).containsExactly(PrivateReport.block(3L)); // 차단당한 갑판장의 차단도 결과를 받는다
+        assertThat(result.reportsFor(3L)).containsExactly(PrivateReport.block(4L));
     }
 
     @Test
@@ -123,7 +154,7 @@ class NightBlockAndWatchTest {
 
         NightResult result = resolver.resolve(game);
 
-        assertThat(result.reportsFor(2L)).isEmpty();
+        assertThat(result.reportsFor(2L)).containsExactly(PrivateReport.blocked());
         assertThat(game.getPlayer(2L).remainingUses(ActionCode.READ_CORPSE_ROLE)).isEqualTo(2);
     }
 

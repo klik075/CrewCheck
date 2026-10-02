@@ -18,6 +18,8 @@ public class GamePlayer {
     // 본인에게 보이는 직업이자 밤에 쓰는 능력. 원숭이만 role과 다르다(배정 시 정한 위장 직업).
     private final RoleDefinition shownRole;
     private boolean alive = true;
+    // 사망한 시각. 살아 있으면 null. 사망자 채팅에서 "죽기 전에 다른 사망자들이 나눈 대화"를 거를 때 쓴다.
+    private Instant diedAt;
 
     // 능력별 사용 횟수. 밤 판정 시점에 기록한다(제출할 때는 검사만 한다). 차단당한 행동은 세지 않는다.
     @Getter(AccessLevel.NONE)
@@ -41,6 +43,9 @@ public class GamePlayer {
     }
 
     public void kill() {
+        if (alive) {
+            diedAt = Instant.now(); // 처음 사망한 시각만 기록
+        }
         this.alive = false;
     }
 

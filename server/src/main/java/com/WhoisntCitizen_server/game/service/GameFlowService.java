@@ -1,6 +1,7 @@
 package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.config.GamePhaseProperties;
+import com.WhoisntCitizen_server.common.event.PirateNoticeEvent;
 import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
@@ -251,6 +252,21 @@ public class GameFlowService {
             eventPublisher.publishEvent(new RoomNoticeEvent(game.getRoomId(), message));
         } catch (RuntimeException e) {
             log.warn("[{}] 채팅 안내 발행 실패: {}", game.getGameId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 같은 게임의 해적(접선한 앵무새 포함)에게만 보이는 시스템 메시지로 남길 안내를 발행한다.
+     * (해적의 공격 대상 선택·넘기기, 앵무새 접선. NightService가 호출) 안내가 실패해도 게임 진행은 계속된다.
+     */
+    public void announceToPirates(Game game, String message) {
+        if (message == null) {
+            return;
+        }
+        try {
+            eventPublisher.publishEvent(new PirateNoticeEvent(game.getRoomId(), game.getGameId(), message));
+        } catch (RuntimeException e) {
+            log.warn("[{}] 해적 안내 발행 실패: {}", game.getGameId(), e.getMessage());
         }
     }
 
