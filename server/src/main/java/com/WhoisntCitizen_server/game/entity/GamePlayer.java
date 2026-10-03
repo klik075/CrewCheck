@@ -29,6 +29,8 @@ public class GamePlayer {
     private Integer lastSelfProtectDay;
     // 앵무새가 해적과 접선한 시각. null이면 접선 전. 해적 채팅 기록을 거를 때(7단계) 밤 도중 시각이 필요해 Instant로 둔다.
     private Instant contactedAt;
+    // 연결이 끊겨 게임에서 내보낸 플레이어. 한 번 내보내면 다시 돌아와도 되돌리지 않는다.
+    private boolean departed;
 
     /** 위장이 없는 플레이어. 보이는 직업이 실제 직업과 같다. */
     public GamePlayer(Long playerId, String nickname, RoleDefinition role) {
@@ -47,6 +49,10 @@ public class GamePlayer {
             diedAt = Instant.now(); // 처음 사망한 시각만 기록
         }
         this.alive = false;
+    }
+
+    public void markDeparted() {
+        this.departed = true;
     }
 
     public boolean isPirate() {

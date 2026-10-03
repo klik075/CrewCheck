@@ -138,6 +138,11 @@ public class ChatMessageService {
                 ChatMessage.SYSTEM_USER_ID, ChatMessage.SYSTEM_NICKNAME, message.trim());
     }
 
+    /** 삭제된 방의 메시지를 지웁니다. (로비 이벤트 처리용) */
+    void deleteRoomMessages(long roomId) {
+        repository.deleteRoom(roomId);
+    }
+
     /** 같은 게임의 해적(접선한 앵무새 포함)에게만 보이는 시스템 메시지를 저장합니다. (해적 안내 이벤트 처리용) */
     ChatMessage saveSystemForPirates(long roomId, String gameId, String message) {
         return repository.save(roomId, MessageType.SYSTEM,

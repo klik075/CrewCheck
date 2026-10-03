@@ -47,4 +47,21 @@ class GameServiceStateTest {
         assertThat(state.serverTime()).isEqualTo(NOW);
         assertThat(Duration.between(state.serverTime(), state.phaseEndsAt())).isEqualTo(Duration.ofSeconds(30));
     }
+
+    @Test
+    void 상태를_조회한_플레이어는_접속한_것으로_기록된다() {
+        InMemoryGameRepository repository = new InMemoryGameRepository();
+        GameService gameService = new GameService(repository, mock(RoleAssigner.class), mock(GameFlowService.class),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        Game game = new Game("room-1", List.of(
+                new GamePlayer(1L, "p1", RAIDER),
+                new GamePlayer(2L, "p2", SAILOR)));
+        game.markAllSeen(NOW.minusSeconds(120));
+        repository.save(game);
+
+        gameService.getState(game.getGameId(), 2L);
+
+        assertThat(game.inactivePlayers(NOW.minusSeconds(60)))
+                .extracting(GamePlayer::getPlayerId).containsExactly(1L);
+    }
 }

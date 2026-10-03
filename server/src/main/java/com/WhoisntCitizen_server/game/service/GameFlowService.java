@@ -4,9 +4,14 @@ import com.WhoisntCitizen_server.common.config.GamePhaseProperties;
 import com.WhoisntCitizen_server.common.event.PirateNoticeEvent;
 import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
 import com.WhoisntCitizen_server.game.entity.Game;
+import com.WhoisntCitizen_server.game.entity.GameEndReason;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
+import com.WhoisntCitizen_server.game.entity.GamePlayer;
+import com.WhoisntCitizen_server.game.event.CancelledGameExpiredEvent;
 import com.WhoisntCitizen_server.game.event.GameEndedEvent;
+import com.WhoisntCitizen_server.game.event.PlayersDepartedEvent;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
+import com.WhoisntCitizen_server.jobs.domain.ActionCode;
 import com.WhoisntCitizen_server.jobs.domain.Faction;
 import com.WhoisntCitizen_server.night.entity.NightResult;
 import com.WhoisntCitizen_server.night.service.NightActionResolver;
@@ -21,6 +26,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -34,6 +41,13 @@ import java.util.Optional;
  *
  * 페이즈가 바뀔 때마다 phaseVersion이 올라가므로, 전원 제출로 페이즈가 일찍 넘어가면
  * 이전에 예약된 타이머 작업은 버전 불일치로 무시된다.
+ *
+ * 끝나지 않는 게임 방지:
+ *  - 연결 끊김(checkInactivePlayers): 마지막 요청 후 inactiveTimeoutSeconds 동안 요청이 없으면 사망 처리 + 방에서 제외 → 승리 조건 검사.
+ *    살아 있는 플레이어가 모두 끊기면 아무도 사망 처리하지 않고 게임을 취소한다.
+ *  - 사망자 없는 날: maxDaysWithoutDeath일 연속 아무도 죽지 않으면 그날 투표 결과 직후 게임을 취소한다.
+ *  - 페이즈 전환 중 예외: 게임을 취소한다. (그대로 두면 그 페이즈에 영원히 멈춘다)
+ *  취소된 게임은 승리 팀이 없고 전적에 반영하지 않으며, 결과 조회 시간이 지나면 방(과 채팅)도 삭제된다.
  */
 @Service
 public class GameFlowService {
@@ -70,6 +84,7 @@ public class GameFlowService {
     /** 1. 게임 시작 직후 첫 밤으로 진입. */
     public void begin(Game game) {
         synchronized (game) {
+            game.markAllSeen(clock.instant());
             enterNight(game);
         }
     }
@@ -83,7 +98,11 @@ public class GameFlowService {
     /** 3 → 4. 밤 능력 처리 후 결과 공개 페이즈로. 전원 제출 시 NightService가, 시간 종료 시 타이머가 호출. */
     public void resolveNight(Game game) {
         synchronized (game) {
-            doResolveNight(game);
+            try {
+                doResolveNight(game);
+            } catch (RuntimeException e) {
+                cancelAfterError(game, e);
+            }
         }
     }
 
@@ -91,6 +110,9 @@ public class GameFlowService {
         game.requirePhase(GamePhase.NIGHT);
         NightResult result = nightActionResolver.resolve(game);
         game.setLastNightResult(result);
+        if (result.killedPlayerId() != null) {
+            game.recordDeath();
+        }
         log.info("[{}] day {} 밤 결과: killed={}, saved={}", game.getGameId(), game.getDay(),
                 result.killedPlayerId(), result.protectedByDoctor());
 
@@ -121,7 +143,11 @@ public class GameFlowService {
     /** 6 → 7 → 8 → 9. 전원 투표 시 VoteService가, 시간 종료 시 타이머가 호출. */
     public void resolveVote(Game game) {
         synchronized (game) {
-            doResolveVote(game);
+            try {
+                doResolveVote(game);
+            } catch (RuntimeException e) {
+                cancelAfterError(game, e);
+            }
         }
     }
 
@@ -129,6 +155,9 @@ public class GameFlowService {
         game.requirePhase(GamePhase.VOTE);
         ExecutionResult result = voteResolver.resolve(game);       // 7. 처형 처리
         game.setLastExecutionResult(result);
+        if (result.executedPlayerId() != null) {
+            game.recordDeath();
+        }
         log.info("[{}] day {} 처형 결과: executed={}, tie={}", game.getGameId(), game.getDay(),
                 result.executedPlayerId(), result.tie());
 
@@ -137,6 +166,10 @@ public class GameFlowService {
         if (winConditionChecker.check(game).isPresent()) {        // 8. 승리 조건 검사
             announce(game, executionMessage);
             finishIfWinnerDecided(game);
+        } else if (tooLongWithoutDeath(game)) {
+            // 정해진 일수 동안 아무도 죽지 않았다: 처형 결과를 알린 뒤 게임을 취소한다.
+            announce(game, executionMessage);
+            cancel(game, GameEndReason.CANCELLED_NO_DEATHS);
         } else {
             // 처형 결과를 잠깐 보여준 뒤 타이머 종료 시 다음 밤으로 (9. 반복)
             moveTo(game, GamePhase.EXECUTION, phaseProps.executionSeconds());
@@ -154,40 +187,157 @@ public class GameFlowService {
         gameRepository.save(game);
         log.info("[{}] 게임 종료. 승리: {}", game.getGameId(), winner.get());
         announce(game, winMessage(winner.get()));
-        publishGameEnded(game);
-        scheduleCleanup(game.getGameId());
+        publishLater(GameEndedEvent.from(game)); // 잠금 안에서 현재 상태를 복사해 둔다
+        scheduleCleanup(game);
         return true;
+    }
+
+    private boolean tooLongWithoutDeath(Game game) {
+        int maxDays = phaseProps.maxDaysWithoutDeath();
+        return maxDays > 0 && game.daysWithoutDeath() >= maxDays;
+    }
+
+    // ---------- 게임 취소 ----------
+
+    /**
+     * 승리 팀 없이 게임을 끝낸다. 전적에는 반영하지 않고(UserStatsListener),
+     * 결과 조회 시간이 끝나 게임을 메모리에서 지울 때 방도 삭제한다(CancelledGameExpiredEvent).
+     * 반드시 synchronized(game) 안에서 호출한다.
+     */
+    private void cancel(Game game, GameEndReason reason) {
+        if (game.isEnded()) {
+            return;
+        }
+        game.cancel(reason);
+        gameRepository.save(game);
+        log.warn("[{}] 게임 취소: {} (day {})", game.getGameId(), reason, game.getDay());
+        announce(game, cancelMessage(reason));
+        publishLater(GameEndedEvent.from(game));
+        scheduleCleanup(game);
+    }
+
+    /** 페이즈 전환 중 예외: 그대로 두면 그 페이즈에 영원히 멈추므로 게임을 취소한다. 취소가 실패해도 예외를 밖으로 던지지 않는다. */
+    private void cancelAfterError(Game game, RuntimeException e) {
+        log.error("[{}] 페이즈 전환 실패 (phase={}) → 게임 취소", game.getGameId(), game.getPhase(), e);
+        try {
+            cancel(game, GameEndReason.CANCELLED_ERROR);
+        } catch (RuntimeException cancelError) {
+            log.error("[{}] 게임 취소 처리 실패", game.getGameId(), cancelError);
+        }
+    }
+
+    // ---------- 연결 끊김 ----------
+
+    /**
+     * 연결이 끊긴 플레이어 처리. InactivePlayerMonitor가 주기적으로 호출한다.
+     * 마지막 요청 후 inactiveTimeoutSeconds 동안 요청이 없는 플레이어를 게임에서 내보낸다.
+     *  - 살아 있는 플레이어가 모두 끊겼으면: 아무도 사망 처리하지 않고 게임을 취소한다.
+     *  - 아니면: 끊긴 사람을 한꺼번에 사망 처리하고 방에서 뺀 뒤 승리 조건을 한 번만 검사한다.
+     *    (한 명씩 처리하면 동시에 끊긴 마지막 생존자들 사이에서 승패가 나 버린다)
+     *    이미 죽은 사람(관전 중)이 끊기면 방에서만 뺀다.
+     */
+    public void checkInactivePlayers(Game game) {
+        if (phaseProps.inactiveTimeoutSeconds() <= 0) {
+            return;
+        }
+        synchronized (game) {
+            if (game.getPhase() == null || game.isEnded()) {
+                return;
+            }
+            Instant cutoff = clock.instant().minusSeconds(phaseProps.inactiveTimeoutSeconds());
+            List<GamePlayer> inactive = game.inactivePlayers(cutoff);
+            if (inactive.isEmpty()) {
+                return;
+            }
+            try {
+                handleDepartures(game, inactive);
+            } catch (RuntimeException e) {
+                cancelAfterError(game, e);
+            }
+        }
+    }
+
+    private void handleDepartures(Game game, List<GamePlayer> inactive) {
+        long inactiveAlive = inactive.stream().filter(GamePlayer::isAlive).count();
+        if (inactiveAlive > 0 && inactiveAlive == game.aliveCount()) {
+            cancel(game, GameEndReason.CANCELLED_ALL_DISCONNECTED);
+            return;
+        }
+
+        List<Long> departedIds = new ArrayList<>();
+        boolean anyDied = false;
+        for (GamePlayer p : inactive) {
+            boolean wasAttackTarget = game.getPhase() == GamePhase.NIGHT && isAttackTarget(game, p.getPlayerId());
+            boolean died = game.depart(p.getPlayerId());
+            departedIds.add(p.getPlayerId());
+            log.info("[{}] 연결 끊김: {}({}) → {}", game.getGameId(), p.getNickname(), p.getPlayerId(),
+                    died ? "사망 처리, 방에서 제외" : "방에서 제외");
+            if (died) {
+                anyDied = true;
+                announce(game, p.getNickname() + "님의 연결이 끊겨 사망 처리되었습니다.");
+            }
+            if (wasAttackTarget) {
+                announceToPirates(game, p.getNickname() + "님이 사라져 공격 대상을 다시 골라야 합니다.");
+            }
+        }
+        gameRepository.save(game);
+        publishLater(new PlayersDepartedEvent(game.getGameId(), game.getRoomId(), List.copyOf(departedIds)));
+
+        if (!anyDied || finishIfWinnerDecided(game)) {
+            return;
+        }
+        // 떠난 사람의 표·행동을 지운 뒤 남은 사람이 모두 냈으면 타이머를 기다리지 않고 판정한다.
+        if (game.getPhase() == GamePhase.NIGHT && game.allNightActionsSubmitted()) {
+            doResolveNight(game);
+        } else if (game.getPhase() == GamePhase.VOTE && game.allVotesSubmitted()) {
+            doResolveVote(game);
+        }
+    }
+
+    private static boolean isAttackTarget(Game game, Long playerId) {
+        return game.getNightActions().values().stream()
+                .anyMatch(a -> a.code() == ActionCode.SELECT_ATTACK_TARGET && playerId.equals(a.targetId()));
     }
 
     /**
      * 10. 끝난 게임 정리. 결과를 조회할 시간(endedRetentionSeconds)을 준 뒤 메모리에서 삭제한다.
      * 삭제 후에는 해당 gameId로 조회하면 404(GAME_NOT_FOUND)가 된다.
      * 이미 예약된 페이즈 타이머가 늦게 실행돼도 onPhaseTimeout이 게임을 못 찾으면 그냥 끝나므로 안전하다.
+     * 취소된 게임이면 이때 방도 삭제하도록 알린다. (취소 직후에 지우면 클라이언트가 취소 안내와 결과를 보지 못한다)
+     * 방 삭제를 게임 삭제보다 먼저 한다. 게임이 먼저 사라지면 그사이 방 조회가 방을 대기 상태로 되돌려 삭제되지 않는다.
      */
-    private void scheduleCleanup(String gameId) {
+    private void scheduleCleanup(Game game) {
+        String gameId = game.getGameId();
+        String roomId = game.getRoomId();
+        boolean cancelled = game.isCancelled();
         Instant at = clock.instant().plusSeconds(phaseProps.endedRetentionSeconds());
         scheduler.schedule(() -> {
+            if (cancelled) {
+                publishNow(new CancelledGameExpiredEvent(gameId, roomId));
+            }
             gameRepository.delete(gameId);
             log.info("[{}] 종료된 게임을 메모리에서 삭제", gameId);
         }, at);
     }
 
     /**
-     * 게임 종료 이벤트 발행.
+     * 로비·회원 모듈이 받는 이벤트(게임 종료, 연결 끊김) 발행.
      * 이 메서드는 synchronized(game) 안에서 호출되므로, 이벤트 처리(로비 방 잠금, DB 저장)를
      * 게임 잠금을 쥔 채로 실행하지 않도록 스케줄러 스레드에서 따로 발행한다.
      * (게임 잠금 → 방 잠금 / 방 잠금 → 게임 잠금이 엇갈리며 생길 수 있는 교착 상태 방지)
      * 리스너에서 예외가 나도 게임 진행 스레드에는 영향이 없다.
+     * event는 잠금 안에서 만든 값(현재 상태의 복사본)이어야 한다.
      */
-    private void publishGameEnded(Game game) {
-        GameEndedEvent event = GameEndedEvent.from(game); // 잠금 안에서 현재 상태를 복사해 둔다
-        scheduler.schedule(() -> {
-            try {
-                eventPublisher.publishEvent(event);
-            } catch (RuntimeException e) {
-                log.error("[{}] 게임 종료 이벤트 처리 실패", event.gameId(), e);
-            }
-        }, clock.instant());
+    private void publishLater(Object event) {
+        scheduler.schedule(() -> publishNow(event), clock.instant());
+    }
+
+    private void publishNow(Object event) {
+        try {
+            eventPublisher.publishEvent(event);
+        } catch (RuntimeException e) {
+            log.error("이벤트 처리 실패: {}", event, e);
+        }
     }
 
     // ---------- 타이머 ----------
@@ -233,7 +383,7 @@ public class GameFlowService {
                     default -> { }
                 }
             } catch (RuntimeException e) {
-                log.error("[{}] 페이즈 전환 실패 (phase={})", gameId, game.getPhase(), e);
+                cancelAfterError(game, e);
             }
         }
     }
@@ -299,6 +449,15 @@ public class GameFlowService {
             return "투표가 동률로 끝나 아무도 처형되지 않았습니다.";
         }
         return "아무도 투표하지 않아 처형이 진행되지 않았습니다.";
+    }
+
+    private String cancelMessage(GameEndReason reason) {
+        String why = switch (reason) {
+            case CANCELLED_ALL_DISCONNECTED -> "살아 있는 플레이어가 모두 연결이 끊겨 게임이 취소되었습니다.";
+            case CANCELLED_NO_DEATHS -> phaseProps.maxDaysWithoutDeath() + "일 동안 아무도 죽지 않아 게임이 취소되었습니다.";
+            default -> "서버 오류로 게임이 취소되었습니다.";
+        };
+        return why + " 이번 게임은 전적에 반영되지 않으며, 잠시 후 방이 사라집니다.";
     }
 
     private static String winMessage(Faction winner) {

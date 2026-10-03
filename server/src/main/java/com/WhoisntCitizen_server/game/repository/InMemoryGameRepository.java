@@ -3,6 +3,7 @@ package com.WhoisntCitizen_server.game.repository;
 import com.WhoisntCitizen_server.game.entity.Game;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,6 +22,11 @@ public class InMemoryGameRepository implements GameRepository {
     @Override
     public Optional<Game> findById(String gameId) {
         return Optional.ofNullable(store.get(gameId));
+    }
+
+    @Override
+    public List<Game> findAll() {
+        return List.copyOf(store.values());
     }
 
     @Override

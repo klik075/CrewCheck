@@ -94,6 +94,16 @@ public class GameService {
         }
     }
 
+    /**
+     * 3/5/6/9. 현재 페이즈와 공개 정보. 요청한 플레이어의 접속 시각도 기록한다.
+     * 클라이언트가 게임 화면에서 1초마다 부르므로 연결 끊김 판정(InactivePlayerMonitor)의 기준이 된다.
+     * 기록은 게임 잠금 밖에서 한다. (서버가 잠금 때문에 잠깐 느려진 것만으로 미접속 처리되지 않도록)
+     */
+    public GameStateResponse getState(String gameId, Long requesterId) {
+        findGame(gameId).touch(requesterId, clock.instant());
+        return getState(gameId);
+    }
+
     /** 3/5/6/9. 현재 페이즈와 공개 정보 */
     public GameStateResponse getState(String gameId) {
         Game game = findGame(gameId);
@@ -105,6 +115,7 @@ public class GameService {
     /** 2. 내 역할 조회 (본인만) */
     public MyRoleResponse getMyRole(String gameId, Long playerId) {
         Game game = findGame(gameId);
+        game.touch(playerId, clock.instant());
         synchronized (game) {
             GamePlayer me = game.getPlayer(playerId);
             // isPirate()로 거르면 접선 전 앵무새가 드러나므로 접선 규칙이 들어간 knownPirateAllies를 쓴다.
@@ -122,27 +133,29 @@ public class GameService {
         Game game = findGame(gameId);
         synchronized (game) {
             if (!game.isEnded()) {
-                return new GameResultResponse(false, null, game.getDay(), List.of());
+                return new GameResultResponse(false, null, null, game.getDay(), List.of());
             }
             List<GameResultResponse.PlayerResult> results = game.getPlayers().stream()
                     .map(GameResultResponse.PlayerResult::from)
                     .toList();
-            return new GameResultResponse(true, game.getWinner(), game.getDay(), results);
+            return new GameResultResponse(true, game.getWinner(), game.getEndReason(), game.getDay(), results);
         }
     }
 
     /**
-     * 진행 중인 게임인지 확인한다 (메모리에 있고 아직 끝나지 않음).
+     * 방을 IN_GAME으로 붙잡고 있어야 하는 게임인지 확인한다.
+     *  - 메모리에 있고 아직 끝나지 않은 게임
+     *  - 취소된 게임: 결과 조회 시간이 지나면 방을 삭제하므로 그때까지 대기 상태로 되돌리지 않는다
      * 로비가 "IN_GAME인데 게임이 사라진 방"(서버 재시작 등)을 찾아 복구할 때 사용한다.
      */
-    public boolean isGameActive(String gameId) {
+    public boolean keepsRoomInGame(String gameId) {
         if (gameId == null) {
             return false;
         }
         return gameRepository.findById(gameId)
                 .map(game -> {
                     synchronized (game) {
-                        return !game.isEnded();
+                        return !game.isEnded() || game.isCancelled();
                     }
                 })
                 .orElse(false);

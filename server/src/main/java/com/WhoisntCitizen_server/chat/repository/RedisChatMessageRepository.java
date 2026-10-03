@@ -80,6 +80,11 @@ public class RedisChatMessageRepository implements ChatMessageRepository {
         return parseAll(jsons);
     }
 
+    @Override
+    public void deleteRoom(long roomId) {
+        redis.delete(List.of(messagesKey(roomId), seqKey(roomId)));
+    }
+
     private List<ChatMessage> parseAll(Set<String> jsons) {
         List<ChatMessage> result = new ArrayList<>();
         if (jsons == null) return result;

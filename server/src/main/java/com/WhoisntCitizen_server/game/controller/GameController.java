@@ -31,10 +31,14 @@ public class GameController {
         this.currentUser = currentUser;
     }
 
-    /** 3·5·6·9. 현재 상태 조회 (phase = NIGHT / NIGHT_RESULT / DAY / VOTE / EXECUTION / ENDED) */
+    /**
+     * 3·5·6·9. 현재 상태 조회 (phase = NIGHT / NIGHT_RESULT / DAY / VOTE / EXECUTION / ENDED)
+     * 요청한 플레이어의 접속 시각을 기록한다. 게임 중 이 요청이 오래 없으면 연결이 끊긴 것으로 보고 사망 처리한다.
+     */
     @GetMapping("/{gameId}")
-    public GameStateResponse state(@PathVariable String gameId) {
-        return gameService.getState(gameId);
+    public GameStateResponse state(@PathVariable String gameId,
+                                   @AuthenticationPrincipal Jwt jwt) {
+        return gameService.getState(gameId, currentUser.userId(jwt));
     }
 
     /** 2. 내 역할 조회 */

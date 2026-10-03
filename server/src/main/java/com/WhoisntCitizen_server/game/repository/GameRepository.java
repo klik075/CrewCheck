@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.repository;
 
 import com.WhoisntCitizen_server.game.entity.Game;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -11,5 +12,6 @@ import java.util.Optional;
 public interface GameRepository {
     Game save(Game game);
     Optional<Game> findById(String gameId);
+    List<Game> findAll();
     void delete(String gameId);
 }
