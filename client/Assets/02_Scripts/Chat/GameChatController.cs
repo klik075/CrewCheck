@@ -106,6 +106,15 @@ namespace WhoisntCitizen.Chat
         static readonly Regex NoParseCloseTag = new Regex("</\\s*noparse\\s*>", RegexOptions.IgnoreCase);
 
         public bool IsReady { get { return _ready; } }
+
+        // [공개 안내 자동 판단 - 주석 처리]
+        // /// <summary>
+        // /// 서버 시스템 메시지(게임 진행 안내 등)를 채팅창(chatLog)에 보여 주는 중인지.
+        // /// 꺼져 있거나(연결 누락으로 스스로 꺼진 경우 포함) 다시 시도해도 안 되는 오류로 멈췄으면 false.
+        // /// 연결 중이어도 true: 연결되면 최근 메시지를 한꺼번에 받아 오므로 그 사이 안내도 결국 표시된다.
+        // /// GameScreen이 이 값으로 공개 안내를 직접 남길지 정한다.
+        // /// </summary>
+        // public bool ShowsServerMessages { get { return isActiveAndEnabled && !_failed && chatLog != null; } }
         public long RoomId { get { return api != null ? api.roomId : 0; } }
 
         // ================= Unity =================
