@@ -20,6 +20,8 @@ namespace WhoisntCitizen.Game
         [SerializeField] private bool useFakeServer;
         [SerializeField] private string fakeMyRole = RoleCodes.CrewCaptain;
         [SerializeField] private bool fakeBotsAct = true;
+        [Tooltip("⋮ 메뉴 \"가짜 서버: 연결 끊김\"으로 내보낼 플레이어 (102 해적 ~ 108 선원)")]
+        [SerializeField] private long fakeDisconnectPlayerId = 104;
 
         private IGameView view;
         private FakeGameApi fakeApi;
@@ -139,6 +141,26 @@ namespace WhoisntCitizen.Game
             if (fakeApi != null)
             {
                 fakeApi.SkipToNextPhase();
+            }
+        }
+
+        /// <summary>개발용: fakeDisconnectPlayerId 플레이어의 연결이 끊긴 것처럼 처리한다 (서버의 60초 미접속 사망 처리).</summary>
+        [ContextMenu("가짜 서버: 연결 끊김")]
+        public void DisconnectFakePlayer()
+        {
+            if (fakeApi != null)
+            {
+                fakeApi.DisconnectPlayer(fakeDisconnectPlayerId);
+            }
+        }
+
+        /// <summary>개발용: 서버가 게임을 취소한 것처럼 끝낸다 (취소 결과 화면·로비 이동 확인용).</summary>
+        [ContextMenu("가짜 서버: 게임 취소")]
+        public void CancelFakeGame()
+        {
+            if (fakeApi != null)
+            {
+                fakeApi.CancelGame(EndReasons.CancelledNoDeaths);
             }
         }
 

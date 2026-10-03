@@ -100,6 +100,12 @@ namespace WhoisntCitizen.Game
             get { return State != null && State.phase == GamePhases.Ended; }
         }
 
+        /// <summary>승리 팀 없이 취소된 게임. 서버가 결과 조회 시간 뒤 방을 지우므로 대기실이 아니라 로비로 돌아간다.</summary>
+        public bool IsCancelled
+        {
+            get { return State != null && EndReasons.IsCancelled(State.endReason); }
+        }
+
         /// <summary>남은 초 (표시용 올림). 마감이 없으면 0.</summary>
         public int RemainingWholeSeconds
         {
@@ -307,6 +313,7 @@ namespace WhoisntCitizen.Game
                 return; // 늦게 도착한 옛 응답
             }
             phaseClock.Sync(state, clock());
+            List<string> lostChoices = ForgetChoicesOnDeaths(events); // 패널을 다시 그리기 전에 지운다
             view.ShowState(state);
             foreach (GameEvent e in events)
             {
@@ -320,7 +327,41 @@ namespace WhoisntCitizen.Game
                     view.ShowPlayerDied(e);
                 }
             }
+            foreach (string message in lostChoices)
+            {
+                view.ShowError(message);
+            }
             CatchUp(state);
+        }
+
+        /// <summary>
+        /// 이번 페이즈에 내가 고른 사람이 페이즈 도중에 죽었으면(연결이 끊겨 게임에서 나감) 그 선택을 지운다.
+        /// 서버도 그 표·밤 행동을 지우므로(접선으로 고정된 앵무새도 풀림) 다시 고르라고 알린다.
+        /// 밤 습격·처형으로 죽는 것은 페이즈가 바뀔 때라 여기에 걸리지 않는다.
+        /// 시체 대상 능력(주정뱅이)은 이미 죽은 사람을 고르므로 그 사람이 다시 죽는 일이 없다.
+        /// </summary>
+        private List<string> ForgetChoicesOnDeaths(List<GameEvent> events)
+        {
+            var messages = new List<string>();
+            foreach (GameEvent e in events)
+            {
+                if (e.Type != GameEventType.PlayerDied)
+                {
+                    continue;
+                }
+                if (MyVoteTarget == e.PlayerId)
+                {
+                    voteVersion = -1;
+                    messages.Add(GameScreenText.VoteTargetGone(e.Nickname));
+                }
+                if (MyNightTarget == e.PlayerId)
+                {
+                    nightChoiceVersion = -1;
+                    lockedVersion = -1;
+                    messages.Add(GameScreenText.NightTargetGone(e.Nickname));
+                }
+            }
+            return messages;
         }
 
         /// <summary>지금 상태에서 아직 받지 못한 것을 요청한다. 실패하면 다음 폴링 때 다시 시도한다.</summary>

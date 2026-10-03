@@ -294,7 +294,8 @@ namespace WhoisntCitizen.Game
         {
             if (AnnouncePublic)
             {
-                AddSystem(ReportFormatter.WinnerLine(result.winner));
+                AddSystem(ReportFormatter.ResultHeadline(result));
+                AddSystem(ReportFormatter.CancelReason(result.endReason)); // 취소가 아니면 빈 문자열
             }
             CloseDrawer();
             if (resultPanel != null)
@@ -342,7 +343,9 @@ namespace WhoisntCitizen.Game
 
         public void OnGameClosed()
         {
-            AddSystem(GameScreenText.GameClosed);
+            // 취소된 게임은 서버가 방도 지우므로 로비로 간다 (WaitingRoomController)
+            bool cancelled = Session != null && Session.IsCancelled;
+            AddSystem(cancelled ? GameScreenText.CancelledGameClosed : GameScreenText.GameClosed);
         }
 
         // ================================================================ 입력

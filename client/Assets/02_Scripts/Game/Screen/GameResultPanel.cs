@@ -43,11 +43,11 @@ namespace WhoisntCitizen.Game
         {
             if (winnerText != null)
             {
-                winnerText.text = ReportFormatter.WinnerLine(result.winner);
+                winnerText.text = ReportFormatter.ResultHeadline(result); // 취소된 게임이면 "게임 취소"
             }
             if (outcomeText != null)
             {
-                outcomeText.text = GameScreenText.Outcome(result.winner, me != null ? me.faction : null);
+                outcomeText.text = GameScreenText.ResultOutcome(result, me != null ? me.faction : null);
             }
             if (playersText != null)
             {

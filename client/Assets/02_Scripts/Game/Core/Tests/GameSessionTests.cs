@@ -206,16 +206,101 @@ namespace WhoisntCitizen.Game.Tests
             session.Tick();
             SkipUntil(GamePhases.Vote);
             session.Vote(102);
-            SkipUntil(GamePhases.Execution);
-            SkipUntil(GamePhases.Vote);
-            session.Vote(103);
-            SkipAndPoll();                         // 해적 진영 0 → 선원 승, VOTE → ENDED
+            SkipAndPoll();                         // 해적 처형 → 접선하지 못한 앵무새만 남음 → 선원 승, VOTE → ENDED
 
             Assert.IsTrue(session.IsEnded);
-            Assert.AreEqual(103L, view.Executions.Last().executedPlayerId);
-            Assert.AreEqual(2, view.Executions.Count);
+            Assert.IsFalse(session.IsCancelled);
+            Assert.AreEqual(102L, view.Executions.Single().executedPlayerId);
             Assert.AreEqual(Factions.Crew, view.GameResults.Single().winner);
             Assert.AreSame(view.GameResults.Single(), session.Result);
+        }
+
+        [Test]
+        public void 취소된_게임은_결과를_받고_취소로_표시한다()
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+
+            fake.CancelGame(EndReasons.CancelledAllDisconnected);
+            now += 1;
+            session.Tick();
+
+            Assert.IsTrue(session.IsEnded);
+            Assert.IsTrue(session.IsCancelled);
+            Assert.IsTrue(view.GameResults.Single().IsCancelled);
+            Assert.IsNull(view.GameResults.Single().winner);
+        }
+
+        // ---------------------------------------------------------------- 고른 사람이 도중에 나감 (연결 끊김)
+
+        [Test]
+        public void 투표한_사람이_투표_도중_나가면_내_표를_지우고_다시_투표하라고_알린다()
+        {
+            Start(RoleCodes.CrewCaptain, false);
+            session.Tick();
+            SkipUntil(GamePhases.Vote);
+            Assert.IsTrue(session.Vote(104));
+            Assert.AreEqual(104L, session.MyVoteTarget);
+
+            fake.DisconnectPlayer(104);
+            now += 1;
+            session.Tick();
+
+            Assert.AreEqual(GamePhases.Vote, session.State.phase);
+            Assert.AreEqual(0L, session.MyVoteTarget);
+            Assert.AreEqual(GameScreenText.VoteTargetGone("민수"), view.Errors.Last());
+            Assert.AreEqual(104L, view.Deaths.Last().PlayerId);
+        }
+
+        [Test]
+        public void 밤에_고른_대상이_도중에_나가면_선택을_지우고_다시_고르라고_알린다()
+        {
+            Start(RoleCodes.CrewCaptain, false);
+            session.Tick();
+            Assert.IsTrue(session.SubmitNightAction(104));
+            Assert.AreEqual(104L, session.MyNightTarget);
+
+            fake.DisconnectPlayer(104);
+            now += 1;
+            session.Tick();
+
+            Assert.AreEqual(GamePhases.Night, session.State.phase);
+            Assert.AreEqual(0L, session.MyNightTarget);
+            Assert.IsFalse(session.SkippedTonight, "넘긴 것이 아니라 아직 고르지 않은 상태가 된다");
+            Assert.AreEqual(GameScreenText.NightTargetGone("민수"), view.Errors.Last());
+        }
+
+        [Test]
+        public void 접선한_해적이_나가면_앵무새의_고정이_풀려_다시_고를_수_있다()
+        {
+            Start(RoleCodes.PirateParrot, false);
+            session.Tick();
+            Assert.IsTrue(session.SubmitNightAction(102));
+            Assert.IsTrue(session.LockedTonight);
+
+            fake.DisconnectPlayer(102);
+            now += 1;
+            session.Tick();
+
+            Assert.IsFalse(session.IsEnded, "접선한 앵무새가 살아 있으므로 게임이 이어진다");
+            Assert.IsFalse(session.LockedTonight);
+            Assert.AreEqual(AbilityBlock.None, session.NightAbility);
+            Assert.IsTrue(session.SubmitNightAction(104));
+        }
+
+        [Test]
+        public void 처형으로_죽은_사람은_선택_취소_안내를_하지_않는다()
+        {
+            Start(RoleCodes.CrewCaptain, false);
+            session.Tick();
+            SkipUntil(GamePhases.Vote);
+            session.Vote(104);
+
+            SkipAndPoll(); // 104 처형, 페이즈가 바뀌면서 죽는다
+
+            Assert.AreEqual(GamePhases.Execution, session.State.phase);
+            Assert.AreEqual(104L, view.Deaths.Last().PlayerId);
+            Assert.IsFalse(view.Errors.Contains(GameScreenText.VoteTargetGone("민수")));
         }
 
         // ---------------------------------------------------------------- 내 입력

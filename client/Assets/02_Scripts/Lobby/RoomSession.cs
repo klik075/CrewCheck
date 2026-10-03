@@ -32,6 +32,10 @@ namespace WhoisntCitizen.Lobby
         /// <summary>방금 끝낸 게임 id. 게임이 끝난 직후 방 상태가 아직 IN_GAME으로 보여도 같은 게임에 다시 들어가지 않게 한다.</summary>
         public static string FinishedGameId { get; private set; }
 
+        // 로비로 돌아간 이유 (게임 취소로 방이 사라짐, 방에서 제외됨 등).
+        // Clear()로는 지우지 않는다. (로비에 들어오면 방 세션을 먼저 비우기 때문)
+        private static string lobbyNotice;
+
         public static bool HasRoom => RoomId > 0;
 
         /// <summary>게임이 시작되어 gameId를 받은 상태인지</summary>
@@ -86,6 +90,20 @@ namespace WhoisntCitizen.Lobby
             MaxPlayers = 0;
             GameId = null;
             FinishedGameId = null;
+        }
+
+        /// <summary>로비로 돌아간 이유를 남긴다. 로비가 방 목록을 불러온 뒤 한 번 보여 준다.</summary>
+        public static void SetLobbyNotice(string message)
+        {
+            lobbyNotice = message;
+        }
+
+        /// <summary>보여 줄 안내를 꺼낸다. 없으면 null. 꺼내면 지워진다.</summary>
+        public static string TakeLobbyNotice()
+        {
+            string message = lobbyNotice;
+            lobbyNotice = null;
+            return message;
         }
     }
 }

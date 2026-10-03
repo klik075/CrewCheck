@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -16,8 +15,7 @@ namespace WhoisntCitizen.Lobby
     ///   2) Button_CreatRoom : 방 만들기 팝업(CreateRoomPopup) 열기
     ///   3) Button_Refresh : 방 목록 새로고침
     ///   4) RoomListArea : RoomItem 프리팹으로 방 목록 표시, Enter → 방 입장 → Room 씬
-    ///   5) 자동 새로고침 : autoRefreshInterval초마다 조용히 목록 갱신 (팝업이 열려 있거나 요청 중이면 건너뜀)
-    ///   6) 로그아웃 버튼 (선택) : 연결하면 세션을 비우고 타이틀 씬으로 이동
+    ///   5) 로그아웃 버튼 (선택) : 연결하면 세션을 비우고 타이틀 씬으로 이동
     ///
     /// 진입 조건
     ///   로그인하지 않은 상태(토큰 없음)로 이 씬에 들어오면 타이틀 씬으로 돌려보낸다.
@@ -44,10 +42,6 @@ namespace WhoisntCitizen.Lobby
         [Header("Status")]
         [SerializeField] private StatusMessageView statusMessage; // Canvas/StatusMessageText
 
-        [Header("Options")]
-        [Tooltip("방 목록 자동 새로고침 간격(초). 0이면 자동 새로고침을 끈다.")]
-        [SerializeField] private float autoRefreshInterval = 5f;
-
         // 방이 하나도 없을 때 보여주는 안내 문구
         private const string EmptyRoomNotice = "만들어진 방이 없습니다. 방을 만들어 보세요!";
 
@@ -56,7 +50,7 @@ namespace WhoisntCitizen.Lobby
 
         private bool isRefreshing; // 방 목록 요청 중
         private bool isJoining;    // 방 입장 요청 중 (이 동안은 목록 갱신/다른 입장을 막는다)
-        private Coroutine autoRefreshRoutine;
+        private string lobbyNotice; // 로비로 돌아온 이유 (방 목록을 처음 불러온 뒤 한 번 보여 준다)
 
         // ------------------------------------------------------------------
         // Unity 생명주기
@@ -83,15 +77,16 @@ namespace WhoisntCitizen.Lobby
             // 2) 로비에 들어왔다는 것은 어떤 방에도 들어가 있지 않다는 뜻이므로 방 세션을 비운다.
             //    (Room 씬에서 로비로 돌아올 때는 Room 씬 쪽에서 먼저 방 나가기 API를 호출한다)
             RoomSession.Clear();
+            // 방이 사라졌거나 방에서 제외되어 돌아왔으면 그 이유를 방 목록을 불러온 뒤 보여 준다.
+            lobbyNotice = RoomSession.TakeLobbyNotice();
 
             // 3) 화면 초기 상태
             ShowUserInfo();
             if (createRoomPopup != null) createRoomPopup.Close(); // 씬에서 켜 둔 채 저장했어도 닫고 시작
             ClearRoomList();                                      // Content에 놓여 있던 샘플 RoomItem 제거
 
-            // 4) 방 목록을 불러오고 자동 새로고침 시작
+            // 4) 방 목록 불러오기 (이후에는 새로고침 버튼을 눌렀을 때만 갱신한다)
             RefreshRooms(silent: false);
-            if (autoRefreshInterval > 0f) autoRefreshRoutine = StartCoroutine(AutoRefreshLoop());
         }
 
         private void OnDestroy()
@@ -147,7 +142,8 @@ namespace WhoisntCitizen.Lobby
         /// <summary>
         /// 서버에서 방 목록을 받아 화면을 다시 그린다.
         /// </summary>
-        /// <param name="silent">true면 자동 새로고침용: "불러오는 중" 같은 안내 문구를 띄우지 않는다.</param>
+        /// <param name="silent">true면 "불러오는 중"/"n개를 불러왔습니다" 문구를 띄우지 않는다.
+        /// (입장 실패 직후 갱신할 때 에러 메시지를 덮어쓰지 않기 위해 사용)</param>
         private void RefreshRooms(bool silent)
         {
             // 이미 요청 중이거나, 입장 처리 중이거나, 씬 이동 중이면 건너뛴다.
@@ -166,7 +162,7 @@ namespace WhoisntCitizen.Lobby
 
                 if (!result.success)
                 {
-                    // 자동 새로고침 실패도 표시한다. (서버가 꺼진 걸 사용자가 알 수 있도록)
+                    // 실패는 silent여도 표시한다. (서버가 꺼진 걸 사용자가 알 수 있도록)
                     statusMessage?.ShowError(result.message);
                     return;
                 }
@@ -176,12 +172,15 @@ namespace WhoisntCitizen.Lobby
 
                 BuildRoomList(result.data);
 
-                if (result.data.Count == 0)
+                if (!string.IsNullOrEmpty(lobbyNotice))
+                {
+                    statusMessage?.ShowInfo(lobbyNotice, keep: true); // 로비로 돌아온 이유가 "n개를 불러왔습니다"보다 중요하다
+                    lobbyNotice = null;
+                }
+                else if (result.data.Count == 0)
                     statusMessage?.ShowInfo(EmptyRoomNotice, keep: true);  // 방이 없으면 안내 문구 유지
                 else if (!silent)
                     statusMessage?.ShowSuccess($"방 {result.data.Count}개를 불러왔습니다.");
-                else
-                    ClearEmptyNoticeIfShown(); // 자동 새로고침으로 방이 생겼으면 "방 없음" 문구만 지운다
             });
         }
 
@@ -233,28 +232,6 @@ namespace WhoisntCitizen.Lobby
 
             for (int i = roomListContent.childCount - 1; i >= 0; i--)
                 Destroy(roomListContent.GetChild(i).gameObject);
-        }
-
-        // 방이 다시 생겼을 때 "만들어진 방이 없습니다" 문구가 계속 남아 있지 않도록 지운다.
-        // 다른 메시지(예: 입장 실패 에러)가 떠 있으면 건드리지 않는다.
-        private void ClearEmptyNoticeIfShown()
-        {
-            if (statusMessage != null && statusMessage.CurrentMessage == EmptyRoomNotice)
-                statusMessage.Clear();
-        }
-
-        /// <summary>autoRefreshInterval초마다 조용히 방 목록을 갱신한다.</summary>
-        private IEnumerator AutoRefreshLoop()
-        {
-            var wait = new WaitForSeconds(autoRefreshInterval);
-            while (true)
-            {
-                yield return wait;
-
-                // 팝업에서 입력 중일 때는 목록을 다시 그리지 않는다.
-                bool popupOpen = createRoomPopup != null && createRoomPopup.IsOpen;
-                if (!popupOpen) RefreshRooms(silent: true);
-            }
         }
 
         // ------------------------------------------------------------------
