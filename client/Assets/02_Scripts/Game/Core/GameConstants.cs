@@ -15,6 +15,20 @@ namespace WhoisntCitizen.Game
     }
 
     /// <summary>진영. 앵무새는 PIRATE, 원숭이는 CREW.</summary>
+    /// <summary>게임이 끝난 이유 (서버 GameEndReason). 진행 중이면 null. 취소된 게임은 winner가 null이고 전적에 반영되지 않는다.</summary>
+    public static class EndReasons
+    {
+        public const string Win = "WIN";                                              // 승리 팀이 정해짐
+        public const string CancelledAllDisconnected = "CANCELLED_ALL_DISCONNECTED";  // 살아 있는 플레이어가 모두 연결이 끊김
+        public const string CancelledNoDeaths = "CANCELLED_NO_DEATHS";                // 정해진 일수 동안 연속으로 아무도 죽지 않음
+        public const string CancelledError = "CANCELLED_ERROR";                       // 서버 오류
+
+        public static bool IsCancelled(string endReason)
+        {
+            return !string.IsNullOrEmpty(endReason) && endReason != Win;
+        }
+    }
+
     public static class Factions
     {
         public const string Crew = "CREW";

@@ -94,8 +94,10 @@ namespace WhoisntCitizen.Vote
                 items.Remove(id);
             }
 
-            // 선택했던 대상이 죽었거나 사라졌으면 선택 해제
+            // 선택했던 대상이 죽었거나 사라졌으면 선택 해제.
+            // 투표한 대상이 투표 도중 죽으면(연결 끊김) 서버가 그 표를 지우므로 "투표했습니다" 표시도 지운다.
             if (selectedId.HasValue && !IsTargetable(selectedId.Value)) selectedId = null;
+            if (submittedId.HasValue && !IsTargetable(submittedId.Value)) submittedId = null;
 
             RefreshUI();
         }

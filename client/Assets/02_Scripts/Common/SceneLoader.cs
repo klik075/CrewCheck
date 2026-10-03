@@ -69,6 +69,10 @@ namespace WhoisntCitizen.Common
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void CreateOnStartup()
         {
+            // 창이 포커스를 잃어도(PC에서 다른 창으로 전환) 멈추지 않고 서버 폴링을 계속한다.
+            // 서버는 게임 상태 조회가 60초 동안 없으면 연결이 끊긴 것으로 보고 사망 처리한다.
+            // Player Settings의 Run In Background와 같은 값이며, 설정이 꺼져 있어도 코드로 켠다. (모바일은 OS가 앱을 멈추므로 효과 없음)
+            Application.runInBackground = true;
             EnsureInstance();
         }
 

@@ -52,7 +52,7 @@ namespace WhoisntCitizen.Game
 
         public void ShowGameResult(GameResultDto result)
         {
-            var lines = new List<string> { ReportFormatter.WinnerLine(result.winner) };
+            var lines = new List<string> { ReportFormatter.ResultHeadline(result), ReportFormatter.CancelReason(result.endReason) };
             lines.AddRange(ReportFormatter.ResultLines(result));
             Debug.Log(Tag + "게임 종료\n" + string.Join("\n", lines.ToArray()));
         }

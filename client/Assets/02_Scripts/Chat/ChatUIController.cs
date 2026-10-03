@@ -44,7 +44,7 @@ namespace WhoisntCitizen.Chat
         public long myUserId = -1;
 
         [Header("[개발용] 단독 실행 (로비 없이 이 씬만 플레이할 때)")]
-        [Tooltip("AuthSession에 토큰이 없으면 아래 계정으로 로그인 (Postman 0번 폴더의 테스트 계정)")]
+        [Tooltip("AuthSession에 토큰이 없으면 아래 계정으로 로그인 (Postman 0번 폴더의 테스트 계정). 에디터에서만 동작한다.")]
         public bool autoLogin = true;
         public string devUsername = "tester1";
         public string devPassword = "Test1234!";
@@ -207,9 +207,9 @@ namespace WhoisntCitizen.Chat
                 // 1) 로그인 (로비에서 이미 로그인했다면 건너뜀)
                 if (!AuthSession.IsAuthenticated)
                 {
-                    if (!autoLogin)
+                    if (!autoLogin || !Application.isEditor) // 빌드에서는 개발용 계정으로 로그인하지 않는다
                     {
-                        Fail("로그인 후 이용할 수 있습니다.", "AuthSession에 토큰이 없고 [개발용] autoLogin이 꺼져 있음");
+                        Fail("로그인 후 이용할 수 있습니다.", "AuthSession에 토큰이 없고 [개발용] autoLogin이 꺼져 있거나 빌드임");
                         break;
                     }
                     yield return api.Login(devUsername, devPassword,

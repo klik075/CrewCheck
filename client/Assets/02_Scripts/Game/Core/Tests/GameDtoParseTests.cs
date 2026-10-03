@@ -60,6 +60,37 @@ namespace WhoisntCitizen.Game.Tests
             Assert.AreEqual(new DateTime(2026, 10, 1, 12, 10, 0, DateTimeKind.Utc), GameJson.ParseServerTime(s.serverTime));
         }
 
+        [Test]
+        public void 취소된_게임_상태는_winner가_없고_endReason이_온다()
+        {
+            var s = GameJson.FromJson<GameStateDto>(GameJsonFixtures.GameStateCancelled);
+
+            Assert.AreEqual(GamePhases.Ended, s.phase);
+            Assert.IsNull(s.winner);
+            Assert.AreEqual(EndReasons.CancelledNoDeaths, s.endReason);
+        }
+
+        [Test]
+        public void 취소된_게임_결과는_IsCancelled다()
+        {
+            var g = GameJson.FromJson<GameResultDto>(GameJsonFixtures.GameResultCancelled);
+
+            Assert.IsTrue(g.ended);
+            Assert.IsTrue(g.IsCancelled);
+            Assert.IsNull(g.winner);
+            Assert.AreEqual(EndReasons.CancelledAllDisconnected, g.endReason);
+            Assert.AreEqual(1, g.players.Count);
+        }
+
+        [Test]
+        public void endReason이_없던_예전_응답도_읽힌다()
+        {
+            var g = GameJson.FromJson<GameResultDto>(GameJsonFixtures.GameResult);
+
+            Assert.IsFalse(g.IsCancelled);
+            Assert.AreEqual(Factions.Crew, g.winner);
+        }
+
         // ---------------------------------------------------------------- 내 역할
 
         [Test]

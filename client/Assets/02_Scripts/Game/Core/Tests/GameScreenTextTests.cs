@@ -82,6 +82,23 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 결과_화면_승패는_취소된_게임이면_무효다()
+        {
+            var won = new GameResultDto { ended = true, winner = Factions.Crew, endReason = EndReasons.Win };
+            var cancelled = new GameResultDto { ended = true, winner = null, endReason = EndReasons.CancelledNoDeaths };
+
+            Assert.AreEqual("승리", GameScreenText.ResultOutcome(won, Factions.Crew));
+            Assert.AreEqual("무효 (전적 미반영)", GameScreenText.ResultOutcome(cancelled, Factions.Crew));
+        }
+
+        [Test]
+        public void 고른_사람이_나가면_다시_고르라고_안내한다()
+        {
+            Assert.AreEqual("투표한 영희님이 게임에서 나가 표가 취소되었습니다. 다시 투표해 주세요.", GameScreenText.VoteTargetGone("영희"));
+            Assert.AreEqual("고른 대상인 영희님이 게임에서 나가 선택이 취소되었습니다. 다시 골라 주세요.", GameScreenText.NightTargetGone("영희"));
+        }
+
+        [Test]
         public void 득표_한_줄()
         {
             var executed = GameJson.FromJson<ExecutionResultDto>(GameJsonFixtures.ExecutionExecuted);

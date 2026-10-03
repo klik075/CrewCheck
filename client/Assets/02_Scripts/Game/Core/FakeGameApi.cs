@@ -27,6 +27,7 @@ namespace WhoisntCitizen.Game
     /// - 콜백은 호출 안에서 바로(동기로) 불린다.
     /// - 내가 원숭이면 위장 직업으로 행동하고, 효과 없이 가짜 결과를 받는다(서버와 같음). 봇 중에는 원숭이·갑판장이 없다.
     /// - 끝난 게임도 지우지 않는다(서버는 보관 시간이 지나면 404).
+    /// - 연결 끊김(DisconnectPlayer)과 게임 취소(CancelGame)는 개발용으로 직접 일으킨다. 서버처럼 시간으로 판정하지 않는다.
     /// </summary>
     public sealed class FakeGameApi : IGameApi
     {
@@ -68,6 +69,7 @@ namespace WhoisntCitizen.Game
         private long phaseVersion;
         private double phaseEndsAt;
         private string winner;
+        private string endReason;
         private NightResultDto lastNightResult;
         private ExecutionResultDto lastExecutionResult;
 
@@ -108,6 +110,69 @@ namespace WhoisntCitizen.Game
             }
         }
 
+        /// <summary>
+        /// 개발용: 플레이어 한 명의 연결이 끊긴 것처럼 처리한다 (서버 GameFlowService.checkInactivePlayers와 같은 규칙).
+        /// 사망 처리하고, 그 사람이 낸 표·밤 행동과 그 사람을 대상으로 한 표·밤 행동(살아 있는 대상 능력)을 지운다.
+        /// 접선으로 고정된 앵무새도 대상이 사라지면 풀린다. 그다음 승리 조건을 보고, 남은 사람이 모두 냈으면 바로 판정한다.
+        /// </summary>
+        public void DisconnectPlayer(long playerId)
+        {
+            Advance();
+            FakePlayer left = Find(playerId);
+            if (phase == GamePhases.Ended || left == null || !left.Alive)
+            {
+                return;
+            }
+            left.Alive = false;
+
+            votes.Remove(playerId);
+            foreach (long voter in new List<long>(votes.Keys))
+            {
+                if (votes[voter] == playerId)
+                {
+                    votes.Remove(voter);
+                }
+            }
+            skippedActors.Remove(playerId);
+            for (int i = nightActions.Count - 1; i >= 0; i--)
+            {
+                FakeAction a = nightActions[i];
+                ActionRule rule = AbilityRules.Find(a.Code);
+                if (a.ActorId == playerId || (a.TargetId == playerId && rule != null && rule.LivingTarget))
+                {
+                    lockedActors.Remove(a.ActorId);
+                    nightActions.RemoveAt(i);
+                }
+            }
+
+            if (FinishIfWinnerDecided())
+            {
+                return;
+            }
+            if (phase == GamePhases.Night && AllNightActionsSubmitted())
+            {
+                ResolveNight(clock());
+            }
+            else if (phase == GamePhases.Vote && AllVotesSubmitted())
+            {
+                ResolveVote(clock());
+            }
+        }
+
+        /// <summary>개발용: 서버가 게임을 취소한 것처럼 승리 팀 없이 끝낸다. reason은 EndReasons.Cancelled*.</summary>
+        public void CancelGame(string reason)
+        {
+            Advance();
+            if (phase == GamePhases.Ended)
+            {
+                return;
+            }
+            winner = null;
+            endReason = reason;
+            phase = GamePhases.Ended;
+            phaseVersion++;
+        }
+
         // ================================================================ IGameApi
 
         public void GetState(string gameId, Action<GameApiResult<GameStateDto>> onDone)
@@ -124,7 +189,8 @@ namespace WhoisntCitizen.Game
                 phaseEndsAt = phase == GamePhases.Ended ? null : Iso(phaseEndsAt),
                 serverTime = Iso(clock()),
                 phaseVersion = phaseVersion,
-                winner = winner
+                winner = winner,
+                endReason = endReason
             };
             foreach (FakePlayer p in players)
             {
@@ -293,6 +359,7 @@ namespace WhoisntCitizen.Game
             {
                 result.ended = true;
                 result.winner = winner;
+                result.endReason = endReason;
                 foreach (FakePlayer p in players)
                 {
                     RoleInfo role = Roles[p.Role];
@@ -370,9 +437,13 @@ namespace WhoisntCitizen.Game
             }
         }
 
-        /// <summary>승리 조건(WinConditionChecker): 해적 진영 생존 0명 → 선원 승, 해적 진영 ≥ 나머지 → 해적 승.</summary>
+        /// <summary>
+        /// 승리 조건(WinConditionChecker): 해적 편으로 활동하는 생존자(해적 + 접선한 앵무새) 0명 → 선원 승,
+        /// 해적 진영(접선 전 앵무새 포함) ≥ 나머지 → 해적 승. 접선하지 못한 앵무새만 남으면 선원이 이긴다.
+        /// </summary>
         private bool FinishIfWinnerDecided()
         {
+            int activePirates = 0;
             int pirates = 0;
             int others = 0;
             foreach (FakePlayer p in players)
@@ -380,6 +451,10 @@ namespace WhoisntCitizen.Game
                 if (!p.Alive)
                 {
                     continue;
+                }
+                if (p.IsRaider || (p.IsParrot && p.Contacted))
+                {
+                    activePirates++;
                 }
                 if (p.IsPirate)
                 {
@@ -390,12 +465,13 @@ namespace WhoisntCitizen.Game
                     others++;
                 }
             }
-            string decided = pirates == 0 ? Factions.Crew : (pirates >= others ? Factions.Pirate : null);
+            string decided = activePirates == 0 ? Factions.Crew : (pirates >= others ? Factions.Pirate : null);
             if (decided == null)
             {
                 return false;
             }
             winner = decided;
+            endReason = EndReasons.Win;
             phase = GamePhases.Ended;
             phaseVersion++;
             return true;

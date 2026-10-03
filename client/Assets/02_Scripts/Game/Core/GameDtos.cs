@@ -34,7 +34,8 @@ namespace WhoisntCitizen.Game
         public string serverTime;   // 응답을 만든 서버 시각. 남은 시간 = phaseEndsAt - serverTime
         public long phaseVersion;   // 페이즈가 바뀔 때마다 증가. 이 값이 바뀌면 화면을 전환한다
         public List<PlayerViewDto> players = new List<PlayerViewDto>();
-        public string winner;       // Factions. 끝나기 전에는 null
+        public string winner;       // Factions. 끝나기 전이나 취소된 게임이면 null
+        public string endReason;    // EndReasons. 끝나기 전에는 null
     }
 
     [Serializable]
@@ -156,9 +157,13 @@ namespace WhoisntCitizen.Game
     public class GameResultDto
     {
         public bool ended;              // false면 아직 진행 중 (players는 비어 있음)
-        public string winner;           // Factions
+        public string winner;           // Factions. 취소된 게임이면 null
+        public string endReason;        // EndReasons
         public int lastDay;
         public List<PlayerResultDto> players = new List<PlayerResultDto>();
+
+        /// <summary>승리 팀 없이 취소된 게임 (전적 미반영, 방도 곧 사라진다)</summary>
+        public bool IsCancelled => EndReasons.IsCancelled(endReason);
     }
 
     /// <summary>게임 종료 후 공개되는 실제 직업. 원숭이도 여기서는 CREW_MONKEY로 나온다.</summary>
