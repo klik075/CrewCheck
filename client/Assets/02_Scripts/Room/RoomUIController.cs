@@ -51,6 +51,12 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private float pollInterval = 1f;
         [Tooltip("게임 시작에 필요한 최소 인원 (서버 RoleAssigner.MIN_PLAYERS = 4)")]
         [SerializeField] private int minPlayersToStart = 4;
+        [Tooltip("로그인(토큰) 남은 시간이 이 분보다 적으면 다시 로그인하라고 안내하고, 방장은 게임을 시작하지 못하게 한다. " +
+                 "게임 중 토큰이 만료되면 상태 조회가 끊겨 서버가 60초 뒤 사망 처리한다.")]
+        [SerializeField] private int minLoginMinutesForGame = 20;
+
+        private const string RoomGoneNotice = "방이 사라져 로비로 돌아왔습니다.";
+        private const string RemovedFromRoomNotice = "방에서 제외되어 로비로 돌아왔습니다. (게임 중 연결이 60초 넘게 끊기면 탈락하고 방에서도 빠집니다)";
 
         private readonly List<RoomPlayerView> spawnedPlayers = new List<RoomPlayerView>();
         private string lastListSignature; // 참가자/방장이 바뀌었을 때만 목록을 다시 그리기 위한 값
@@ -96,8 +102,20 @@ namespace WhoisntCitizen.Lobby
             if (memberCountText != null) memberCountText.text = $"- / {RoomSession.MaxPlayers}";
             ClearPlayerList(); // Content에 놓여 있던 샘플 아이템 제거
             UpdateStartButton();
+            if (LoginExpiresSoon(out int minutesLeft))
+            {
+                statusMessage?.ShowError($"로그인 유지 시간이 약 {minutesLeft}분 남았습니다. 게임 중 만료되면 연결이 끊겨 탈락하니, 로비에서 로그아웃 후 다시 로그인해 주세요.", keep: true);
+            }
 
             pollRoutine = StartCoroutine(PollLoop());
+        }
+
+        /// <summary>토큰 남은 시간이 게임 한 판을 버티기에 부족한지. 남은 시간을 알 수 없으면 false.</summary>
+        private bool LoginExpiresSoon(out int minutesLeft)
+        {
+            double? left = AuthSession.TokenMinutesLeft;
+            minutesLeft = left.HasValue ? Mathf.Max(0, Mathf.FloorToInt((float)left.Value)) : 0;
+            return left.HasValue && left.Value < minLoginMinutesForGame;
         }
 
         private void OnDestroy()
@@ -124,6 +142,12 @@ namespace WhoisntCitizen.Lobby
             if (lastPlayerCount < minPlayersToStart)
             {
                 statusMessage?.ShowError($"게임을 시작하려면 최소 {minPlayersToStart}명이 필요합니다.");
+                return;
+            }
+
+            if (LoginExpiresSoon(out int minutesLeft))
+            {
+                statusMessage?.ShowError($"로그인 유지 시간이 약 {minutesLeft}분밖에 남지 않아 게임을 시작할 수 없습니다. 로비에서 로그아웃 후 다시 로그인해 주세요.");
                 return;
             }
 
@@ -214,7 +238,7 @@ namespace WhoisntCitizen.Lobby
                     if (result.statusCode == 400 || result.IsNotFound)
                     {
                         Debug.LogWarning($"[Room] 방 #{roomId}이(가) 더 이상 없습니다: {result.message}");
-                        ReturnToLobby();
+                        ReturnToLobby(RoomGoneNotice);
                         return;
                     }
 
@@ -226,11 +250,11 @@ namespace WhoisntCitizen.Lobby
                 RoomDetailResponse room = result.data;
                 if (room == null) return;
 
-                // 내가 참가자 목록에 없으면 (다른 기기에서 나감, 서버 초기화 등) 로비로 돌아간다.
+                // 내가 참가자 목록에 없으면 (게임 중 연결이 끊겨 제외됨, 다른 기기에서 나감, 서버 초기화 등) 로비로 돌아간다.
                 if (!room.HasPlayer(AuthSession.UserId))
                 {
                     Debug.LogWarning($"[Room] 방 #{roomId} 참가자 목록에 내가 없어 로비로 이동합니다.");
-                    ReturnToLobby();
+                    ReturnToLobby(RemovedFromRoomNotice);
                     return;
                 }
 
@@ -345,12 +369,14 @@ namespace WhoisntCitizen.Lobby
             }
         }
 
-        private void ReturnToLobby()
+        /// <param name="notice">로비에서 보여 줄 돌아온 이유. 직접 나간 경우는 null</param>
+        private void ReturnToLobby(string notice = null)
         {
             if (isTransitioning) return;
 
             BeginTransition();
             RoomSession.Clear();
+            if (notice != null) RoomSession.SetLobbyNotice(notice);
             SceneLoader.Load(SceneType.Lobby);
         }
 

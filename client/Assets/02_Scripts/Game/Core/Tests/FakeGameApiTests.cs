@@ -351,15 +351,15 @@ namespace WhoisntCitizen.Game.Tests
             AssertRule(Act(api, 104), "사망한 플레이어만 대상으로 할 수 있는 능력입니다.");
 
             SkipTo(api, GamePhases.Vote);
-            VoteFor(api, 102);
+            VoteFor(api, 104);
             SkipTo(api, GamePhases.Night);
-            Assert.IsTrue(Act(api, 102).Success);
+            Assert.IsTrue(Act(api, 104).Success);
             api.SkipToNextPhase();
 
             ReportDto report = NightResult(api).reports.Single();
             Assert.AreEqual(ReportTypes.CorpseRole, report.type);
-            Assert.AreEqual(RoleCodes.PirateRaider, report.roleCode);
-            Assert.AreEqual("해적", report.roleName);
+            Assert.AreEqual(RoleCodes.CrewCaptain, report.roleCode);
+            Assert.AreEqual("선장", report.roleName);
             Assert.AreEqual(1, Me(api).remainingUses);
         }
 
@@ -450,16 +450,87 @@ namespace WhoisntCitizen.Game.Tests
             var api = Create(RoleCodes.CrewCaptain, false);
             SkipTo(api, GamePhases.Vote);
             VoteFor(api, 102);
-            api.SkipToNextPhase();                           // 해적 처형, 앵무새만 남음
-            Assert.AreEqual(GamePhases.Execution, State(api).phase);
-            SkipTo(api, GamePhases.Vote);                    // 2일차 투표
-            VoteFor(api, 103);
-            api.SkipToNextPhase();                           // 해적 진영 0 → 선원 승
+            api.SkipToNextPhase();                           // 해적 처형 → 접선하지 못한 앵무새만 남음 → 선원 승
 
             GameStateDto s = State(api);
             Assert.AreEqual(GamePhases.Ended, s.phase);
             Assert.AreEqual(Factions.Crew, s.winner);
-            Assert.AreEqual(103L, ExecutionResult(api).executedPlayerId);
+            Assert.AreEqual(EndReasons.Win, s.endReason);
+            Assert.AreEqual(102L, ExecutionResult(api).executedPlayerId);
+        }
+
+        [Test]
+        public void 접선한_앵무새가_살아_있으면_해적이_처형돼도_게임이_이어진다()
+        {
+            var api = Create(RoleCodes.PirateParrot, false);
+            Assert.IsTrue(Act(api, 102).Success);            // 해적과 접선
+            SkipTo(api, GamePhases.Vote);
+            VoteFor(api, 102);
+            api.SkipToNextPhase();
+
+            GameStateDto s = State(api);
+            Assert.AreEqual(GamePhases.Execution, s.phase);
+            Assert.IsNull(s.winner);
+            Assert.IsNull(s.endReason);
+        }
+
+        // ---------------------------------------------------------------- 연결 끊김 · 취소 (개발용)
+
+        [Test]
+        public void 연결이_끊긴_사람은_죽고_그_사람의_표와_그_사람이_받은_표가_빠진다()
+        {
+            var api = Create(RoleCodes.CrewCaptain, false);
+            SkipTo(api, GamePhases.Vote);
+            VoteFor(api, 105);
+
+            api.DisconnectPlayer(105);
+
+            GameStateDto s = State(api);
+            Assert.IsFalse(s.players.Single(p => p.playerId == 105).alive);
+            Assert.AreEqual(GamePhases.Vote, s.phase, "남은 사람이 아직 다 내지 않았으므로 투표가 이어진다");
+            Assert.IsTrue(VoteFor(api, 104).Success, "다시 투표할 수 있다");
+        }
+
+        [Test]
+        public void 해적이_끊기면_접선하지_못한_앵무새만_남아_선원이_이긴다()
+        {
+            var api = Create(RoleCodes.CrewCaptain, false);
+
+            api.DisconnectPlayer(102);
+
+            GameStateDto s = State(api);
+            Assert.AreEqual(GamePhases.Ended, s.phase);
+            Assert.AreEqual(Factions.Crew, s.winner);
+        }
+
+        [Test]
+        public void 접선한_대상이_끊기면_앵무새의_고정이_풀려_다시_고를_수_있다()
+        {
+            var api = Create(RoleCodes.PirateParrot, false);
+            Assert.IsTrue(Act(api, 102).Success);            // 접선 → 이번 밤 행동 고정
+            AssertRule(Act(api, 104), "이번 밤 행동이 이미 확정되었습니다.");
+
+            api.DisconnectPlayer(102);
+
+            Assert.AreEqual(GamePhases.Night, State(api).phase);
+            Assert.IsTrue(Act(api, 104).Success);
+        }
+
+        [Test]
+        public void 게임을_취소하면_승리_팀_없이_끝나고_결과에_취소_이유가_온다()
+        {
+            var api = Create(RoleCodes.CrewSailor, false);
+
+            api.CancelGame(EndReasons.CancelledNoDeaths);
+
+            GameStateDto s = State(api);
+            Assert.AreEqual(GamePhases.Ended, s.phase);
+            Assert.IsNull(s.winner);
+            Assert.AreEqual(EndReasons.CancelledNoDeaths, s.endReason);
+            GameResultDto g = Call<GameResultDto>(cb => api.GetResult(Id, cb)).Data;
+            Assert.IsTrue(g.ended);
+            Assert.IsTrue(g.IsCancelled);
+            Assert.AreEqual(8, g.players.Count);
         }
 
         [Test]

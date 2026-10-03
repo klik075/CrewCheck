@@ -215,6 +215,24 @@ namespace WhoisntCitizen.Game
             return string.IsNullOrEmpty(winner) ? string.Empty : FactionName(winner) + " 승리";
         }
 
+        /// <summary>결과 화면 제목. 취소된 게임이면 "게임 취소", 아니면 승리 진영 문구.</summary>
+        public static string ResultHeadline(GameResultDto result)
+        {
+            return result.IsCancelled ? "게임 취소" : WinnerLine(result.winner);
+        }
+
+        /// <summary>게임이 취소된 이유. 취소가 아니면 빈 문자열.</summary>
+        public static string CancelReason(string endReason)
+        {
+            switch (endReason)
+            {
+                case EndReasons.CancelledAllDisconnected: return "살아 있는 플레이어가 모두 연결이 끊겼습니다.";
+                case EndReasons.CancelledNoDeaths: return "아무도 죽지 않는 날이 너무 오래 이어졌습니다.";
+                case EndReasons.CancelledError: return "서버 오류가 발생했습니다.";
+                default: return string.Empty;
+            }
+        }
+
         /// <summary>전원의 실제 직업 공개 줄 목록. 예: "철수님 · 해적 · 사망"</summary>
         public static List<string> ResultLines(GameResultDto result)
         {

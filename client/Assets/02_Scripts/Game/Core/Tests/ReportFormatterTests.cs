@@ -159,6 +159,26 @@ namespace WhoisntCitizen.Game.Tests
             CollectionAssert.AreEqual(new[] { "철수님 · 해적 · 사망", "지훈님 · 원숭이 · 생존" }, ReportFormatter.ResultLines(g));
         }
 
+        [Test]
+        public void 결과_화면_제목은_취소된_게임이면_게임_취소다()
+        {
+            var won = new GameResultDto { ended = true, winner = Factions.Pirate, endReason = EndReasons.Win };
+            var cancelled = new GameResultDto { ended = true, winner = null, endReason = EndReasons.CancelledError };
+
+            Assert.AreEqual("해적 진영 승리", ReportFormatter.ResultHeadline(won));
+            Assert.AreEqual("게임 취소", ReportFormatter.ResultHeadline(cancelled));
+        }
+
+        [Test]
+        public void 취소_이유()
+        {
+            Assert.AreEqual("살아 있는 플레이어가 모두 연결이 끊겼습니다.", ReportFormatter.CancelReason(EndReasons.CancelledAllDisconnected));
+            Assert.AreEqual("아무도 죽지 않는 날이 너무 오래 이어졌습니다.", ReportFormatter.CancelReason(EndReasons.CancelledNoDeaths));
+            Assert.AreEqual("서버 오류가 발생했습니다.", ReportFormatter.CancelReason(EndReasons.CancelledError));
+            Assert.AreEqual(string.Empty, ReportFormatter.CancelReason(EndReasons.Win));
+            Assert.AreEqual(string.Empty, ReportFormatter.CancelReason(null));
+        }
+
         // ---------------------------------------------------------------- 이름 · 안내 문구
 
         [Test]

@@ -50,6 +50,7 @@ namespace WhoisntCitizen.Lobby
 
         private bool isRefreshing; // 방 목록 요청 중
         private bool isJoining;    // 방 입장 요청 중 (이 동안은 목록 갱신/다른 입장을 막는다)
+        private string lobbyNotice; // 로비로 돌아온 이유 (방 목록을 처음 불러온 뒤 한 번 보여 준다)
 
         // ------------------------------------------------------------------
         // Unity 생명주기
@@ -76,6 +77,8 @@ namespace WhoisntCitizen.Lobby
             // 2) 로비에 들어왔다는 것은 어떤 방에도 들어가 있지 않다는 뜻이므로 방 세션을 비운다.
             //    (Room 씬에서 로비로 돌아올 때는 Room 씬 쪽에서 먼저 방 나가기 API를 호출한다)
             RoomSession.Clear();
+            // 방이 사라졌거나 방에서 제외되어 돌아왔으면 그 이유를 방 목록을 불러온 뒤 보여 준다.
+            lobbyNotice = RoomSession.TakeLobbyNotice();
 
             // 3) 화면 초기 상태
             ShowUserInfo();
@@ -169,7 +172,12 @@ namespace WhoisntCitizen.Lobby
 
                 BuildRoomList(result.data);
 
-                if (result.data.Count == 0)
+                if (!string.IsNullOrEmpty(lobbyNotice))
+                {
+                    statusMessage?.ShowInfo(lobbyNotice, keep: true); // 로비로 돌아온 이유가 "n개를 불러왔습니다"보다 중요하다
+                    lobbyNotice = null;
+                }
+                else if (result.data.Count == 0)
                     statusMessage?.ShowInfo(EmptyRoomNotice, keep: true);  // 방이 없으면 안내 문구 유지
                 else if (!silent)
                     statusMessage?.ShowSuccess($"방 {result.data.Count}개를 불러왔습니다.");

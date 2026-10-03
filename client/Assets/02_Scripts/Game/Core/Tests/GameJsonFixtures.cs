@@ -58,6 +58,13 @@ namespace WhoisntCitizen.Game.Tests
         public const string GameResultNotEnded =
             @"{""ended"":false,""winner"":null,""lastDay"":2,""players"":[]}";
 
+        // 서버 Preventing-Never-Ending-Games 기준: 상태·결과에 endReason이 붙고, 취소된 게임은 winner가 null이다.
+        public const string GameStateCancelled =
+            @"{""gameId"":""g-cancelled"",""phase"":""ENDED"",""day"":10,""phaseEndsAt"":null,""serverTime"":""2026-10-01T12:30:00Z"",""phaseVersion"":51,""players"":[{""playerId"":11,""nickname"":""철수"",""alive"":true}],""winner"":null,""endReason"":""CANCELLED_NO_DEATHS""}";
+
+        public const string GameResultCancelled =
+            @"{""ended"":true,""winner"":null,""endReason"":""CANCELLED_ALL_DISCONNECTED"",""lastDay"":4,""players"":[{""playerId"":11,""nickname"":""철수"",""role"":""PIRATE_RAIDER"",""roleName"":""해적"",""alive"":true}]}";
+
         public const string RoleList =
             @"{""roles"":[{""code"":""CREW_BOATSWAIN"",""name"":""갑판장"",""faction"":""CREW"",""actionCode"":""BLOCK""},{""code"":""CREW_CAPTAIN"",""name"":""선장"",""faction"":""CREW"",""actionCode"":""INVESTIGATE_FACTION""},{""code"":""CREW_DOCTOR"",""name"":""선의"",""faction"":""CREW"",""actionCode"":""PROTECT""},{""code"":""CREW_DRUNK"",""name"":""주정뱅이"",""faction"":""CREW"",""actionCode"":""READ_CORPSE_ROLE""},{""code"":""CREW_LOOKOUT"",""name"":""망루지기"",""faction"":""CREW"",""actionCode"":""WATCH_VISITORS""},{""code"":""CREW_MONKEY"",""name"":""원숭이"",""faction"":""CREW"",""actionCode"":null},{""code"":""CREW_SAILOR"",""name"":""선원"",""faction"":""CREW"",""actionCode"":null},{""code"":""PIRATE_PARROT"",""name"":""앵무새"",""faction"":""PIRATE"",""actionCode"":""WATCH_ACTION""},{""code"":""PIRATE_RAIDER"",""name"":""해적"",""faction"":""PIRATE"",""actionCode"":""SELECT_ATTACK_TARGET""}]}";
 

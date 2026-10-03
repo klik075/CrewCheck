@@ -28,6 +28,8 @@ namespace WhoisntCitizen.Game
     /// - phaseVersion이 줄어든 응답(늦게 도착한 옛 응답)은 무시한다.
     /// - 페이즈를 놓쳐도(MissedPhases > 0) 밤 결과·처형 결과는 서버에 마지막 결과가 남아 있어 나중에 조회할 수 있다.
     /// - 처음 받은 상태에서는 이미 죽어 있는 사람을 PlayerDied로 알리지 않는다(재접속 대비).
+    /// - 같은 페이즈(같은 phaseVersion) 안에서도 사망자가 생기면 PlayerDied로 알린다. 서버는 오래 응답이 없는 플레이어를
+    ///   페이즈를 바꾸지 않고 사망 처리한다(연결 끊김).
     /// </summary>
     public sealed class PhaseTracker
     {
@@ -55,6 +57,7 @@ namespace WhoisntCitizen.Game
                 if (next.phaseVersion == previous.phaseVersion)
                 {
                     Current = next;
+                    AddDeaths(events, previous, next); // 페이즈 도중 연결이 끊겨 죽은 사람
                 }
                 return events;
             }

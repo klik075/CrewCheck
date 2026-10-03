@@ -52,6 +52,21 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 같은_페이즈_도중에_죽은_사람도_알린다()
+        {
+            var tracker = new PhaseTracker();
+            tracker.Update(State(GamePhases.Vote, 10, P(11, "철수", true), P(12, "영희", true)));
+
+            // 서버는 연결이 끊긴 플레이어를 페이즈를 바꾸지 않고 사망 처리한다
+            List<GameEvent> events = tracker.Update(State(GamePhases.Vote, 10, P(11, "철수", true), P(12, "영희", false)));
+
+            Assert.AreEqual(1, events.Count, "페이즈는 그대로라 사망 이벤트만 생긴다");
+            Assert.AreEqual(GameEventType.PlayerDied, events[0].Type);
+            Assert.AreEqual(12L, events[0].PlayerId);
+            Assert.AreEqual("영희", events[0].Nickname);
+        }
+
+        [Test]
         public void 늦게_도착한_옛_응답은_무시한다()
         {
             var tracker = new PhaseTracker();

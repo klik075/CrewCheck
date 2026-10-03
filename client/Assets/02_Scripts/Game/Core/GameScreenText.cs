@@ -62,6 +62,23 @@ namespace WhoisntCitizen.Game
         public const string WaitingForServer = "판정 중";
         public const string SkippedTonight = "이번 밤은 능력을 쓰지 않습니다.";
         public const string GameClosed = "게임이 끝나 대기실로 돌아갑니다.";
+        public const string CancelledGameClosed = "게임이 취소되어 로비로 돌아갑니다.";
+        /// <summary>취소된 게임의 방은 서버가 곧 지우므로 로비로 보낸 뒤 보여 준다.</summary>
+        public const string CancelledLobbyNotice = "게임이 취소되어 방이 사라졌습니다. 이번 게임은 전적에 반영되지 않습니다.";
+
+        /// <summary>
+        /// 투표한 사람이 투표 도중 게임에서 나가(연결 끊김) 죽었다. 서버가 그 표를 지웠으므로 다시 투표하라고 알린다.
+        /// </summary>
+        public static string VoteTargetGone(string nickname)
+        {
+            return "투표한 " + nickname + "님이 게임에서 나가 표가 취소되었습니다. 다시 투표해 주세요.";
+        }
+
+        /// <summary>밤에 고른 대상이 게임에서 나가(연결 끊김) 죽었다. 서버가 그 행동을 지웠으므로 다시 고르라고 알린다.</summary>
+        public static string NightTargetGone(string nickname)
+        {
+            return "고른 대상인 " + nickname + "님이 게임에서 나가 선택이 취소되었습니다. 다시 골라 주세요.";
+        }
 
         /// <summary>직업 카드의 능력 줄. 예: "시체 확인 · 남은 횟수 1", 능력이 없으면 "밤에 쓰는 능력이 없습니다."</summary>
         public static string AbilityLine(MyRoleDto me)
@@ -113,6 +130,12 @@ namespace WhoisntCitizen.Game
         public static string VoteAccepted(long targetId, GameStateDto state)
         {
             return GameStateQueries.NicknameOf(state, targetId) + "님에게 투표했습니다.";
+        }
+
+        /// <summary>결과 화면의 내 승패. 취소된 게임이면 무효.</summary>
+        public static string ResultOutcome(GameResultDto result, string myFaction)
+        {
+            return result.IsCancelled ? "무효 (전적 미반영)" : Outcome(result.winner, myFaction);
         }
 
         /// <summary>내 진영이 이겼는지. 원숭이도 보이는 진영(선원)과 실제 진영이 같아서 /me의 faction으로 판단한다.</summary>
