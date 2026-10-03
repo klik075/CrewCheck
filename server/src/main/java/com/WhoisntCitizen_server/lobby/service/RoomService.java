@@ -11,6 +11,7 @@ import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
+import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerJoinedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerLeftEvent;
 import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
@@ -107,7 +108,8 @@ public class RoomService {
 
             if (!room.containsPlayer(userId)) throw new IllegalStateException("해당 방에 참가 중이지 않습니다.");
             // 게임 중에 나가면 방에서는 빠지지만 게임에는 살아 있는 플레이어로 남아 진행이 꼬인다.
-            // 게임 중 퇴장(사망 처리 등) 규칙이 정해지기 전까지는 게임이 끝난 뒤에만 나갈 수 있다.
+            // 그래서 게임이 끝난 뒤에만 나갈 수 있다. 게임 중 앱을 끄는 등 연결이 끊기면
+            // 게임 쪽(InactivePlayerMonitor)이 사망 처리한 뒤 removeDepartedPlayers로 방에서 뺀다.
             if (room.isInGame()) throw new IllegalStateException("게임 중에는 방을 나갈 수 없습니다.");
 
             room.removePlayer(userId); // 방장이면 다음 사람에게 위임
@@ -121,10 +123,57 @@ public class RoomService {
             return true;
         });
 
-        // 방이 삭제된 경우에는 볼 사람이 없으므로 퇴장 알림을 남기지 않는다.
+        // 방이 삭제된 경우에는 볼 사람이 없으므로 퇴장 알림을 남기지 않고, 방 채팅을 지우도록 알린다.
         if (roomRemains) {
             eventPublisher.publishEvent(new RoomPlayerLeftEvent(roomId, userId, user.getNickname()));
+        } else {
+            eventPublisher.publishEvent(new RoomDeletedEvent(roomId));
         }
+    }
+
+    /**
+     * 게임 중 연결이 끊겨 게임에서 내보낸 플레이어를 방에서 뺀다. (게임 쪽 사망 처리는 이미 끝난 상태)
+     * RoomGameListener가 PlayersDepartedEvent를 받아 호출한다. 방장이면 다음 사람에게 위임된다.
+     * 게임 종료 이벤트와 처리 순서가 바뀌어 방이 이미 대기 상태로 돌아갔어도 그대로 뺀다.
+     * 그사이 같은 방에서 다른 게임이 시작됐으면 무시한다.
+     */
+    public void removeDepartedPlayers(Long roomId, String gameId, List<Long> userIds) {
+        boolean deleted = roomLockManager.withLock(roomId, () -> {
+            Room room = roomRepository.findById(roomId);
+            if (room == null) return false;
+            if (room.isInGame() && !Objects.equals(room.getGameId(), gameId)) return false;
+
+            userIds.forEach(room::removePlayer);
+            if (room.isEmpty()) {
+                roomRepository.delete(roomId);
+                return true;
+            }
+            roomRepository.save(room);
+            return false;
+        });
+        if (deleted) {
+            eventPublisher.publishEvent(new RoomDeletedEvent(roomId));
+        }
+    }
+
+    /**
+     * 취소된 게임의 방 삭제. 결과 조회 시간이 지나 게임을 메모리에서 지울 때
+     * RoomGameListener가 CancelledGameExpiredEvent를 받아 호출한다.
+     * 방이 이미 없거나 다른 게임으로 넘어간 경우는 무시한다.
+     *
+     * @return 삭제했으면 true
+     */
+    public boolean deleteRoomOfCancelledGame(Long roomId, String gameId) {
+        boolean deleted = roomLockManager.withLock(roomId, () -> {
+            Room room = roomRepository.findById(roomId);
+            if (room == null || !Objects.equals(room.getGameId(), gameId)) return false;
+            roomRepository.delete(roomId);
+            return true;
+        });
+        if (deleted) {
+            eventPublisher.publishEvent(new RoomDeletedEvent(roomId));
+        }
+        return deleted;
     }
 
     // 게임 시작 (방장만)
@@ -214,12 +263,13 @@ public class RoomService {
      * IN_GAME인데 그 게임이 메모리에 없거나 이미 끝난 방을 WAITING으로 되돌린다.
      * - 서버 재시작: 진행 중인 게임(메모리)은 사라지지만 방(Redis)은 IN_GAME으로 남는다.
      * - 종료 이벤트 처리 실패: 게임은 끝났는데 방 복귀가 안 된 경우.
+     * 취소된 게임의 방은 곧 삭제되므로 게임이 메모리에 남아 있는 동안은 되돌리지 않는다. (GameService.keepsRoomInGame)
      * 반드시 해당 방의 잠금(roomLockManager) 안에서 호출한다.
      *
      * @return 복구했으면 true
      */
     private boolean recoverIfOrphaned(Room room) {
-        if (!room.isInGame() || gameService.isGameActive(room.getGameId())) {
+        if (!room.isInGame() || gameService.keepsRoomInGame(room.getGameId())) {
             return false;
         }
         log.warn("방 {}: 진행 중인 게임({})을 찾을 수 없어 대기 상태로 복구", room.getId(), room.getGameId());
@@ -231,7 +281,7 @@ public class RoomService {
 
     /** 조회용(방 목록, 방 단건): 복구가 필요한 방만 잠금을 잡고 다시 읽어서 복구한다. */
     private Room recoverInListIfOrphaned(Room room) {
-        if (!room.isInGame() || gameService.isGameActive(room.getGameId())) {
+        if (!room.isInGame() || gameService.keepsRoomInGame(room.getGameId())) {
             return room; // 대부분의 방은 잠금 없이 그대로 반환
         }
         return roomLockManager.withLock(room.getId(), () -> {

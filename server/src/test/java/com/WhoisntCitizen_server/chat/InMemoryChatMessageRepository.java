@@ -39,4 +39,10 @@ class InMemoryChatMessageRepository implements ChatMessageRepository {
                 .limit(limit)
                 .toList();
     }
+
+    @Override
+    public synchronized void deleteRoom(long roomId) {
+        rooms.remove(roomId);
+        seqs.remove(roomId);
+    }
 }

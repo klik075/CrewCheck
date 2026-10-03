@@ -31,4 +31,7 @@ public interface ChatMessageRepository {
 
     /** afterId보다 큰 id의 메시지를 최대 limit개, 오래된 순으로 반환합니다. (폴링용) */
     List<ChatMessage> findAfter(long roomId, long afterId, int limit);
+
+    /** 방의 메시지와 id 카운터를 모두 지웁니다. (방이 삭제될 때) */
+    void deleteRoom(long roomId);
 }

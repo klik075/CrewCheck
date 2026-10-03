@@ -10,6 +10,7 @@ import lombok.Getter;
 import lombok.AccessLevel;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 게임 한 판의 상태(Aggregate Root).
@@ -39,9 +40,16 @@ public class Game {
     private final Set<Long> skippedActors = new HashSet<>(); // 이번 밤 능력을 쓰지 않고 넘긴 플레이어
     private final Map<Long, Long> votes = new LinkedHashMap<>();        // voterId -> targetId
 
+    // 플레이어별 마지막 요청 시각. 상태 조회(폴링)가 게임 잠금 밖에서 기록하므로 동시 접근 가능한 Map을 쓴다.
+    @Getter(AccessLevel.NONE)
+    private final Map<Long, Instant> lastSeenAt = new ConcurrentHashMap<>();
+    // 마지막으로 누군가 죽은 날. 아무도 죽지 않은 날이 이어지는지(daysWithoutDeath) 셀 때 쓴다. 시작 전은 0
+    private int lastDeathDay;
+
     private NightResult lastNightResult;
     private ExecutionResult lastExecutionResult;
     private Faction winner;
+    private GameEndReason endReason; // 진행 중이면 null
 
     public Game(String roomId, List<GamePlayer> players) {
         this(roomId, players, false);
@@ -83,9 +91,100 @@ public class Game {
 
     public void end(Faction winner) {
         this.winner = winner;
+        this.endReason = GameEndReason.WIN;
         this.phase = GamePhase.ENDED;
         this.phaseEndsAt = null;
         this.phaseVersion++;
+    }
+
+    /** 승리 팀 없이 게임을 끝낸다. 이미 끝난 게임이면 아무것도 하지 않는다. */
+    public void cancel(GameEndReason reason) {
+        if (phase == GamePhase.ENDED) {
+            return;
+        }
+        this.winner = null;
+        this.endReason = reason;
+        this.phase = GamePhase.ENDED;
+        this.phaseEndsAt = null;
+        this.phaseVersion++;
+    }
+
+    public boolean isCancelled() {
+        return endReason != null && endReason.isCancelled();
+    }
+
+    // ---------- 접속 확인 / 이탈 ----------
+
+    /** 게임 시작 시각으로 모두의 마지막 요청 시각을 맞춘다. (씬을 불러오는 동안 미접속으로 판정되지 않도록) */
+    public void markAllSeen(Instant now) {
+        players.keySet().forEach(id -> lastSeenAt.put(id, now));
+    }
+
+    /** 플레이어의 요청을 기록한다. 게임 잠금 없이 호출해도 된다. 참가자가 아니면 무시한다. */
+    public void touch(Long playerId, Instant now) {
+        if (playerId != null && players.containsKey(playerId)) {
+            lastSeenAt.put(playerId, now);
+        }
+    }
+
+    /** 마지막 요청이 cutoff보다 오래된, 아직 내보내지 않은 플레이어. (사망자 포함) */
+    public List<GamePlayer> inactivePlayers(Instant cutoff) {
+        return players.values().stream()
+                .filter(p -> !p.isDeparted())
+                .filter(p -> {
+                    Instant seen = lastSeenAt.get(p.getPlayerId());
+                    return seen != null && seen.isBefore(cutoff);
+                })
+                .toList();
+    }
+
+    /**
+     * 연결이 끊긴 플레이어를 게임에서 내보낸다. 살아 있으면 사망 처리한다.
+     * 이번 페이즈에 그 사람이 낸 표·밤 행동과, 그 사람을 대상으로 한 표·밤 행동(살아 있는 대상이 필요한 능력)을 지운다.
+     * 지우지 않으면 남은 사람이 다 내기 전에 투표가 끝나거나, 이미 죽은 사람이 처형·습격으로 다시 발표된다.
+     * 대상을 잃은 사람은 다시 고를 수 있다(접선으로 행동이 고정된 앵무새 포함).
+     *
+     * @return 이번에 사망 처리했으면 true
+     */
+    public boolean depart(Long playerId) {
+        GamePlayer player = getPlayer(playerId);
+        if (player.isDeparted()) {
+            return false;
+        }
+        player.markDeparted();
+        boolean died = player.isAlive();
+        if (died) {
+            player.kill();
+            recordDeath();
+        }
+
+        votes.remove(playerId);
+        votes.values().removeIf(playerId::equals);
+
+        nightActions.remove(playerId);
+        skippedActors.remove(playerId);
+        lockedActors.remove(playerId);
+        Iterator<NightAction> it = nightActions.values().iterator();
+        while (it.hasNext()) {
+            NightAction action = it.next();
+            if (action.code().requiresLivingTarget() && playerId.equals(action.targetId())) {
+                it.remove();
+                lockedActors.remove(action.actorId());
+            }
+        }
+        return died;
+    }
+
+    // ---------- 사망자 없는 날 세기 ----------
+
+    /** 오늘 누군가 죽었다. (밤 습격, 처형, 연결 끊김) */
+    public void recordDeath() {
+        this.lastDeathDay = day;
+    }
+
+    /** 마지막으로 누군가 죽은 뒤 지난 날 수. 1일차부터 아무도 안 죽었으면 오늘 일차와 같다. */
+    public int daysWithoutDeath() {
+        return day - lastDeathDay;
     }
 
     // ---------- 3. 밤 능력 ----------

@@ -27,6 +27,11 @@ public class UserStatsListener {
             log.debug("[{}] 전적 미반영 게임", event.gameId());
             return;
         }
+        if (event.cancelled()) {
+            // 승리 팀 없이 취소된 게임(연결 끊김, 사망자 없는 날 연속, 서버 오류)은 전적에 반영하지 않는다.
+            log.info("[{}] 취소된 게임이라 전적 미반영 ({})", event.gameId(), event.endReason());
+            return;
+        }
         // 이 리스너가 실패해도 다른 리스너(방 복귀 등)에 영향이 없도록 여기서 처리한다.
         try {
             int updated = userStatsService.recordGameResult(event);
