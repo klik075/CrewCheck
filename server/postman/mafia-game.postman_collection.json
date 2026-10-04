@@ -2,7 +2,7 @@
   "info": {
     "name": "MafiaGame Server",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "0번 폴더(테스트 계정 준비)를 가장 먼저 실행하세요. 게임 API는 모두 JWT(Authorization: Bearer)가 필요합니다.\n요청 헤더의 X-Act-As: {userId}는 서버로 가지 않고, 컬렉션 스크립트가 그 유저의 토큰으로 바꿔서 보냅니다.\n직업 구성(RoleAssigner): 4~6명은 해적·선장·선의·선원만, 7명부터 망루지기·원숭이, 8명 갑판장, 9명부터 앵무새·주정뱅이가 추가됩니다. 신규 직업은 시나리오 D(9명)에서 확인합니다.\n시나리오 A(6명, 시민 승리, 2일 진행)와 B(4명, 마피아 승리)는 각각 독립적으로 처음부터 폴더 순서대로 실행하세요.\n역할은 무작위라서 'x-2. 역할 확인'을 모두 실행하면 역할별 id 변수가 자동으로 채워집니다."
+    "description": "0번 폴더(테스트 계정 준비)를 가장 먼저 실행하세요. 게임 API는 모두 JWT(Authorization: Bearer)가 필요합니다.\n요청 헤더의 X-Act-As: {userId}는 서버로 가지 않고, 컬렉션 스크립트가 그 유저의 토큰으로 바꿔서 보냅니다.\n직업 구성(RoleAssigner): 4~6명은 해적·선장·선의·선원만, 7명부터 망루지기·원숭이, 8명 갑판장, 9명부터 앵무새·주정뱅이가 추가됩니다. 신규 직업은 시나리오 D(9명)에서 확인합니다. 이 표는 추천 구성이고, 커스텀(인원수별 표)·랜덤(진영 수는 추천과 같고 진영 안의 직업은 후보 중 무작위) 배정은 시나리오 E에서 확인합니다.\n시나리오 A(6명, 시민 승리, 2일 진행)와 B(4명, 마피아 승리)는 각각 독립적으로 처음부터 폴더 순서대로 실행하세요.\n역할은 무작위라서 'x-2. 역할 확인'을 모두 실행하면 역할별 id 변수가 자동으로 채워집니다."
   },
   "variable": [
     {
@@ -8776,6 +8776,183 @@
                   }
                 }
               ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "시나리오 E - 직업 배정 설정 (커스텀 / 랜덤, local 전용)",
+      "description": "직업 배정 설정(roleSetup)대로 배정되는지 확인합니다. 0번 폴더(테스터1~6)를 먼저 실행하세요.\n개발용 API(local 전용)로 방 없이 roleSetup을 넣어 게임을 만들고, /dev/roles로 실제 배정을 확인합니다.\n방장이 방에서 설정을 고르는 API는 로비 연동 후에 생깁니다(claudeOutputs/직업_배정_설정_작업정리.md의 로비 연동 가이드).",
+      "item": [
+        {
+          "name": "설정 화면 선택지",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/role-setup/options",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "role-setup", "options"]
+            },
+            "description": "직업 목록(표시 순서), 랜덤 후보(특수 직업), 4~12인 추천 구성"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('인원 4~12, 추천 구성 9개', () => { pm.expect(r.minPlayers).to.eql(4); pm.expect(r.maxPlayers).to.eql(12); pm.expect(r.recommended).to.have.length(9); });",
+                  "pm.test('해적이 맨 앞, 선원이 맨 뒤', () => { pm.expect(r.roles[0].code).to.eql('PIRATE_RAIDER'); pm.expect(r.roles[r.roles.length - 1].code).to.eql('CREW_SAILOR'); });",
+                  "pm.test('랜덤 후보에 해적·선원은 없다', () => { pm.expect(r.randomCandidates).to.not.include('PIRATE_RAIDER'); pm.expect(r.randomCandidates).to.not.include('CREW_SAILOR'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "규칙에 맞지 않는 커스텀 구성 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/games",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "games"]
+            },
+            "description": "4인에 해적 진영 2명(해적 + 앵무새)은 선원 진영보다 적지 않아서 거부된다. 게임은 만들어지지 않는다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"role-setup-invalid\",\n  \"players\": [\n    { \"playerId\": {{p1Id}}, \"nickname\": \"A\" },\n    { \"playerId\": {{p2Id}}, \"nickname\": \"B\" },\n    { \"playerId\": {{p3Id}}, \"nickname\": \"C\" },\n    { \"playerId\": {{p4Id}}, \"nickname\": \"D\" }\n  ],\n  \"roleSetup\": {\n    \"mode\": \"CUSTOM\",\n    \"customCompositions\": [\n      { \"playerCount\": 4, \"roles\": [\"PIRATE_RAIDER\", \"PIRATE_PARROT\", \"CREW_CAPTAIN\", \"CREW_SAILOR\"] }\n    ]\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('이유에 해적 진영', () => pm.expect(pm.response.json().message).to.include('해적 진영'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "커스텀 게임 (4인: 해적 + 선의 2 + 선장)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/games",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "games"]
+            },
+            "description": "roleSetup이 없으면 추천 구성. 커스텀 표에 없는 인원수도 추천 구성을 쓴다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"role-setup-custom\",\n  \"players\": [\n    { \"playerId\": {{p1Id}}, \"nickname\": \"A\" },\n    { \"playerId\": {{p2Id}}, \"nickname\": \"B\" },\n    { \"playerId\": {{p3Id}}, \"nickname\": \"C\" },\n    { \"playerId\": {{p4Id}}, \"nickname\": \"D\" }\n  ],\n  \"roleSetup\": {\n    \"mode\": \"CUSTOM\",\n    \"customCompositions\": [\n      { \"playerCount\": 4, \"roles\": [\"PIRATE_RAIDER\", \"CREW_DOCTOR\", \"CREW_DOCTOR\", \"CREW_CAPTAIN\"] }\n    ]\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('gameId', pm.response.json().gameId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "실제 직업 - 커스텀 구성 그대로",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/dev/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "games", "{{gameId}}", "dev", "roles"]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const roles = pm.response.json().map(p => p.role).sort();",
+                  "pm.test('해적 1, 선장 1, 선의 2', () => pm.expect(roles).to.eql(['CREW_CAPTAIN', 'CREW_DOCTOR', 'CREW_DOCTOR', 'PIRATE_RAIDER']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "랜덤 게임 (6인, 특수 직업 후보 없음)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/games",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "games"]
+            },
+            "description": "6인 추천 구성의 해적 진영은 2명. 후보가 없으면 해적 진영은 해적만, 선원 진영은 선원만 나온다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"role-setup-random\",\n  \"players\": [\n    { \"playerId\": {{p1Id}}, \"nickname\": \"A\" },\n    { \"playerId\": {{p2Id}}, \"nickname\": \"B\" },\n    { \"playerId\": {{p3Id}}, \"nickname\": \"C\" },\n    { \"playerId\": {{p4Id}}, \"nickname\": \"D\" },\n    { \"playerId\": {{p5Id}}, \"nickname\": \"E\" },\n    { \"playerId\": {{p6Id}}, \"nickname\": \"F\" }\n  ],\n  \"roleSetup\": {\n    \"mode\": \"RANDOM\",\n    \"randomCandidates\": []\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('gameId', pm.response.json().gameId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "실제 직업 - 해적 2 + 선원 4",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/dev/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "games", "{{gameId}}", "dev", "roles"]
+            },
+            "description": "randomCandidates를 바꿔 다시 실행하면 진영 수는 그대로이고 진영 안의 직업만 바뀌는 것을 볼 수 있다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const roles = pm.response.json().map(p => p.role).sort();",
+                  "pm.test('해적 2, 선원 4', () => pm.expect(roles).to.eql(['CREW_SAILOR', 'CREW_SAILOR', 'CREW_SAILOR', 'CREW_SAILOR', 'PIRATE_RAIDER', 'PIRATE_RAIDER']));"
+                ]
+              }
             }
           ]
         }

@@ -7,6 +7,7 @@ import com.WhoisntCitizen_server.game.dto.GameParticipant;
 import com.WhoisntCitizen_server.game.dto.GameResultResponse;
 import com.WhoisntCitizen_server.game.dto.GameStateResponse;
 import com.WhoisntCitizen_server.game.dto.MyRoleResponse;
+import com.WhoisntCitizen_server.game.dto.RoleSetup;
 import com.WhoisntCitizen_server.game.dto.StartGameRequest;
 import com.WhoisntCitizen_server.game.dto.StartGameResponse;
 import com.WhoisntCitizen_server.game.entity.Game;
@@ -40,25 +41,38 @@ public class GameService {
     /**
      * 1. 게임 시작 (Postman 테스트용 API: POST /api/v1/games).
      * 요청 DTO를 GameParticipant 목록으로 바꿔 서버 내부용 startGame에 위임한다.
+     * roleSetup을 주면 방 설정과 같은 규칙으로 검증한 뒤 그대로 배정한다. (없으면 추천 구성)
      */
     public StartGameResponse startGame(StartGameRequest request) {
         List<GameParticipant> participants = request.players().stream()
                 .map(e -> new GameParticipant(e.playerId(), e.nickname()))
                 .toList();
+        RoleSetup roleSetup = request.roleSetup() == null ? null : roleAssigner.normalize(request.roleSetup());
         // 개발용 게임: 가짜 playerId가 실제 User.id와 겹칠 수 있으므로 전적에 반영하지 않는다.
-        return start(request.roomId(), participants, false);
+        return start(request.roomId(), participants, roleSetup, false);
     }
 
     /**
-     * 1. 게임 시작 + 2. 역할 배정 → 첫 밤 진입 (서버 내부용).
+     * 1. 게임 시작 + 2. 역할 배정 → 첫 밤 진입 (서버 내부용). 추천 구성으로 배정한다.
      * 로비의 방 시작 처리(RoomService)가 Room의 참가자 목록으로 호출한다.
      * 인원 수(4~12명)는 RoleAssigner가 검사한다.
      */
     public StartGameResponse startGame(String roomId, List<GameParticipant> participants) {
-        return start(roomId, participants, true);
+        return startGame(roomId, participants, null);
     }
 
-    private StartGameResponse start(String roomId, List<GameParticipant> participants, boolean recordStats) {
+    /**
+     * 1. 게임 시작 + 2. 역할 배정 → 첫 밤 진입 (서버 내부용). 방의 직업 배정 설정으로 배정한다.
+     * 로비가 방에 RoleSetup을 저장하게 되면 위 메서드 대신 이것을 호출한다. roleSetup이 null이면 추천 구성.
+     * 설정은 방장이 저장할 때 RoleAssigner.normalize로 검증된 값이어야 한다. 게임 시작 때 다시 확인해서
+     * 지금 규칙에 맞지 않으면(서버 재시작 후 직업이 빠진 경우 등) GameRuleException(409)이 난다.
+     */
+    public StartGameResponse startGame(String roomId, List<GameParticipant> participants, RoleSetup roleSetup) {
+        return start(roomId, participants, roleSetup, true);
+    }
+
+    private StartGameResponse start(String roomId, List<GameParticipant> participants, RoleSetup roleSetup,
+                                    boolean recordStats) {
         if (roomId == null || roomId.isBlank()) {
             throw new GameRuleException("roomId가 필요합니다.");
         }
@@ -76,7 +90,7 @@ public class GameService {
             }
         }
 
-        List<RoleDefinition> roles = roleAssigner.assign(participants.size());
+        List<RoleDefinition> roles = roleAssigner.assign(participants.size(), roleSetup);
         List<GamePlayer> players = new ArrayList<>();
 
         for (int i = 0; i < participants.size(); i++) {
