@@ -1,4 +1,4 @@
-package com.WhoisntCitizen_server.member.service;
+package com.WhoisntCitizen_server.user.service;
 
 import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
 import com.WhoisntCitizen_server.game.event.GameEndedEvent;

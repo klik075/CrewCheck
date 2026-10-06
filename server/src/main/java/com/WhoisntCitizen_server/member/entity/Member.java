@@ -22,6 +22,13 @@ public class Member {
 	@Column(nullable = false, unique = true, length = 50)
 	private String username;
 
-	@Column(nullable = false)
 	private String password;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20)
+	@Builder.Default
+	private AuthProvider provider = AuthProvider.LOCAL;
+
+	@Column(unique = true, length = 100)
+	private String providerId;
 }

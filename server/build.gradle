@@ -48,6 +48,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.flywaydb:flyway-mysql'
     testRuntimeOnly 'com.h2database:h2'
+
+    // OAuth 2.0 구글 카카오 연동 인증
+    implementation 'com.google.api-client:google-api-client:2.7.0'
 }
 
 tasks.named('test') {

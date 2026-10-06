@@ -14,8 +14,8 @@ import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.lobby.domain.room.Room;
 import com.WhoisntCitizen_server.lobby.domain.room.RoomPlayer;
 import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
-import com.WhoisntCitizen_server.member.entity.User;
-import com.WhoisntCitizen_server.member.repository.UserRepository;
+import com.WhoisntCitizen_server.user.entity.User;
+import com.WhoisntCitizen_server.user.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;

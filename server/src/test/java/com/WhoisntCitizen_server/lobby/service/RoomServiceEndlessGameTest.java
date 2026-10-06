@@ -5,8 +5,8 @@ import com.WhoisntCitizen_server.game.service.GameService;
 import com.WhoisntCitizen_server.lobby.domain.room.Room;
 import com.WhoisntCitizen_server.lobby.domain.room.RoomPlayer;
 import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
-import com.WhoisntCitizen_server.member.entity.User;
-import com.WhoisntCitizen_server.member.repository.UserRepository;
+import com.WhoisntCitizen_server.user.entity.User;
+import com.WhoisntCitizen_server.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

@@ -60,7 +60,7 @@ public class MemberDto {
 	@NoArgsConstructor
 	@AllArgsConstructor
 	@Builder
-	public static  class AuthResult {
+	public static class AuthResult {
 		private Long memberId;
 		private Long userId;
 		private String username;
@@ -68,4 +68,5 @@ public class MemberDto {
 		private String accessToken;
 		private String message;
 	}
+
 }

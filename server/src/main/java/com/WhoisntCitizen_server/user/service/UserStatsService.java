@@ -1,8 +1,8 @@
-package com.WhoisntCitizen_server.member.service;
+package com.WhoisntCitizen_server.user.service;
 
 import com.WhoisntCitizen_server.game.event.GameEndedEvent;
-import com.WhoisntCitizen_server.member.entity.User;
-import com.WhoisntCitizen_server.member.repository.UserRepository;
+import com.WhoisntCitizen_server.user.entity.User;
+import com.WhoisntCitizen_server.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

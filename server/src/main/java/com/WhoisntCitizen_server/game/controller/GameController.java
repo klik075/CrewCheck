@@ -6,7 +6,7 @@ import com.WhoisntCitizen_server.game.dto.MyRoleResponse;
 import com.WhoisntCitizen_server.game.service.GameService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import com.WhoisntCitizen_server.member.service.CurrentUserResolver;
+import com.WhoisntCitizen_server.user.service.CurrentUserResolver;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.RequestMapping;

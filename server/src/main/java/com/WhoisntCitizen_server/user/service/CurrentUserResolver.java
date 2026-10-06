@@ -1,6 +1,6 @@
-package com.WhoisntCitizen_server.member.service;
+package com.WhoisntCitizen_server.user.service;
 
-import com.WhoisntCitizen_server.member.repository.UserRepository;
+import com.WhoisntCitizen_server.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;

@@ -5,7 +5,7 @@ import com.WhoisntCitizen_server.chat.service.ChatLobbyEventListener;
 import com.WhoisntCitizen_server.chat.service.ChatMessageService;
 import com.WhoisntCitizen_server.game.repository.InMemoryGameRepository;
 import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
-import com.WhoisntCitizen_server.member.repository.UserRepository;
+import com.WhoisntCitizen_server.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

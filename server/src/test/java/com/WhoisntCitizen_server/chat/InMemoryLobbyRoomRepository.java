@@ -10,12 +10,12 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /** 테스트용: Redis 없이 로비 방을 메모리에 저장하는 LobbyRoomRepository */
-class InMemoryLobbyRoomRepository extends LobbyRoomRepository {
+public class InMemoryLobbyRoomRepository extends LobbyRoomRepository {
 
     private final Map<Long, Room> rooms = new ConcurrentHashMap<>();
     private final AtomicLong seq = new AtomicLong();
 
-    InMemoryLobbyRoomRepository() {
+    public InMemoryLobbyRoomRepository() {
         super(null, null);
     }
 
