@@ -14,6 +14,8 @@ namespace WhoisntCitizen.Game
     /// 패널끼리는 서로 모르고, 입력(투표·밤 능력·대기실로)은 모두 여기서 GameController·WaitingRoomController로 넘긴다.
     /// GameController의 gameView 칸에 이 컴포넌트를 넣는다.
     /// 하단 시트: 밤에는 [+] 서랍에 NightActionPanel을, 그 밖에는 VotePanel을 보여 준다(둘 다 Drawer 안에 나란히 둔다).
+    /// 투표: VOTE 페이즈가 되면 부채꼴 카드패(VoteCardHandController)가 아래에서 올라온다. 카드를 뽑으면 투표한다.
+    ///       기존 VotePanel 투표 처리는 [카드패 투표로 교체 - 주석 처리] 표시로 막아 두었다(패널은 보기 전용으로 남는다).
     /// 채팅 기록: 공개 안내는 실제 서버면 서버 채팅이 보내므로 AnnouncePublic일 때만 남긴다.
     // [공개 안내 자동 판단 - 주석 처리]
     // /// 채팅 기록: 공개 안내(페이즈·밤 결과·처형·승리)는 서버 채팅(GameChatController)이 같은 채팅창에 보여 주면 남기지 않고,
@@ -38,6 +40,9 @@ namespace WhoisntCitizen.Game
         [SerializeField] private ChatLogView chatLog;
         [SerializeField] private BottomTabController bottomTab;
         [SerializeField] private VotePanelController votePanel;
+
+        [Header("투표 카드패 (비우면 실행 시 이 캔버스 아래에 만든다)")]
+        [SerializeField] private VoteCardHandController voteCardHand;
 
         [Header("G 부품")]
         [SerializeField] private NightActionPanel nightPanel;
@@ -68,6 +73,8 @@ namespace WhoisntCitizen.Game
         private bool nightDrawerOpened;
         private int shownSeconds = -1;
         private bool shownWaiting;
+        private bool deadVoteNoticeShown;
+        private readonly List<PlayerView> voteTargets = new List<PlayerView>();
 
         private GameSession Session
         {
@@ -121,8 +128,10 @@ namespace WhoisntCitizen.Game
             if (votePanel != null)
             {
                 votePanel.PortraitResolver = PortraitOf;
-                votePanel.VoteConfirmed += OnVoteConfirmed;
+                // [카드패 투표로 교체 - 주석 처리] 기존 투표 패널의 확정 → 서버 투표
+                // votePanel.VoteConfirmed += OnVoteConfirmed;
             }
+            SetUpVoteCardHand();
             if (nightPanel != null)
             {
                 nightPanel.PortraitResolver = PortraitOf;
@@ -146,9 +155,14 @@ namespace WhoisntCitizen.Game
 
         private void OnDestroy()
         {
-            if (votePanel != null)
+            // [카드패 투표로 교체 - 주석 처리]
+            // if (votePanel != null)
+            // {
+            //     votePanel.VoteConfirmed -= OnVoteConfirmed;
+            // }
+            if (voteCardHand != null)
             {
-                votePanel.VoteConfirmed -= OnVoteConfirmed;
+                voteCardHand.VoteRequested -= OnCardVoteRequested;
             }
             if (nightPanel != null)
             {
@@ -221,15 +235,22 @@ namespace WhoisntCitizen.Game
                     TryOpenNightDrawer();
                     break;
                 case GamePhases.Vote:
-                    if (votePanel != null)
-                    {
-                        votePanel.ResetVote();
-                    }
-                    OpenDrawer();
+                    // [카드패 투표로 교체 - 주석 처리] 기존: 투표 패널 초기화 후 하단 서랍을 연다
+                    // if (votePanel != null)
+                    // {
+                    //     votePanel.ResetVote();
+                    // }
+                    // OpenDrawer();
+                    CloseDrawer(); // 열려 있던 [+] 서랍은 내리고 카드패를 올린다
+                    TryShowVoteHand();
                     break;
                 default:
                     CloseDrawer();
                     break;
+            }
+            if (phaseChanged.Phase != GamePhases.Vote)
+            {
+                HideVoteHand(); // 투표 여부와 관계없이 투표 시간이 끝나면 카드패를 내린다
             }
             ApplyDrawerContent(bottomTab != null ? bottomTab.Mode : BottomTabMode.Closed);
             RefreshPanels();
@@ -298,6 +319,7 @@ namespace WhoisntCitizen.Game
                 AddSystem(ReportFormatter.CancelReason(result.endReason)); // 취소가 아니면 빈 문자열
             }
             CloseDrawer();
+            HideVoteHand();
             if (resultPanel != null)
             {
                 resultPanel.Show(result, Session != null ? Session.Me : null);
@@ -322,6 +344,7 @@ namespace WhoisntCitizen.Game
             {
                 AddSystem(GameScreenText.VoteAccepted(session.MyVoteTarget, session.State));
             }
+            SyncDrawnCardWithServer(); // 빠르게 바꿔 누른 경우 등, 화면의 뽑은 카드를 서버가 받은 표에 맞춘다
         }
 
         public void ShowError(string message)
@@ -330,6 +353,11 @@ namespace WhoisntCitizen.Game
             {
                 chatLog.AddLine("<color=#FF6B6B>[알림] " + GameScreenText.NoRichText(message) + "</color>");
                 chatLog.ScrollToLatest();
+            }
+            // 투표 중 오류(서버 거절·연결 실패)면 뽑은 카드를 서버가 실제로 가진 내 표로 되돌린다
+            if (currentPhase == GamePhases.Vote)
+            {
+                SyncDrawnCardWithServer();
             }
         }
 
@@ -350,11 +378,22 @@ namespace WhoisntCitizen.Game
 
         // ================================================================ 입력
 
-        private void OnVoteConfirmed(long targetId)
+        // [카드패 투표로 교체 - 주석 처리] 기존 투표 패널의 확정 처리
+        // private void OnVoteConfirmed(long targetId)
+        // {
+        //     if (controller != null)
+        //     {
+        //         controller.Vote(targetId);
+        //     }
+        // }
+
+        /// <summary>카드패에서 카드를 뽑음 → 서버로 투표. 보내지 못했으면(앞 요청 처리 중 등) 카드를 서버가 가진 표로 되돌린다.</summary>
+        private void OnCardVoteRequested(long targetId)
         {
-            if (controller != null)
+            bool sent = controller != null && controller.Vote(targetId);
+            if (!sent)
             {
-                controller.Vote(targetId);
+                SyncDrawnCardWithServer();
             }
         }
 
@@ -412,6 +451,11 @@ namespace WhoisntCitizen.Game
                 resultPanel.Hide();
             }
             CloseDrawer();
+            deadVoteNoticeShown = false;
+            if (voteCardHand != null)
+            {
+                voteCardHand.HideImmediate();
+            }
         }
 
         /// <summary>투표 패널은 "나"를 처음 만들 때 정하므로, /me를 받은 뒤부터 플레이어 목록을 넘긴다.</summary>
@@ -435,9 +479,98 @@ namespace WhoisntCitizen.Game
             if (votePanel != null)
             {
                 votePanel.SetPlayers(playerViews, session.Me.playerId);
-                votePanel.SetVotingOpen(state.phase == GamePhases.Vote); // 사망 여부는 패널이 players로 판단한다
+                // [카드패 투표로 교체 - 주석 처리] 기존: 투표 페이즈에만 투표 패널 조작 허용
+                // votePanel.SetVotingOpen(state.phase == GamePhases.Vote); // 사망 여부는 패널이 players로 판단한다
+                votePanel.SetVotingOpen(false); // 투표는 카드패로 한다. 기존 패널은 보기 전용(처형 후 득표 수 표시)
+            }
+            if (state.phase == GamePhases.Vote)
+            {
+                if (voteCardHand != null && voteCardHand.IsShown)
+                {
+                    voteCardHand.SyncPlayers(BuildVoteTargets(state, session.Me.playerId));
+                }
+                else
+                {
+                    TryShowVoteHand(); // /me가 늦게 왔거나 투표 도중 재접속한 경우
+                }
             }
             RefreshPanels();
+        }
+
+        // ================================================================ 투표 카드패
+
+        /// <summary>카드패가 씬에 없으면 이 캔버스 아래에 만든다. 하단 탭 바 위에 놓이도록 하단 시트를 기준으로 삼는다.</summary>
+        private void SetUpVoteCardHand()
+        {
+            if (voteCardHand == null)
+            {
+                var go = new GameObject("VoteCardHand", typeof(RectTransform));
+                go.layer = gameObject.layer;
+                go.transform.SetParent(transform, false); // GameScreen은 GameCanvas에 붙어 있다
+                voteCardHand = go.AddComponent<VoteCardHandController>();
+            }
+            if (phaseText != null)
+            {
+                voteCardHand.SetFont(phaseText.font); // 한글이 나오는 글꼴을 그대로 쓴다
+            }
+            if (bottomTab != null)
+            {
+                voteCardHand.SetBottomAnchor((RectTransform)bottomTab.transform);
+            }
+            voteCardHand.VoteRequested += OnCardVoteRequested;
+        }
+
+        /// <summary>VOTE 페이즈이고 내가 투표할 수 있으면 카드패를 올린다. 이미 올라와 있으면 아무것도 하지 않는다.</summary>
+        private void TryShowVoteHand()
+        {
+            GameSession session = Session;
+            if (voteCardHand == null || voteCardHand.IsShown || session == null || session.State == null || session.Me == null
+                || currentPhase != GamePhases.Vote)
+            {
+                return;
+            }
+            if (!session.CanVote)
+            {
+                if (!deadVoteNoticeShown)
+                {
+                    deadVoteNoticeShown = true;
+                    AddSystem("사망한 플레이어는 투표할 수 없습니다.");
+                }
+                return;
+            }
+            voteCardHand.Show(BuildVoteTargets(session.State, session.Me.playerId), PortraitOf, session.MyVoteTarget);
+        }
+
+        private void HideVoteHand()
+        {
+            if (voteCardHand != null)
+            {
+                voteCardHand.Hide();
+            }
+        }
+
+        /// <summary>뽑은 카드를 서버가 받아 둔 내 표(MyVoteTarget, 없으면 0)에 맞춘다.</summary>
+        private void SyncDrawnCardWithServer()
+        {
+            GameSession session = Session;
+            if (voteCardHand != null && session != null)
+            {
+                voteCardHand.SetDrawnSilently(session.MyVoteTarget);
+            }
+        }
+
+        /// <summary>카드패에 넣을 플레이어: 살아 있는 다른 플레이어 (기존 투표 패널처럼 자기 자신은 뺀다).</summary>
+        private List<PlayerView> BuildVoteTargets(GameStateDto state, long myId)
+        {
+            voteTargets.Clear();
+            foreach (PlayerViewDto p in state.players)
+            {
+                if (p.alive && p.playerId != myId)
+                {
+                    voteTargets.Add(new PlayerView(p.playerId, p.nickname, p.alive));
+                }
+            }
+            return voteTargets;
         }
 
         private void RefreshPanels()
