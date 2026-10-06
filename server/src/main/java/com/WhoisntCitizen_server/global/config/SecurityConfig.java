@@ -55,7 +55,8 @@ public class SecurityConfig {
 				.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
 						// 회원가입 / 로그인은 토큰 없이
-						.requestMatchers("/api/members/signup", "/api/members/login").permitAll()
+						.requestMatchers("/api/members/signup", "/api/members/login",
+									"/api/members/login/google", "/api/members/login/kakao").permitAll()
 						// 로비(/api/v1/rooms), 게임(/api/v1/games), 직업(/api/v1/roles) API는 로그인한 유저만
 						.requestMatchers("/api/v1/**").authenticated()
 						.anyRequest().permitAll())

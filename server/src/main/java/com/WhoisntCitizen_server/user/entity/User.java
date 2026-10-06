@@ -1,10 +1,11 @@
-package com.WhoisntCitizen_server.member.entity;
+package com.WhoisntCitizen_server.user.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
 
 /**
  * 유저 프로필 (닉네임, 전적 등). 로비/게임에서는 Member 대신 이 객체를 사용한다.
+ * Member(로그인 계정)와는 memberId 값으로만 연결한다. (엔티티 직접 참조 없음 -> 도메인 분리)
  * 테이블명은 예약어 user 를 피해서 users.
  */
 @Entity
@@ -19,9 +20,8 @@ public class User {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
-	@OneToOne(fetch = FetchType.LAZY)
-	@JoinColumn(name = "member_id", nullable = false, unique = true)
-	private Member member;
+	@Column(name = "member_id", nullable = false, unique = true)
+	private Long memberId;
 
 	@Column(nullable = false, unique = true, length = 20)
 	private String nickname;
