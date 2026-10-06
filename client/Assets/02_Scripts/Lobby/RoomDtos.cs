@@ -25,15 +25,22 @@ namespace WhoisntCitizen.Lobby
     }
 
     /// <summary>
-    /// 방 정보 (서버 RoomResponseDto).
+    /// 방 요약 정보 (서버 RoomResponseDto). 로비에서 방 한 줄을 그리는 데 필요한 값만 있다. (참가자 명단 없음)
     /// 사용처: GET /api/v1/rooms(목록의 각 항목), POST /api/v1/rooms(생성), POST /api/v1/rooms/{id}/players(입장)
+    ///
+    /// 상속 구조 (서버와 같은 구조)
+    ///   RoomResponse (방 공통 정보)
+    ///     └ RoomDetailResponse (+ 참가자 명단 players) ─ GET /api/v1/rooms/{roomId}
+    ///
+    /// 방 공통 필드를 추가할 때는 이 클래스에만 추가하면 RoomDetailResponse에도 자동으로 생긴다.
+    /// JsonUtility는 [Serializable] 부모 클래스의 public 필드도 키 이름으로 채워 준다.
     /// </summary>
     [Serializable]
     public class RoomResponse
     {
         public long id;
         public string title;
-        public long hostUserId;     // 방장의 userId
+        public long hostUserId;     // 방장의 userId (방장이 나가면 서버가 다음 사람으로 바꾼다)
         public int maxPlayers;
         public int currentPlayers;
         public string status;       // "WAITING" / "IN_GAME"
@@ -58,20 +65,15 @@ namespace WhoisntCitizen.Lobby
     /// <summary>
     /// 방 상세 (서버 RoomDetailResponseDto). GET /api/v1/rooms/{roomId}
     /// Room 씬(대기실)에서 주기적으로 조회해서, status가 IN_GAME이 되면 gameId로 게임을 시작한다.
+    ///
+    /// 공통 필드(id, title, hostUserId, maxPlayers, currentPlayers, status, gameId)와
+    /// IsInGame / IsFull / CanJoin은 RoomResponse에서 물려받고, 여기서는 참가자 명단만 추가한다.
+    /// 서버 JSON도 상속 전과 같은 평평한 구조라서 키 이름만 맞으면 그대로 읽힌다.
     /// </summary>
     [Serializable]
-    public class RoomDetailResponse
+    public class RoomDetailResponse : RoomResponse
     {
-        public long id;
-        public string title;
-        public long hostUserId;
-        public int maxPlayers;
-        public int currentPlayers;
-        public string status;
-        public string gameId;
-        public List<RoomPlayerResponse> players = new List<RoomPlayerResponse>();
-
-        public bool IsInGame => status == RoomStatus.InGame;
+        public List<RoomPlayerResponse> players = new List<RoomPlayerResponse>(); // 입장 순서대로
 
         /// <summary>해당 userId가 이 방의 참가자인지 확인한다.</summary>
         public bool HasPlayer(long userId)

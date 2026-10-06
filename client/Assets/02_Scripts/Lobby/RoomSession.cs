@@ -57,6 +57,10 @@ namespace WhoisntCitizen.Lobby
         /// <summary>
         /// 방 상세 조회 결과로 갱신한다.
         /// 방장이 나가면 서버가 방장을 바꿀 수 있으므로 Room 씬에서 polling할 때마다 호출한다.
+        ///
+        /// RoomDetailResponse는 RoomResponse를 상속하지만, C#은 인자 타입이 더 구체적인 오버로드를 고르므로
+        /// 상세 응답을 넘기면 항상 이 메서드가 불린다. (GameId까지 갱신하는 쪽)
+        /// 생성/입장 응답용 Set(RoomResponse)는 GameId를 건드리지 않는다.
         /// </summary>
         public static void Set(RoomDetailResponse room)
         {
