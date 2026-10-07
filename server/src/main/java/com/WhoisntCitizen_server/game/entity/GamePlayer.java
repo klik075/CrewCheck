@@ -7,11 +7,13 @@ import lombok.AccessLevel;
 import lombok.Getter;
 
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.time.Instant;
 import java.util.Set;
+import java.util.function.Supplier;
 
 @Getter
 public class GamePlayer {
@@ -46,6 +48,11 @@ public class GamePlayer {
     // 크라켄이 표식을 남긴 플레이어. 발동하면 모두 처치하고 비운다.
     @Getter(AccessLevel.NONE)
     private final Set<Long> krakenMarks = new LinkedHashSet<>();
+    // 원숭이가 받은 가짜 결과(대상 → 결과). 진짜는 같은 대상을 다시 봐도 결과가 같으므로 처음 정한 값을 게임 끝까지 쓴다.
+    @Getter(AccessLevel.NONE)
+    private final Map<Long, Faction> fakeFactions = new HashMap<>();
+    @Getter(AccessLevel.NONE)
+    private final Map<Long, RoleDefinition> fakeCorpseRoles = new HashMap<>();
     // 앵무새가 해적과 접선한 시각. null이면 접선 전. 해적 채팅 기록을 거를 때(7단계) 밤 도중 시각이 필요해 Instant로 둔다.
     private Instant contactedAt;
     // 세이렌에게 유혹당한 시각. null이면 유혹당하지 않음. 세이렌 팀 채팅을 이 시각부터 읽을 수 있다.
@@ -74,6 +81,17 @@ public class GamePlayer {
             return Team.PIRATE;
         }
         return role.faction() == Faction.NEUTRAL ? Team.NEUTRAL : Team.CREW;
+    }
+
+    /**
+     * 본인에게 보이는 팀. 원숭이가 제3 세력(유령 선장·인어)으로 위장했으면 아직 선원 팀인 동안 NEUTRAL로 보인다.
+     * (진짜 유령 선장·인어는 NEUTRAL에서 시작하므로 CREW로 보이면 원숭이인 게 드러난다) 승리 판정은 실제 팀(team)을 쓴다.
+     */
+    public Team getShownTeam() {
+        if (isMonkey() && team == Team.CREW) {
+            return initialTeam(shownRole);
+        }
+        return team;
     }
 
     /** 원인을 모르는 사망 (테스트 등) */
@@ -185,6 +203,18 @@ public class GamePlayer {
 
     public void clearKrakenMarks() {
         krakenMarks.clear();
+    }
+
+    // ---------- 원숭이 가짜 결과 ----------
+
+    /** 원숭이 선장이 targetId를 조사해 받는 가짜 진영. 처음 조사할 때만 draw로 정하고, 다시 조사하면 같은 값을 준다. */
+    public Faction fakeFactionOf(Long targetId, Supplier<Faction> draw) {
+        return fakeFactions.computeIfAbsent(targetId, id -> draw.get());
+    }
+
+    /** 원숭이 주정뱅이가 targetId의 시체에서 읽는 가짜 직업. 처음 읽을 때만 draw로 정하고, 다시 읽으면 같은 값을 준다. */
+    public RoleDefinition fakeCorpseRoleOf(Long targetId, Supplier<RoleDefinition> draw) {
+        return fakeCorpseRoles.computeIfAbsent(targetId, id -> draw.get());
     }
 
     // ---------- 능력 사용 기록 ----------

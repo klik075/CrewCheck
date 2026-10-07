@@ -56,6 +56,17 @@ class GameServiceRoleSetupTest {
     }
 
     @Test
+    void 원숭이의_위장_직업은_이번_게임에_배정된_직업_중_하나다() {
+        for (int i = 0; i < 30; i++) {
+            List<DevRoleView> views = gameService.getDevRoles(gameService.startGame("1", participants(7)).gameId());
+
+            List<String> roles = views.stream().map(DevRoleView::role).toList();
+            DevRoleView monkey = views.stream().filter(v -> v.role().equals("CREW_MONKEY")).findFirst().orElseThrow();
+            assertThat(monkey.shownRole()).isNotEqualTo("CREW_MONKEY").isIn(roles);
+        }
+    }
+
+    @Test
     void 방의_설정을_넘기면_그_설정대로_배정한다() {
         RoleSetup setup = new RoleSetup(RoleSetupMode.CUSTOM, List.of(new RoleComposition(4, FOUR_DOCTORS)), null);
 
