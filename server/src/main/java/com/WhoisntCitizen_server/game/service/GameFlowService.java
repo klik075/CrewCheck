@@ -3,16 +3,17 @@ package com.WhoisntCitizen_server.game.service;
 import com.WhoisntCitizen_server.common.config.GamePhaseProperties;
 import com.WhoisntCitizen_server.common.event.PirateNoticeEvent;
 import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
+import com.WhoisntCitizen_server.game.entity.DeathCause;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GameEndReason;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
+import com.WhoisntCitizen_server.game.entity.Winner;
 import com.WhoisntCitizen_server.game.event.CancelledGameExpiredEvent;
 import com.WhoisntCitizen_server.game.event.GameEndedEvent;
 import com.WhoisntCitizen_server.game.event.PlayersDepartedEvent;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.jobs.domain.ActionCode;
-import com.WhoisntCitizen_server.jobs.domain.Faction;
 import com.WhoisntCitizen_server.night.entity.NightResult;
 import com.WhoisntCitizen_server.night.service.NightActionResolver;
 import com.WhoisntCitizen_server.vote.entity.ExecutionResult;
@@ -29,6 +30,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * 서버가 주도하는 페이즈 진행(게임 루프). 클라이언트가 직접 호출하는 API가 없다.
@@ -110,13 +112,13 @@ public class GameFlowService {
         game.requirePhase(GamePhase.NIGHT);
         NightResult result = nightActionResolver.resolve(game);
         game.setLastNightResult(result);
-        if (result.killedPlayerId() != null) {
+        if (!result.deaths().isEmpty()) {
             game.recordDeath();
         }
-        log.info("[{}] day {} 밤 결과: killed={}, saved={}", game.getGameId(), game.getDay(),
-                result.killedPlayerId(), result.protectedByDoctor());
+        log.info("[{}] day {} 밤 결과: deaths={}, saved={}", game.getGameId(), game.getDay(),
+                result.deaths(), result.protectedByDoctor());
 
-        // 마피아의 처치로 승패가 갈릴 수 있으므로 밤 결과 직후에도 승리 조건을 검사한다.
+        // 마피아·크라켄의 처치로 승패가 갈릴 수 있으므로 밤 결과 직후에도 승리 조건을 검사한다.
         // 채팅 안내 순서: 끝나면 "밤 결과 → 승리", 이어지면 "날이 밝았습니다 → 밤 결과"
         String nightMessage = nightResultMessage(game, result);
         if (winConditionChecker.check(game).isPresent()) {
@@ -177,16 +179,17 @@ public class GameFlowService {
         }
     }
 
-    /** 8~9. 승리 팀이 정해졌으면 게임을 종료한다. */
+    /** 8~9. 이긴 쪽이 정해졌으면 게임을 종료한다. */
     private boolean finishIfWinnerDecided(Game game) {
-        Optional<Faction> winner = winConditionChecker.check(game);
-        if (winner.isEmpty()) {
+        Optional<WinConditionChecker.Victory> victory = winConditionChecker.check(game);
+        if (victory.isEmpty()) {
             return false;
         }
-        game.end(winner.get());
+        Winner winner = victory.get().winner();
+        game.end(winner, victory.get().winnerIds());
         gameRepository.save(game);
-        log.info("[{}] 게임 종료. 승리: {}", game.getGameId(), winner.get());
-        announce(game, winMessage(winner.get()));
+        log.info("[{}] 게임 종료. 승리: {} {}", game.getGameId(), winner, victory.get().winnerIds());
+        announce(game, winMessage(winner));
         publishLater(GameEndedEvent.from(game)); // 잠금 안에서 현재 상태를 복사해 둔다
         scheduleCleanup(game);
         return true;
@@ -431,12 +434,17 @@ public class GameFlowService {
         };
     }
 
+    /** 죽은 사람마다 한 문장(해적 습격 먼저, 크라켄 다음). 유령 선장이 습격당한 밤은 아무 일 없던 것처럼 알린다. */
     private static String nightResultMessage(Game game, NightResult result) {
-        if (result.killedPlayerId() != null) {
-            return "지난밤 " + nicknameOf(game, result.killedPlayerId()) + "님이 해적의 습격을 받아 사망했습니다.";
+        if (!result.deaths().isEmpty()) {
+            return result.deaths().stream()
+                    .map(d -> "지난밤 " + nicknameOf(game, d.playerId()) + (d.cause() == DeathCause.KRAKEN
+                            ? "님이 크라켄에게 끌려가 사망했습니다."
+                            : "님이 해적의 습격을 받아 사망했습니다."))
+                    .collect(Collectors.joining(" "));
         }
         if (result.protectedByDoctor()) {
-            return "지난밤 해적의 습격이 있었지만, 선의의 보호로 아무도 죽지 않았습니다.";
+            return "지난밤 습격이 있었지만, 선의의 보호로 아무도 죽지 않았습니다.";
         }
         return "지난밤은 아무 일도 일어나지 않았습니다.";
     }
@@ -460,10 +468,15 @@ public class GameFlowService {
         return why + " 이번 게임은 전적에 반영되지 않으며, 잠시 후 방이 사라집니다.";
     }
 
-    private static String winMessage(Faction winner) {
-        return winner == Faction.CREW
-                ? "모든 해적이 사라졌습니다. 선원 팀이 승리했습니다!"
-                : "해적이 배를 장악했습니다. 해적 팀이 승리했습니다!";
+    private static String winMessage(Winner winner) {
+        return switch (winner) {
+            case CREW -> "모든 해적이 사라졌습니다. 선원 팀이 승리했습니다!";
+            case PIRATE -> "해적이 배를 장악했습니다. 해적 팀이 승리했습니다!";
+            case SIREN -> "세이렌의 노래가 배를 집어삼켰습니다. 세이렌 팀이 승리했습니다!";
+            case KRAKEN -> "크라켄이 배를 바다 밑으로 끌고 갔습니다. 크라켄이 승리했습니다!";
+            case GHOST_CAPTAIN -> "죽은 자가 산 자보다 많아졌습니다. 유령 선장이 승리했습니다!";
+            case MERMAID -> "처형된 사람은 인어였습니다. 인어가 승리했습니다!";
+        };
     }
 
     private static String nicknameOf(Game game, Long playerId) {

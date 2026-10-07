@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.vote.service;
 
+import com.WhoisntCitizen_server.game.entity.DeathCause;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.vote.entity.ExecutionResult;
 import org.springframework.stereotype.Component;
@@ -32,7 +33,7 @@ public class VoteResolver {
         }
 
         Long executedId = top.get(0).getKey();
-        game.getPlayer(executedId).kill();
+        game.getPlayer(executedId).kill(DeathCause.EXECUTION);
         return new ExecutionResult(game.getDay(), executedId, false, Map.copyOf(counts));
     }
 }

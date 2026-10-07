@@ -244,8 +244,9 @@ class MonkeyTest {
     @Test
     void 내_역할_조회에서는_위장_직업이_보이고_게임_결과에서는_원숭이로_공개된다() {
         GamePlayer monkey = monkeyAs(2, CAPTAIN);
+        Game game = night(player(1, RAIDER), monkey, player(3, SAILOR));
 
-        MyRoleResponse me = MyRoleResponse.of(monkey, List.of());
+        MyRoleResponse me = MyRoleResponse.of(game, monkey);
         GameResultResponse.PlayerResult result = GameResultResponse.PlayerResult.from(monkey);
 
         assertThat(me.role()).isEqualTo("CREW_CAPTAIN");

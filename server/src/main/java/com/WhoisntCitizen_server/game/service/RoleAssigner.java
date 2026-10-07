@@ -25,7 +25,7 @@ import java.util.stream.IntStream;
  * 방의 직업 배정 설정(RoleSetup)에 따라 세 가지 방식으로 구성을 만든다.
  *  - RECOMMENDED: 인원수별 추천 구성표(RECOMMENDED). 해적 진영은 max(1, 인원/3)명이다.
  *  - CUSTOM: 방장이 편집한 인원수별 구성표. 편집하지 않은 인원수는 추천 구성을 쓴다.
- *  - RANDOM: 진영 수는 추천 구성과 같고, 각 진영 안의 직업을 후보 중에서 무작위로 뽑는다.
+ *  - RANDOM: 진영 수는 추천 구성과 같고, 각 진영 안의 직업을 후보 중에서 무작위로 뽑는다. 제3 세력은 후보가 될 수 없다.
  * 어떤 방식이든 인원수와 개수가 같고, 공격할 수 있는 해적이 있고, 해적 진영이 선원 진영보다 적어야 한다.
  * 추천 구성표는 서버 시작 시, 커스텀 구성은 방장이 저장할 때와 게임 시작 때 이 규칙으로 검증한다.
  */
@@ -92,8 +92,9 @@ public class RoleAssigner {
         this.monkeyDisguises = MONKEY_DISGUISE_ROLES.stream().map(roleCatalog::get).toList();
         this.recommended = resolveRecommended(roleCatalog);
         this.roles = roleCatalog.all().stream().sorted(displayOrder()).toList();
+        // 제3 세력(크라켄·세이렌 등)은 인원 구성을 정할 때까지 랜덤 후보에서 빼고 커스텀 구성에서만 고른다.
         this.specialRoleCodes = roles.stream()
-                .filter(role -> !isBaseRole(role))
+                .filter(role -> !isBaseRole(role) && !role.isNeutral())
                 .map(RoleDefinition::code)
                 .toList();
     }
@@ -203,7 +204,7 @@ public class RoleAssigner {
         return roles;
     }
 
-    /** 랜덤 후보로 고를 수 있는 특수 직업. 해적과 선원은 항상 후보라 빠진다. */
+    /** 랜덤 후보로 고를 수 있는 특수 직업. 해적과 선원은 항상 후보라 빠지고, 제3 세력은 후보가 될 수 없다. */
     public List<String> specialRoleCodes() {
         return specialRoleCodes;
     }

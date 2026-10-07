@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.lobby.controller;
 
 import com.WhoisntCitizen_server.game.dto.StartGameResponse;
 import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
+import com.WhoisntCitizen_server.lobby.dto.JoinRoomRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
@@ -46,12 +47,20 @@ public class RoomController {
         return ResponseEntity.ok(roomService.getRoom(roomId));
     }
 
+    /**
+     * 방 입장. 공개방/비밀방 모두 이 API 하나를 쓴다.
+     * body는 선택: 공개방은 body 없이, 비밀방은 {"password":"0427"}을 보낸다.
+     * required = false라서 body가 없으면 request가 null로 들어온다. (기존 Unity 클라이언트와 호환)
+     * 실패: 403 WRONG_ROOM_PASSWORD 비밀번호 없음/불일치, 409 게임 중 / 정원 초과 / 이미 참가 중, 400 존재하지 않는 방
+     */
     @PostMapping("/{roomId}/players")
     public ResponseEntity<RoomResponseDto> joinRoom(
             @PathVariable Long roomId,
-            @AuthenticationPrincipal Jwt jwt
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody(required = false) JoinRoomRequestDto request
     ) {
-        return ResponseEntity.ok(roomService.joinRoom(roomId, memberId(jwt)));
+        String password = request != null ? request.getPassword() : null;
+        return ResponseEntity.ok(roomService.joinRoom(roomId, memberId(jwt), password));
     }
 
     @GetMapping("/{roomId}/players")
