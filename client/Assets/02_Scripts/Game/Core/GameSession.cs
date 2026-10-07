@@ -40,7 +40,8 @@ namespace WhoisntCitizen.Game
         private long nightChoiceVersion = -1;
         private long nightChoiceTarget;     // 0 = 넘김
         private long voteVersion = -1;
-        private long voteTarget;
+        private long voteTarget;            // 0 = 표 없음 (기권)
+        private bool voteConfirmed;         // "투표 완료"를 서버가 받았는지
 
         /// <param name="clock">단조 증가 시간(초). Unity에서는 () => Time.realtimeSinceStartupAsDouble</param>
         public GameSession(IGameApi api, string gameId, IGameView view, Func<double> clock, double pollIntervalSeconds)
@@ -136,10 +137,27 @@ namespace WhoisntCitizen.Game
             get { return IsCurrentNight(nightChoiceVersion) && nightChoiceTarget == 0; }
         }
 
-        /// <summary>이번 투표에서 내가 고른 대상. 아직 투표하지 않았으면 0.</summary>
+        /// <summary>이번 투표에서 내가 고른 대상. 아직 투표하지 않았거나 표를 거뒀으면(기권) 0.</summary>
         public long MyVoteTarget
         {
-            get { return State != null && State.phase == GamePhases.Vote && voteVersion == State.phaseVersion ? voteTarget : 0; }
+            get { return IsCurrentVote() ? voteTarget : 0; }
+        }
+
+        /// <summary>이번 투표에서 "투표 완료"를 서버가 받았는지. (MyVoteTarget이 0이면 기권으로 완료)</summary>
+        public bool MyVoteConfirmed
+        {
+            get { return IsCurrentVote() && voteConfirmed; }
+        }
+
+        /// <summary>밤 행동·넘기기·투표 요청의 응답을 기다리는 중인지. (한 번에 하나만 보낸다)</summary>
+        public bool IsActionInFlight
+        {
+            get { return actionInFlight; }
+        }
+
+        private bool IsCurrentVote()
+        {
+            return State != null && State.phase == GamePhases.Vote && voteVersion == State.phaseVersion;
         }
 
         /// <summary>지금 밤 능력을 쓸 수 있는지. None이 아니면 ReportFormatter.AbilityBlockMessage로 이유를 보여준다.</summary>
@@ -259,8 +277,17 @@ namespace WhoisntCitizen.Game
             return true;
         }
 
-        /// <summary>투표. 보냈으면 true. 서버 규칙상 자기 자신에게도 투표할 수 있다.</summary>
+        /// <summary>투표 + 투표 완료 (한 번에 확정). 보냈으면 true.</summary>
         public bool Vote(long targetId)
+        {
+            return Vote(targetId, true);
+        }
+
+        /// <summary>
+        /// 투표. 보냈으면 true. 서버 규칙상 자기 자신에게도 투표할 수 있다.
+        /// targetId 0 = 표를 거둔다(기권). confirm = "투표 완료"(지금 상태로 고정), 아니면 임시 선택(시간이 끝나면 집계된다).
+        /// </summary>
+        public bool Vote(long targetId, bool confirm)
         {
             if (!CanSendAction())
             {
@@ -273,14 +300,19 @@ namespace WhoisntCitizen.Game
             }
             long version = State.phaseVersion;
             actionInFlight = true;
-            api.Vote(GameId, targetId, r =>
+            api.Vote(GameId, targetId, confirm, r =>
             {
                 if (!OnActionResponse(r))
                 {
                     return;
                 }
+                if (voteVersion != version)
+                {
+                    voteConfirmed = false; // 새 투표
+                }
                 voteVersion = version;
                 voteTarget = targetId;
+                voteConfirmed = voteConfirmed || confirm;
                 view.ShowVoteAccepted(r.Data);
                 PollNowIfChanged(version, r.Data.phaseVersion);
             });

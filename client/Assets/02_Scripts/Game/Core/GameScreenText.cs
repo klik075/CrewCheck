@@ -47,7 +47,7 @@ namespace WhoisntCitizen.Game
             {
                 case GamePhases.Night: return phaseChanged.Day + "일차 밤이 되었습니다.";
                 case GamePhases.Day: return phaseChanged.Day + "일차 낮이 되었습니다. 토론을 시작하세요.";
-                case GamePhases.Vote: return "투표 시간입니다. 하단 [+] 버튼으로 투표하세요.";
+                case GamePhases.Vote: return "투표 시간입니다. 처형할 플레이어의 카드를 뽑고 [투표 완료]를 누르세요. 카드를 뽑지 않으면 기권(넘기기)으로 처리됩니다.";
                 case GamePhases.Ended: return "게임이 끝났습니다.";
                 default: return string.Empty;
             }
@@ -130,6 +130,22 @@ namespace WhoisntCitizen.Game
         public static string VoteAccepted(long targetId, GameStateDto state)
         {
             return GameStateQueries.NicknameOf(state, targetId) + "님에게 투표했습니다.";
+        }
+
+        /// <summary>[투표 완료]를 서버가 받았다. targetId 0 = 기권(넘기기).</summary>
+        public static string VoteConfirmed(long targetId, GameStateDto state)
+        {
+            return targetId == 0
+                ? "투표를 넘겼습니다(기권)."
+                : GameStateQueries.NicknameOf(state, targetId) + "님에게 투표를 완료했습니다.";
+        }
+
+        /// <summary>[투표 완료]를 누르지 않은 채 투표 시간이 끝났다. 고른 카드가 없으면 기권으로 처리된다.</summary>
+        public static string VoteTimedOut(string drawnNickname)
+        {
+            return string.IsNullOrEmpty(drawnNickname)
+                ? "투표 시간이 끝났습니다. 카드를 뽑지 않아 기권(넘기기)으로 처리됩니다."
+                : "투표 시간이 끝났습니다. 뽑아 둔 " + drawnNickname + "님에게 투표한 것으로 처리됩니다.";
         }
 
         /// <summary>결과 화면의 내 승패. 취소된 게임이면 무효.</summary>
