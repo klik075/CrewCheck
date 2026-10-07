@@ -3,12 +3,14 @@ package com.WhoisntCitizen_server.member.controller;
 import com.WhoisntCitizen_server.member.dto.MemberDto;
 import com.WhoisntCitizen_server.member.dto.OAuthUserInfo;
 import com.WhoisntCitizen_server.member.dto.SocialLoginRequest;
+import com.WhoisntCitizen_server.member.entity.AuthProvider;
 import com.WhoisntCitizen_server.member.service.GoogleAuthService;
 import com.WhoisntCitizen_server.member.service.KakaoAuthService;
 import com.WhoisntCitizen_server.member.service.MemberService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,17 +35,47 @@ public class MemberController {
 		return ResponseEntity.ok(memberService.login(req));
 	}
 
-	// 구글: 클라이언트가 받은 ID 토큰을 보낸다.
 	@PostMapping("/login/google")
 	public ResponseEntity<MemberDto.AuthResult> googleLogin(@Valid @RequestBody SocialLoginRequest req) {
 		OAuthUserInfo info = googleAuthService.verifyToken(req.getToken());
 		return ResponseEntity.ok(memberService.socialLogin(info.getProvider(), info.getProviderId(), info.getNickname()));
 	}
 
-	// 카카오: 클라이언트가 받은 액세스 토큰을 보낸다.
 	@PostMapping("/login/kakao")
 	public ResponseEntity<MemberDto.AuthResult> kakaoLogin(@Valid @RequestBody SocialLoginRequest req) {
 		OAuthUserInfo info = kakaoAuthService.verifyToken(req.getToken());
 		return ResponseEntity.ok(memberService.socialLogin(info.getProvider(), info.getProviderId(), info.getNickname()));
+	}
+
+	@PostMapping("/guest")
+	public ResponseEntity<MemberDto.AuthResult> loginGuest(
+			@RequestBody @Valid MemberDto.GuestLoginRequest req
+	) {
+		MemberDto.AuthResult result = memberService.guestLogin(req);
+		return ResponseEntity.ok(result);
+	}
+
+	@PostMapping("/link/google")
+	public ResponseEntity<MemberDto.LinkResult> linkGoogle(
+			@AuthenticationPrincipal Long currentMemberId,
+			@RequestBody @Valid MemberDto.LinkSocialRequest req
+	) {
+		OAuthUserInfo userInfo = googleAuthService.verifyToken(req.getToken());
+		MemberDto.LinkResult result = memberService.linkSocialAccount(
+				currentMemberId, AuthProvider.GOOGLE, userInfo.getProviderId()
+		);
+		return ResponseEntity.ok(result);
+	}
+
+	@PostMapping("/link/kakao")
+	public ResponseEntity<MemberDto.LinkResult> linkKakao(
+			@AuthenticationPrincipal Long currentMemberId,
+			@RequestBody @Valid MemberDto.LinkSocialRequest req
+	) {
+		OAuthUserInfo userInfo = kakaoAuthService.verifyToken(req.getToken());
+		MemberDto.LinkResult result = memberService.linkSocialAccount(
+				currentMemberId, AuthProvider.KAKAO, userInfo.getProviderId()
+		);
+		return ResponseEntity.ok(result);
 	}
 }
