@@ -1,9 +1,11 @@
 package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.game.dto.GameStateResponse;
+import com.WhoisntCitizen_server.game.activity.LocalPlayerActivityTracker;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
+import com.WhoisntCitizen_server.game.lock.LocalGameLock;
 import com.WhoisntCitizen_server.game.repository.InMemoryGameRepository;
 import com.WhoisntCitizen_server.jobs.domain.ActionCode;
 import com.WhoisntCitizen_server.jobs.domain.Faction;
@@ -33,7 +35,7 @@ class GameServiceStateTest {
     void 상태_응답에_서버_시각이_들어가고_남은_시간을_계산할_수_있다() {
         InMemoryGameRepository repository = new InMemoryGameRepository();
         GameService gameService = new GameService(repository, mock(RoleAssigner.class), mock(GameFlowService.class),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                new LocalGameLock(), new LocalPlayerActivityTracker(), Clock.fixed(NOW, ZoneOffset.UTC));
         Game game = new Game("room-1", List.of(
                 new GamePlayer(1L, "p1", RAIDER),
                 new GamePlayer(2L, "p2", SAILOR),
@@ -51,17 +53,20 @@ class GameServiceStateTest {
     @Test
     void 상태를_조회한_플레이어는_접속한_것으로_기록된다() {
         InMemoryGameRepository repository = new InMemoryGameRepository();
+        LocalPlayerActivityTracker tracker = new LocalPlayerActivityTracker();
         GameService gameService = new GameService(repository, mock(RoleAssigner.class), mock(GameFlowService.class),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                new LocalGameLock(), tracker, Clock.fixed(NOW, ZoneOffset.UTC));
         Game game = new Game("room-1", List.of(
                 new GamePlayer(1L, "p1", RAIDER),
                 new GamePlayer(2L, "p2", SAILOR)));
-        game.markAllSeen(NOW.minusSeconds(120));
+        tracker.markAllSeen(game.getGameId(), List.of(1L, 2L), NOW.minusSeconds(120));
         repository.save(game);
 
         gameService.getState(game.getGameId(), 2L);
+        gameService.getState(game.getGameId(), 99L); // 참가자가 아니면 기록하지 않는다
 
-        assertThat(game.inactivePlayers(NOW.minusSeconds(60)))
+        assertThat(tracker.lastSeen(game.getGameId())).doesNotContainKey(99L);
+        assertThat(game.inactivePlayers(tracker.lastSeen(game.getGameId()), NOW.minusSeconds(60)))
                 .extracting(GamePlayer::getPlayerId).containsExactly(1L);
     }
 }

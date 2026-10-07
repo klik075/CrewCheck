@@ -1,6 +1,9 @@
 package com.WhoisntCitizen_server.support;
 
 import com.WhoisntCitizen_server.common.config.GamePhaseProperties;
+import com.WhoisntCitizen_server.game.activity.LocalPlayerActivityTracker;
+import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
+import com.WhoisntCitizen_server.game.lock.LocalGameLock;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.game.scheduling.LocalGameTimer;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
@@ -31,11 +34,26 @@ public final class TestGameFlows {
                                          GamePhaseProperties props,
                                          Clock clock,
                                          ApplicationEventPublisher eventPublisher) {
+        return create(repository, nightActionResolver, voteResolver, winConditionChecker, scheduler, props, clock,
+                eventPublisher, new LocalPlayerActivityTracker());
+    }
+
+    /** 접속 기록을 테스트에서 직접 남기거나 확인해야 할 때 tracker를 넘긴다. */
+    public static GameFlowService create(GameRepository repository,
+                                         NightActionResolver nightActionResolver,
+                                         VoteResolver voteResolver,
+                                         WinConditionChecker winConditionChecker,
+                                         TaskScheduler scheduler,
+                                         GamePhaseProperties props,
+                                         Clock clock,
+                                         ApplicationEventPublisher eventPublisher,
+                                         PlayerActivityTracker activityTracker) {
         // 타이머가 호출할 대상(GameFlowService)은 아래에서 만들어지므로 배열로 나중에 채운다.
         GameFlowService[] flow = new GameFlowService[1];
         flow[0] = new GameFlowService(repository, nightActionResolver, voteResolver, winConditionChecker,
                 new LocalGameTimer(scheduler, () -> flow[0]),
                 new SchedulerDeferredEventPublisher(scheduler, clock, eventPublisher),
+                new LocalGameLock(), activityTracker,
                 props, clock, eventPublisher);
         return flow[0];
     }

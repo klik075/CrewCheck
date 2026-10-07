@@ -53,7 +53,7 @@ public class InactivePlayerMonitor {
     void checkAll() {
         for (Game game : gameRepository.findAll()) {
             try {
-                gameFlowService.checkInactivePlayers(game);
+                gameFlowService.checkInactivePlayers(game.getGameId());
             } catch (RuntimeException e) {
                 log.error("[{}] 연결 끊김 검사 실패", game.getGameId(), e);
             }

@@ -3,6 +3,7 @@ package com.WhoisntCitizen_server.night.service;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
+import com.WhoisntCitizen_server.game.lock.LocalGameLock;
 import com.WhoisntCitizen_server.game.repository.InMemoryGameRepository;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
 import com.WhoisntCitizen_server.jobs.domain.ActionCode;
@@ -42,7 +43,7 @@ class NightServiceSkipTest {
     void setUp() {
         InMemoryGameRepository repository = new InMemoryGameRepository();
         gameFlowService = mock(GameFlowService.class);
-        nightService = new NightService(repository, gameFlowService, Clock.fixed(NOW, ZoneOffset.UTC));
+        nightService = new NightService(repository, gameFlowService, new LocalGameLock(), Clock.fixed(NOW, ZoneOffset.UTC));
 
         game = new Game("room-1", List.of(
                 new GamePlayer(1L, "해적", RAIDER),

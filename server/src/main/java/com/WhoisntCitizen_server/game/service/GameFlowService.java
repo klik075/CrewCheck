@@ -1,6 +1,7 @@
 package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.config.GamePhaseProperties;
+import com.WhoisntCitizen_server.common.exception.GameNotFoundException;
 import com.WhoisntCitizen_server.common.event.PirateNoticeEvent;
 import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
 import com.WhoisntCitizen_server.game.entity.DeathCause;
@@ -12,6 +13,8 @@ import com.WhoisntCitizen_server.game.entity.Winner;
 import com.WhoisntCitizen_server.game.event.CancelledGameExpiredEvent;
 import com.WhoisntCitizen_server.game.event.GameEndedEvent;
 import com.WhoisntCitizen_server.game.event.PlayersDepartedEvent;
+import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
+import com.WhoisntCitizen_server.game.lock.GameLock;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.game.scheduling.DeferredEventPublisher;
 import com.WhoisntCitizen_server.game.scheduling.GameTimeoutHandler;
@@ -63,6 +66,8 @@ public class GameFlowService implements GameTimeoutHandler {
     private final WinConditionChecker winConditionChecker;
     private final GameTimer gameTimer;
     private final DeferredEventPublisher deferredEvents;
+    private final GameLock gameLock;
+    private final PlayerActivityTracker activityTracker;
     private final GamePhaseProperties phaseProps;
     private final Clock clock;
     private final ApplicationEventPublisher eventPublisher;
@@ -73,6 +78,8 @@ public class GameFlowService implements GameTimeoutHandler {
                            WinConditionChecker winConditionChecker,
                            GameTimer gameTimer,
                            DeferredEventPublisher deferredEvents,
+                           GameLock gameLock,
+                           PlayerActivityTracker activityTracker,
                            GamePhaseProperties phaseProps,
                            Clock clock,
                            ApplicationEventPublisher eventPublisher) {
@@ -82,17 +89,21 @@ public class GameFlowService implements GameTimeoutHandler {
         this.winConditionChecker = winConditionChecker;
         this.gameTimer = gameTimer;
         this.deferredEvents = deferredEvents;
+        this.gameLock = gameLock;
+        this.activityTracker = activityTracker;
         this.phaseProps = phaseProps;
         this.clock = clock;
         this.eventPublisher = eventPublisher;
     }
 
-    /** 1. 게임 시작 직후 첫 밤으로 진입. */
-    public void begin(Game game) {
-        synchronized (game) {
-            game.markAllSeen(clock.instant());
+    /** 1. 게임 시작 직후 첫 밤으로 진입. 게임은 이미 저장소에 저장돼 있어야 한다. */
+    public void begin(String gameId) {
+        gameLock.runWithLock(gameId, () -> {
+            Game game = findGame(gameId);
+            activityTracker.markAllSeen(gameId,
+                    game.getPlayers().stream().map(GamePlayer::getPlayerId).toList(), clock.instant());
             enterNight(game);
-        }
+        });
     }
 
     // ---------- 3. 밤 ----------
@@ -101,15 +112,18 @@ public class GameFlowService implements GameTimeoutHandler {
         moveTo(game, GamePhase.NIGHT, phaseProps.nightSeconds());
     }
 
-    /** 3 → 4. 밤 능력 처리 후 결과 공개 페이즈로. 전원 제출 시 NightService가, 시간 종료 시 타이머가 호출. */
+    /**
+     * 3 → 4. 밤 능력 처리 후 결과 공개 페이즈로. 전원 제출 시 NightService가, 시간 종료 시 타이머가 호출.
+     * NightService는 게임 잠금 안에서 불러 온 Game을 그대로 넘긴다. 잠금은 재진입이라 다시 잡아도 막히지 않는다.
+     */
     public void resolveNight(Game game) {
-        synchronized (game) {
+        gameLock.runWithLock(game.getGameId(), () -> {
             try {
                 doResolveNight(game);
             } catch (RuntimeException e) {
                 cancelAfterError(game, e);
             }
-        }
+        });
     }
 
     private void doResolveNight(Game game) {
@@ -146,15 +160,18 @@ public class GameFlowService implements GameTimeoutHandler {
 
     // ---------- 7. 처형 → 8. 승리 조건 검사 → 9. 반복/종료 ----------
 
-    /** 6 → 7 → 8 → 9. 전원 투표 시 VoteService가, 시간 종료 시 타이머가 호출. */
+    /**
+     * 6 → 7 → 8 → 9. 전원 투표 시 VoteService가, 시간 종료 시 타이머가 호출.
+     * VoteService는 게임 잠금 안에서 불러 온 Game을 그대로 넘긴다. (잠금 재진입)
+     */
     public void resolveVote(Game game) {
-        synchronized (game) {
+        gameLock.runWithLock(game.getGameId(), () -> {
             try {
                 doResolveVote(game);
             } catch (RuntimeException e) {
                 cancelAfterError(game, e);
             }
-        }
+        });
     }
 
     private void doResolveVote(Game game) {
@@ -209,7 +226,7 @@ public class GameFlowService implements GameTimeoutHandler {
     /**
      * 승리 팀 없이 게임을 끝낸다. 전적에는 반영하지 않고(UserStatsListener),
      * 결과 조회 시간이 끝나 게임을 메모리에서 지울 때 방도 삭제한다(CancelledGameExpiredEvent).
-     * 반드시 synchronized(game) 안에서 호출한다.
+     * 반드시 게임 잠금(GameLock) 안에서 호출한다.
      */
     private void cancel(Game game, GameEndReason reason) {
         if (game.isEnded()) {
@@ -243,16 +260,21 @@ public class GameFlowService implements GameTimeoutHandler {
      *    (한 명씩 처리하면 동시에 끊긴 마지막 생존자들 사이에서 승패가 나 버린다)
      *    이미 죽은 사람(관전 중)이 끊기면 방에서만 뺀다.
      */
-    public void checkInactivePlayers(Game game) {
+    public void checkInactivePlayers(String gameId) {
         if (phaseProps.inactiveTimeoutSeconds() <= 0) {
             return;
         }
-        synchronized (game) {
+        gameLock.runWithLock(gameId, () -> {
+            Optional<Game> found = gameRepository.findById(gameId);
+            if (found.isEmpty()) {
+                return;
+            }
+            Game game = found.get();
             if (game.getPhase() == null || game.isEnded()) {
                 return;
             }
             Instant cutoff = clock.instant().minusSeconds(phaseProps.inactiveTimeoutSeconds());
-            List<GamePlayer> inactive = game.inactivePlayers(cutoff);
+            List<GamePlayer> inactive = game.inactivePlayers(activityTracker.lastSeen(gameId), cutoff);
             if (inactive.isEmpty()) {
                 return;
             }
@@ -261,7 +283,7 @@ public class GameFlowService implements GameTimeoutHandler {
             } catch (RuntimeException e) {
                 cancelAfterError(game, e);
             }
-        }
+        });
     }
 
     private void handleDepartures(Game game, List<GamePlayer> inactive) {
@@ -321,28 +343,28 @@ public class GameFlowService implements GameTimeoutHandler {
     /** 결과 조회 시간이 끝났을 때 타이머가 호출한다. (scheduleCleanup 참고) */
     @Override
     public void onCleanup(String gameId) {
-        Optional<Game> found = gameRepository.findById(gameId);
-        if (found.isEmpty()) {
+        CleanupTarget target = gameLock.withLock(gameId, () -> gameRepository.findById(gameId)
+                .map(game -> new CleanupTarget(game.getRoomId(), game.isCancelled()))
+                .orElse(null));
+        if (target == null) {
             return;
         }
-        Game game = found.get();
-        String roomId;
-        boolean cancelled;
-        synchronized (game) {
-            roomId = game.getRoomId();
-            cancelled = game.isCancelled();
-        }
         // 방 삭제 이벤트는 게임 잠금 밖에서 발행한다. (로비가 방 잠금을 잡는다)
-        if (cancelled) {
-            publishNow(new CancelledGameExpiredEvent(gameId, roomId));
+        if (target.cancelled()) {
+            publishNow(new CancelledGameExpiredEvent(gameId, target.roomId()));
         }
         gameRepository.delete(gameId);
+        activityTracker.clear(gameId);
         log.info("[{}] 종료된 게임을 메모리에서 삭제", gameId);
+    }
+
+    /** 정리할 때 필요한 값. 잠금 안에서 읽어 잠금 밖으로 가지고 나온다. */
+    private record CleanupTarget(String roomId, boolean cancelled) {
     }
 
     /**
      * 로비·회원 모듈이 받는 이벤트(게임 종료, 연결 끊김) 발행.
-     * 이 메서드는 synchronized(game) 안에서 호출되므로, 이벤트 처리(로비 방 잠금, DB 저장)를
+     * 이 메서드는 게임 잠금(GameLock) 안에서 호출되므로, 이벤트 처리(로비 방 잠금, DB 저장)를
      * 게임 잠금을 쥔 채로 실행하지 않도록 DeferredEventPublisher로 잠금이 풀린 뒤 발행한다.
      * (게임 잠금 → 방 잠금 / 방 잠금 → 게임 잠금이 엇갈리며 생길 수 있는 교착 상태 방지)
      * 리스너에서 예외가 나도 게임 진행 스레드에는 영향이 없다.
@@ -380,12 +402,12 @@ public class GameFlowService implements GameTimeoutHandler {
     /** 페이즈 제한 시간이 끝났을 때 호출된다. 이미 다음 페이즈로 넘어갔으면(버전 불일치) 무시. */
     @Override
     public void onPhaseTimeout(String gameId, long expectedVersion) {
-        Optional<Game> found = gameRepository.findById(gameId);
-        if (found.isEmpty()) {
-            return;
-        }
-        Game game = found.get();
-        synchronized (game) {
+        gameLock.runWithLock(gameId, () -> {
+            Optional<Game> found = gameRepository.findById(gameId);
+            if (found.isEmpty()) {
+                return;
+            }
+            Game game = found.get();
             if (game.getPhaseVersion() != expectedVersion || game.isEnded()) {
                 return;
             }
@@ -406,7 +428,11 @@ public class GameFlowService implements GameTimeoutHandler {
             } catch (RuntimeException e) {
                 cancelAfterError(game, e);
             }
-        }
+        });
+    }
+
+    private Game findGame(String gameId) {
+        return gameRepository.findById(gameId).orElseThrow(() -> new GameNotFoundException(gameId));
     }
 
     // ---------- 채팅 안내 (방 채팅창 시스템 메시지) ----------

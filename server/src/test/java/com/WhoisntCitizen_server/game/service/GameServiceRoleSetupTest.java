@@ -6,6 +6,8 @@ import com.WhoisntCitizen_server.game.dto.RoleComposition;
 import com.WhoisntCitizen_server.game.dto.RoleSetup;
 import com.WhoisntCitizen_server.game.dto.RoleSetupMode;
 import com.WhoisntCitizen_server.game.dto.StartGameRequest;
+import com.WhoisntCitizen_server.game.activity.LocalPlayerActivityTracker;
+import com.WhoisntCitizen_server.game.lock.LocalGameLock;
 import com.WhoisntCitizen_server.game.repository.InMemoryGameRepository;
 import com.WhoisntCitizen_server.support.TestRoles;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +32,8 @@ class GameServiceRoleSetupTest {
     @BeforeEach
     void setUp() {
         repository = new InMemoryGameRepository();
-        gameService = new GameService(repository, TestRoles.assigner(7), mock(GameFlowService.class), Clock.systemUTC());
+        gameService = new GameService(repository, TestRoles.assigner(7), mock(GameFlowService.class),
+                new LocalGameLock(), new LocalPlayerActivityTracker(), Clock.systemUTC());
     }
 
     private static List<GameParticipant> participants(int count) {

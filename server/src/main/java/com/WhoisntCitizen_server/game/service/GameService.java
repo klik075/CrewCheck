@@ -10,8 +10,10 @@ import com.WhoisntCitizen_server.game.dto.MyRoleResponse;
 import com.WhoisntCitizen_server.game.dto.RoleSetup;
 import com.WhoisntCitizen_server.game.dto.StartGameRequest;
 import com.WhoisntCitizen_server.game.dto.StartGameResponse;
+import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
+import com.WhoisntCitizen_server.game.lock.GameLock;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.jobs.domain.RoleDefinition;
 import org.springframework.stereotype.Service;
@@ -29,12 +31,17 @@ public class GameService {
     private final GameRepository gameRepository;
     private final RoleAssigner roleAssigner;
     private final GameFlowService gameFlowService;
+    private final GameLock gameLock;
+    private final PlayerActivityTracker activityTracker;
     private final Clock clock;
 
-    public GameService(GameRepository gameRepository, RoleAssigner roleAssigner, GameFlowService gameFlowService, Clock clock) {
+    public GameService(GameRepository gameRepository, RoleAssigner roleAssigner, GameFlowService gameFlowService,
+                       GameLock gameLock, PlayerActivityTracker activityTracker, Clock clock) {
         this.gameRepository = gameRepository;
         this.roleAssigner = roleAssigner;
         this.gameFlowService = gameFlowService;
+        this.gameLock = gameLock;
+        this.activityTracker = activityTracker;
         this.clock = clock;
     }
 
@@ -100,12 +107,13 @@ public class GameService {
             players.add(new GamePlayer(p.userId(), p.nickname(), role, roleAssigner.shownRoleOf(role)));
         }
 
-        Game game = gameRepository.save(new Game(roomId, players, recordStats));
-        gameFlowService.begin(game);
+        String gameId = gameRepository.save(new Game(roomId, players, recordStats)).getGameId();
+        gameFlowService.begin(gameId);
 
-        synchronized (game) {
+        return gameLock.withLock(gameId, () -> {
+            Game game = findGame(gameId);
             return new StartGameResponse(game.getGameId(), game.getPhase(), game.getDay(), game.getPhaseEndsAt());
-        }
+        });
     }
 
     /**
@@ -114,24 +122,32 @@ public class GameService {
      * 기록은 게임 잠금 밖에서 한다. (서버가 잠금 때문에 잠깐 느려진 것만으로 미접속 처리되지 않도록)
      */
     public GameStateResponse getState(String gameId, Long requesterId) {
-        findGame(gameId).touch(requesterId, clock.instant());
+        touch(gameId, requesterId);
         return getState(gameId);
     }
 
     /** 3/5/6/9. 현재 페이즈와 공개 정보 */
     public GameStateResponse getState(String gameId) {
-        Game game = findGame(gameId);
-        synchronized (game) {
-            return GameStateResponse.from(game, clock.instant()); // phaseEndsAt과 같은 Clock 기준
-        }
+        return gameLock.withLock(gameId, () ->
+                GameStateResponse.from(findGame(gameId), clock.instant())); // phaseEndsAt과 같은 Clock 기준
     }
 
     /** 2. 내 역할 조회 (본인만) */
     public MyRoleResponse getMyRole(String gameId, Long playerId) {
-        Game game = findGame(gameId);
-        game.touch(playerId, clock.instant());
-        synchronized (game) {
+        touch(gameId, playerId);
+        return gameLock.withLock(gameId, () -> {
+            Game game = findGame(gameId);
             return MyRoleResponse.of(game, game.getPlayer(playerId));
+        });
+    }
+
+    /**
+     * 접속 기록. 게임 잠금 밖에서 남긴다. 게임이 없으면 404, 참가자가 아니면 기록하지 않는다.
+     * (참가자 명단은 바뀌지 않으므로 잠금 없이 확인해도 된다)
+     */
+    private void touch(String gameId, Long playerId) {
+        if (findGame(gameId).hasPlayer(playerId)) {
+            activityTracker.touch(gameId, playerId, clock.instant());
         }
     }
 
@@ -139,8 +155,8 @@ public class GameService {
 
     /** 8~9. 게임 결과. 종료 전에는 ended=false, 역할 비공개. */
     public GameResultResponse getResult(String gameId) {
-        Game game = findGame(gameId);
-        synchronized (game) {
+        return gameLock.withLock(gameId, () -> {
+            Game game = findGame(gameId);
             if (!game.isEnded()) {
                 return new GameResultResponse(false, null, null, game.getDay(), List.of());
             }
@@ -149,7 +165,7 @@ public class GameService {
                     .toList();
             return new GameResultResponse(true, game.getWinner(), game.getEndReason(), game.getDay(), results,
                     game.getWinnerIds());
-        }
+        });
     }
 
     /**
@@ -162,21 +178,15 @@ public class GameService {
         if (gameId == null) {
             return false;
         }
-        return gameRepository.findById(gameId)
-                .map(game -> {
-                    synchronized (game) {
-                        return !game.isEnded() || game.isCancelled();
-                    }
-                })
-                .orElse(false);
+        return gameLock.withLock(gameId, () -> gameRepository.findById(gameId)
+                .map(game -> !game.isEnded() || game.isCancelled())
+                .orElse(false));
     }
 
     /** 개발용(local 전용 API에서만 호출): 전원의 실제 직업과 보이는 직업. */
     public List<DevRoleView> getDevRoles(String gameId) {
-        Game game = findGame(gameId);
-        synchronized (game) {
-            return game.getPlayers().stream().map(DevRoleView::from).toList();
-        }
+        return gameLock.withLock(gameId, () ->
+                findGame(gameId).getPlayers().stream().map(DevRoleView::from).toList());
     }
 
     private Game findGame(String gameId) {

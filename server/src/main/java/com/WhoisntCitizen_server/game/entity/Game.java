@@ -9,12 +9,12 @@ import lombok.Getter;
 import lombok.AccessLevel;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 게임 한 판의 상태(Aggregate Root).
  * 상태 변경은 모두 이 클래스의 메서드를 통해서만 일어나며, 규칙 위반은 GameRuleException으로 거부한다.
- * 동시성 제어는 Service 계층에서 Game 인스턴스 단위로 synchronized 한다.
+ * 동시성 제어는 Service 계층에서 GameLock(gameId 단위)으로 한다.
+ * 플레이어별 마지막 요청 시각(접속 기록)은 여기 두지 않고 PlayerActivityTracker가 관리한다.
  */
 @Getter
 public class Game {
@@ -41,9 +41,6 @@ public class Game {
     @Getter(AccessLevel.NONE)
     private final Set<Long> voteBanned = new HashSet<>(); // 요리사 때문에 오늘 투표를 못 하는 플레이어. 밤 판정 때 정하고 다음 밤에 지운다
 
-    // 플레이어별 마지막 요청 시각. 상태 조회(폴링)가 게임 잠금 밖에서 기록하므로 동시 접근 가능한 Map을 쓴다.
-    @Getter(AccessLevel.NONE)
-    private final Map<Long, Instant> lastSeenAt = new ConcurrentHashMap<>();
     // 마지막으로 누군가 죽은 날. 아무도 죽지 않은 날이 이어지는지(daysWithoutDeath) 셀 때 쓴다. 시작 전은 0
     private int lastDeathDay;
 
@@ -120,24 +117,23 @@ public class Game {
 
     // ---------- 접속 확인 / 이탈 ----------
 
-    /** 게임 시작 시각으로 모두의 마지막 요청 시각을 맞춘다. (씬을 불러오는 동안 미접속으로 판정되지 않도록) */
-    public void markAllSeen(Instant now) {
-        players.keySet().forEach(id -> lastSeenAt.put(id, now));
+    /**
+     * 이 게임의 참가자인지. 참가자 명단은 게임을 만들 때 정해지고 바뀌지 않으므로 잠금 없이 불러도 된다.
+     * (접속 기록을 남기기 전에 참가자가 아닌 요청을 거르는 데 쓴다)
+     */
+    public boolean hasPlayer(Long playerId) {
+        return playerId != null && players.containsKey(playerId);
     }
 
-    /** 플레이어의 요청을 기록한다. 게임 잠금 없이 호출해도 된다. 참가자가 아니면 무시한다. */
-    public void touch(Long playerId, Instant now) {
-        if (playerId != null && players.containsKey(playerId)) {
-            lastSeenAt.put(playerId, now);
-        }
-    }
-
-    /** 마지막 요청이 cutoff보다 오래된, 아직 내보내지 않은 플레이어. (사망자 포함) */
-    public List<GamePlayer> inactivePlayers(Instant cutoff) {
+    /**
+     * 마지막 요청이 cutoff보다 오래된, 아직 내보내지 않은 플레이어. (사망자 포함)
+     * lastSeen은 PlayerActivityTracker가 준 플레이어별 마지막 요청 시각이다. 기록이 없는 사람은 판정하지 않는다.
+     */
+    public List<GamePlayer> inactivePlayers(Map<Long, Instant> lastSeen, Instant cutoff) {
         return players.values().stream()
                 .filter(p -> !p.isDeparted())
                 .filter(p -> {
-                    Instant seen = lastSeenAt.get(p.getPlayerId());
+                    Instant seen = lastSeen.get(p.getPlayerId());
                     return seen != null && seen.isBefore(cutoff);
                 })
                 .toList();

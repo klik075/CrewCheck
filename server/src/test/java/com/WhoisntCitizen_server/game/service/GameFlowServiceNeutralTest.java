@@ -70,7 +70,7 @@ class GameFlowServiceNeutralTest {
         }
         Game game = new Game("1", players, true);
         repository.save(game);
-        flow.begin(game);
+        flow.begin(game.getGameId());
         return game;
     }
 
