@@ -6,7 +6,9 @@ import com.WhoisntCitizen_server.jobs.domain.RoleDefinition;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,6 +30,24 @@ class GameDepartTest {
     private static final Instant NOW = Instant.parse("2026-10-01T12:00:00Z");
 
     // 1: 해적, 2: 앵무새, 3: 선의, 4: 주정뱅이, 5~6: 선원
+    /** 참가자 1~6 모두의 마지막 요청 시각을 at으로 둔 접속 기록 */
+    private static Map<Long, Instant> allSeenAt(Instant at) {
+        Map<Long, Instant> lastSeen = new HashMap<>();
+        for (long id = 1; id <= 6; id++) {
+            lastSeen.put(id, at);
+        }
+        return lastSeen;
+    }
+
+    @Test
+    void 참가자인지_확인한다() {
+        Game game = newGame();
+
+        assertThat(game.hasPlayer(1L)).isTrue();
+        assertThat(game.hasPlayer(99L)).isFalse();
+        assertThat(game.hasPlayer(null)).isFalse();
+    }
+
     private Game newGame() {
         return new Game("room-1", List.of(
                 new GamePlayer(1L, "해적", RAIDER),
@@ -104,11 +124,11 @@ class GameDepartTest {
     @Test
     void 마지막_요청이_기준보다_오래된_사람만_미접속으로_본다() {
         Game game = newGame();
-        game.markAllSeen(NOW);
-        game.touch(1L, NOW.plusSeconds(50));
-        game.touch(99L, NOW.plusSeconds(50)); // 참가자가 아니면 무시
+        Map<Long, Instant> lastSeen = allSeenAt(NOW);
+        lastSeen.put(1L, NOW.plusSeconds(50));
+        lastSeen.put(99L, NOW); // 참가자가 아니면 무시
 
-        List<GamePlayer> inactive = game.inactivePlayers(NOW.plusSeconds(10));
+        List<GamePlayer> inactive = game.inactivePlayers(lastSeen, NOW.plusSeconds(10));
 
         assertThat(inactive).extracting(GamePlayer::getPlayerId).containsExactly(2L, 3L, 4L, 5L, 6L);
     }
@@ -117,10 +137,9 @@ class GameDepartTest {
     void 이미_내보낸_사람은_다시_미접속으로_잡지_않는다() {
         Game game = newGame();
         game.changePhase(GamePhase.NIGHT, NOW.plusSeconds(30));
-        game.markAllSeen(NOW);
         game.depart(6L);
 
-        assertThat(game.inactivePlayers(NOW.plusSeconds(10)))
+        assertThat(game.inactivePlayers(allSeenAt(NOW), NOW.plusSeconds(10)))
                 .extracting(GamePlayer::getPlayerId).doesNotContain(6L);
     }
 

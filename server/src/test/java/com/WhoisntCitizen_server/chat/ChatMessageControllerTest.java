@@ -3,6 +3,7 @@ package com.WhoisntCitizen_server.chat;
 import com.WhoisntCitizen_server.chat.controller.ChatMessageController;
 import com.WhoisntCitizen_server.chat.service.ChatLobbyEventListener;
 import com.WhoisntCitizen_server.chat.service.ChatMessageService;
+import com.WhoisntCitizen_server.game.lock.LocalGameLock;
 import com.WhoisntCitizen_server.chat.service.ChatNoticeEventListener;
 import com.WhoisntCitizen_server.common.event.PirateNoticeEvent;
 import com.WhoisntCitizen_server.common.exception.GlobalExceptionHandler;
@@ -92,7 +93,8 @@ class ChatMessageControllerTest {
 
         games = new InMemoryGameRepository();
         ChatMessageService messageService =
-                new ChatMessageService(new InMemoryChatMessageRepository(), lobbyRooms, users, games);
+                new ChatMessageService(new InMemoryChatMessageRepository(), lobbyRooms, users, games,
+                        new LocalGameLock());
         lobbyEvents = new ChatLobbyEventListener(messageService);
         noticeEvents = new ChatNoticeEventListener(messageService);
 
