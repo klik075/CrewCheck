@@ -6,7 +6,6 @@ import com.WhoisntCitizen_server.member.entity.AuthProvider;
 import com.WhoisntCitizen_server.member.entity.Member;
 import com.WhoisntCitizen_server.user.entity.User;
 import com.WhoisntCitizen_server.member.repository.MemberRepository;
-import com.WhoisntCitizen_server.user.entity.User;
 import com.WhoisntCitizen_server.user.service.UserService;
 import com.WhoisntCitizen_server.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +13,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -24,8 +25,8 @@ public class MemberService {
 	private final UserService userService;
 	private final PasswordEncoder passwordEncoder;
 	private final JwtTokenProvider jwtTokenProvider;
+	private final UserRepository userRepository;
 
-	// 회원가입: Member(로그인 정보) + User(프로필)를 한 트랜잭션에서 같이 생성
 	@Transactional
 	public MemberDto.Response signup(MemberDto.SignupRequest req) {
 		if (memberRepository.existsByUsername(req.getUsername())) {
@@ -79,18 +80,14 @@ public class MemberService {
 
 	@Transactional
 	public MemberDto.AuthResult socialLogin(AuthProvider provider, String providerId, String defaultNickname) {
-		// 1. 이미 연동된 회원인지 확인 (없으면 신규 등록)
 		Member member = memberRepository.findByProviderAndProviderId(provider, providerId)
 				.orElseGet(() -> registerSocialMember(provider, providerId, defaultNickname));
 
-		// 2. 연관된 User 프로필 조회
 		User user = userService.getByMemberId(member.getId());
 
-		// 3. 기존과 동일한 규격으로 자체 JWT 발급
 		String accessToken = jwtTokenProvider.createToken(member.getId(), member.getUsername());
 		log.info("[소셜 로그인 성공] 플랫폼: {}, 회원 ID: {}, 아이디: {}", provider, member.getId(), member.getUsername());
 
-		// 4. 기존 AuthResult 재사용
 		return MemberDto.AuthResult.builder()
 				.memberId(member.getId())
 				.userId(user.getId())
@@ -102,20 +99,98 @@ public class MemberService {
 	}
 
 	private Member registerSocialMember(AuthProvider provider, String providerId, String defaultNickname) {
-		// username 중복 방지를 위한 유니크 가상 아이디 생성 (예: google_123456789)
 		String generatedUsername = provider.name().toLowerCase() + "_" + providerId;
 
 		Member member = memberRepository.save(Member.builder()
 				.username(generatedUsername)
-				.password(null) // 소셜 가입자는 패스워드 없음
+				.password(null)
 				.provider(provider)
 				.providerId(providerId)
 				.build());
 
-		// 닉네임 중복/길이 처리는 User 도메인이 담당
 		User user = userService.createProfileWithUniqueNickname(member.getId(), defaultNickname);
 
 		log.info("[소셜 회원 자동 가입 완료] 플랫폼: {}, 회원 ID: {}, 닉네임: {}", provider, member.getId(), user.getNickname());
 		return member;
+	}
+
+	@Transactional
+	public MemberDto.AuthResult guestLogin(MemberDto.GuestLoginRequest req) {
+		String guestUuid = req.getGuestUuid();
+
+		Member member = memberRepository.findByProviderAndProviderId(AuthProvider.GUEST, guestUuid)
+				.orElseGet(() -> registerGuestMember(guestUuid));
+
+		User user = userRepository.findByMemberId(member.getId())
+				.orElseThrow(() -> new IllegalStateException("게스트 유저 프로필이 존재하지 않습니다."));
+
+		String accessToken = jwtTokenProvider.createToken(member.getId(), member.getUsername());
+		log.info("[게스트 로그인 성공] 회원 ID: {}, 식별자: {}", member.getId(), guestUuid);
+
+		return MemberDto.AuthResult.builder()
+				.memberId(member.getId())
+				.userId(user.getId())
+				.username(member.getUsername())
+				.nickname(user.getNickname())
+				.accessToken(accessToken)
+				.message("게스트 로그인에 성공했습니다.")
+				.build();
+	}
+
+	private Member registerGuestMember(String guestUuid) {
+		String generatedUsername = "guest_" + guestUuid;
+
+		Member member = memberRepository.save(Member.builder()
+				.username(generatedUsername)
+				.password(null)
+				.provider(AuthProvider.GUEST)
+				.providerId(guestUuid)
+				.build());
+
+		String nickname = generateUniqueGuestNickname();
+
+		User user = userRepository.save(User.builder()
+				.memberId(member.getId())
+				.nickname(nickname)
+				.build());
+
+		log.info("[신규 게스트 생성 완료] 회원 ID: {}, 닉네임: {}", member.getId(), user.getNickname());
+		return member;
+	}
+
+	private String generateUniqueGuestNickname() {
+		String nickname;
+		do {
+			int randomSuffix = (int) (Math.random() * 9000) + 1000;
+			nickname = "게스트" + randomSuffix;
+		} while (userRepository.existsByNickname(nickname));
+		return nickname;
+	}
+
+	@Transactional
+	public MemberDto.LinkResult linkSocialAccount(Long memberId, AuthProvider provider, String providerId) {
+		Optional<Member> existingMember = memberRepository.findByProviderAndProviderId(provider, providerId);
+		if (existingMember.isPresent()) {
+			if (existingMember.get().getId().equals(memberId)) {
+				throw new IllegalArgumentException("이미 현재 계정에 연동된 소셜 계정입니다.");
+			}
+			throw new IllegalStateException("이미 다른 계정에 연동되어 있는 소셜 계정입니다.");
+		}
+
+		Member currentMember = memberRepository.findById(memberId)
+				.orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+
+		if (currentMember.getProvider() == AuthProvider.GOOGLE || currentMember.getProvider() == AuthProvider.KAKAO) {
+			throw new IllegalStateException("이미 " + currentMember.getProvider() + " 계정으로 연동이 완료된 상태입니다.");
+		}
+
+		currentMember.linkSocialAccount(provider, providerId);
+		log.info("[소셜 계정 연동 완료] 회원 ID: {}, 연동 플랫폼: {}, 식별자: {}", memberId, provider, providerId);
+
+		return MemberDto.LinkResult.builder()
+				.memberId(currentMember.getId())
+				.linkedProvider(provider)
+				.message(provider + " 계정 연동이 완료되었습니다.")
+				.build();
 	}
 }
