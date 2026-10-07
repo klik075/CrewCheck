@@ -25,13 +25,18 @@ public class GameConfig {
         return Clock.systemUTC();
     }
 
-    /** 페이즈 타이머 전용 스케줄러. */
+    /**
+     * 페이즈 타이머 전용 스케줄러.
+     * 예약 시각(Instant)을 지연 시간으로 바꿀 때 phaseEndsAt과 같은 Clock을 쓰도록 맞춘다.
+     * (기본값은 스케줄러 자체의 Clock.systemDefaultZone())
+     */
     @Bean
-    public TaskScheduler gamePhaseScheduler() {
+    public TaskScheduler gamePhaseScheduler(Clock clock) {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
         scheduler.setPoolSize(4);
         scheduler.setThreadNamePrefix("game-phase-");
-        scheduler.initialize();
+        scheduler.setClock(clock);
+        //scheduler.initialize();
         return scheduler;
     }
 }
