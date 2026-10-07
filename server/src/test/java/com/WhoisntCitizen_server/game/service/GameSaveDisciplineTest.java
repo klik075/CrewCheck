@@ -199,7 +199,7 @@ class GameSaveDisciplineTest {
         flow.begin(gameId);
         advance(UNTIL_VOTE);
 
-        voteService.vote(gameId, 2L, 1L);
+        voteService.vote(gameId, 2L, 1L, true);
 
         assertThat(stored().getVotes()).isEqualTo(Map.of(2L, 1L));
     }
@@ -209,11 +209,11 @@ class GameSaveDisciplineTest {
         flow.begin(gameId);
         advance(UNTIL_VOTE);
 
-        voteService.vote(gameId, 1L, 3L);
-        voteService.vote(gameId, 2L, 3L);
-        voteService.vote(gameId, 3L, 1L);
-        voteService.vote(gameId, 4L, 3L);
-        voteService.vote(gameId, 5L, 3L);            // 전원 투표 → 처형
+        voteService.vote(gameId, 1L, 3L, true);
+        voteService.vote(gameId, 2L, 3L, true);
+        voteService.vote(gameId, 3L, 1L, true);
+        voteService.vote(gameId, 4L, 3L, true);
+        voteService.vote(gameId, 5L, 3L, true);            // 전원 투표 → 처형
 
         Game game = stored();
         assertThat(game.getPhase()).isEqualTo(GamePhase.EXECUTION);
@@ -237,11 +237,11 @@ class GameSaveDisciplineTest {
         flow.begin(gameId);
         advance(UNTIL_VOTE);
 
-        voteService.vote(gameId, 1L, 2L);
-        voteService.vote(gameId, 2L, 1L);
-        voteService.vote(gameId, 3L, 1L);
-        voteService.vote(gameId, 4L, 1L);
-        voteService.vote(gameId, 5L, 1L);            // 해적 처형 → 선원 승리
+        voteService.vote(gameId, 1L, 2L, true);
+        voteService.vote(gameId, 2L, 1L, true);
+        voteService.vote(gameId, 3L, 1L, true);
+        voteService.vote(gameId, 4L, 1L, true);
+        voteService.vote(gameId, 5L, 1L, true);            // 해적 처형 → 선원 승리
 
         Game game = stored();
         assertThat(game.isEnded()).isTrue();                            // end()
@@ -280,10 +280,10 @@ class GameSaveDisciplineTest {
     void 끊긴_사람만_투표하지_않았을_때_바로_판정한_결과가_저장된다() {
         flow.begin(gameId);
         advance(UNTIL_VOTE);
-        voteService.vote(gameId, 1L, 2L);
-        voteService.vote(gameId, 2L, 1L);
-        voteService.vote(gameId, 3L, 1L);
-        voteService.vote(gameId, 4L, 1L);
+        voteService.vote(gameId, 1L, 2L, true);
+        voteService.vote(gameId, 2L, 1L, true);
+        voteService.vote(gameId, 3L, 1L, true);
+        voteService.vote(gameId, 4L, 1L, true);
         passInactiveTimeout(1L, 2L, 3L, 4L);
 
         flow.checkInactivePlayers(gameId);           // 5 이탈 → 남은 전원 투표 완료 → 처형 → 승리

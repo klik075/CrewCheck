@@ -33,6 +33,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -279,13 +280,15 @@ public class GameFlowService implements GameTimeoutHandler {
                 return;
             }
             Instant cutoff = clock.instant().minusSeconds(phaseProps.inactiveTimeoutSeconds());
-            List<GamePlayer> inactive = game.inactivePlayers(activityTracker.lastSeen(gameId), cutoff);
+            // 같은 접속 기록 스냅샷으로 이번 기준과 다음 검사 기준을 함께 판단한다
+            Map<Long, Instant> lastSeen = activityTracker.lastSeen(gameId);
+            List<GamePlayer> inactive = game.inactivePlayers(lastSeen, cutoff);
             if (inactive.isEmpty()) {
                 return;
             }
             // 다음 검사 때의 기준. 이번에는 내보내지 않지만 전원 끊김 판단에는 넣는다.
             Instant nextCutoff = cutoff.plusSeconds(Math.max(0, phaseProps.inactiveCheckSeconds()));
-            long aliveGoneByNextCheck = game.inactivePlayers(nextCutoff).stream().filter(GamePlayer::isAlive).count();
+            long aliveGoneByNextCheck = game.inactivePlayers(lastSeen, nextCutoff).stream().filter(GamePlayer::isAlive).count();
             try {
                 handleDepartures(game, inactive, aliveGoneByNextCheck);
             } catch (RuntimeException | Error e) {
