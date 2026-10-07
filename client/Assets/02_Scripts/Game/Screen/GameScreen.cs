@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
-// using WhoisntCitizen.Chat; // [공개 안내 자동 판단 - 주석 처리]
+using WhoisntCitizen.Chat; // [공개 안내 자동 판단] 서버 채팅(GameChatController) 상태로 공개 안내 여부를 정한다
 using WhoisntCitizen.GameUI;
 using WhoisntCitizen.Vote;
 
@@ -16,10 +16,10 @@ namespace WhoisntCitizen.Game
     /// 하단 시트: 밤에는 [+] 서랍에 NightActionPanel을, 그 밖에는 VotePanel을 보여 준다(둘 다 Drawer 안에 나란히 둔다).
     /// 투표: VOTE 페이즈가 되면 부채꼴 카드패(VoteCardHandController)가 아래에서 올라온다. 카드를 뽑으면 투표한다.
     ///       기존 VotePanel 투표 처리는 [카드패 투표로 교체 - 주석 처리] 표시로 막아 두었다(패널은 보기 전용으로 남는다).
-    /// 채팅 기록: 공개 안내는 실제 서버면 서버 채팅이 보내므로 AnnouncePublic일 때만 남긴다.
-    // [공개 안내 자동 판단 - 주석 처리]
-    // /// 채팅 기록: 공개 안내(페이즈·밤 결과·처형·승리)는 서버 채팅(GameChatController)이 같은 채팅창에 보여 주면 남기지 않고,
-    // /// 서버 채팅이 없거나 꺼져 있거나 멈췄을 때, 또는 가짜 서버 게임일 때만 직접 남긴다(AnnouncePublic).
+    // [공개 안내 수동 설정 - 주석 처리]
+    // /// 채팅 기록: 공개 안내는 실제 서버면 서버 채팅이 보내므로 AnnouncePublic일 때만 남긴다.
+    /// 채팅 기록: 공개 안내(페이즈·밤 결과·처형·승리)는 서버 채팅(GameChatController)이 같은 채팅창에 보여 주면 남기지 않고,
+    /// 서버 채팅이 없거나 꺼져 있거나 멈췄을 때, 또는 가짜 서버 게임일 때만 직접 남긴다(AnnouncePublic).
     /// 나만 아는 것(내 직업, 개인 밤 결과, 접선, 접수 확인, 오류, 내 사망)과 득표 수는 항상 남긴다.
     /// </summary>
     public sealed class GameScreen : MonoBehaviour, IGameView
@@ -52,18 +52,18 @@ namespace WhoisntCitizen.Game
         [Header("초상화 (플레이어 순서대로 돌려 쓴다. 비우면 없음)")]
         [SerializeField] private Sprite[] portraits;
 
-        [Header("공개 안내")]
-        [Tooltip("실제 서버는 페이즈·밤 결과·처형·승리 안내를 방 채팅 시스템 메시지로 보낸다(서버 PR #18). " +
-                 "그 채팅이 이 ChatLogView에 나오면 꺼 두어 같은 안내가 두 번 나오지 않게 한다. " +
-                 "가짜 서버는 채팅이 없으므로 이 값과 상관없이 직접 남긴다.")]
-        [SerializeField] private bool announcePublicWithRealServer = false;
+        // [공개 안내 수동 설정 - 주석 처리]
+        // [Header("공개 안내")]
+        // [Tooltip("실제 서버는 페이즈·밤 결과·처형·승리 안내를 방 채팅 시스템 메시지로 보낸다(서버 PR #18). " +
+        //          "그 채팅이 이 ChatLogView에 나오면 꺼 두어 같은 안내가 두 번 나오지 않게 한다. " +
+        //          "가짜 서버는 채팅이 없으므로 이 값과 상관없이 직접 남긴다.")]
+        // [SerializeField] private bool announcePublicWithRealServer = false;
 
-        // [공개 안내 자동 판단 - 주석 처리]
-        // [Header("공개 안내 (비우면 씬에서 찾는다)")]
-        // [Tooltip("실제 서버는 페이즈·밤 결과·처형·승리 안내를 방 채팅 시스템 메시지로 보낸다. " +
-        //          "이 서버 채팅이 같은 ChatLogView에 안내를 보여 주는 동안에는 이 화면이 공개 안내를 남기지 않는다(중복 방지). " +
-        //          "서버 채팅이 없거나 꺼져 있거나 연결에 실패해 멈췄으면, 그리고 가짜 서버 게임이면 직접 남긴다.")]
-        // [SerializeField] private GameChatController serverChat;
+        [Header("공개 안내 (비우면 씬에서 찾는다)")]
+        [Tooltip("실제 서버는 페이즈·밤 결과·처형·승리 안내를 방 채팅 시스템 메시지로 보낸다. " +
+                 "이 서버 채팅이 같은 ChatLogView에 안내를 보여 주는 동안에는 이 화면이 공개 안내를 남기지 않는다(중복 방지). " +
+                 "서버 채팅이 없거나 꺼져 있거나 연결에 실패해 멈췄으면, 그리고 가짜 서버 게임이면 직접 남긴다.")]
+        [SerializeField] private GameChatController serverChat;
 
         private readonly List<PlayerView> playerViews = new List<PlayerView>();
         private readonly Dictionary<long, int> playerOrder = new Dictionary<long, int>();
@@ -86,27 +86,27 @@ namespace WhoisntCitizen.Game
             get { return Session != null && Session.Me != null ? Session.Me.playerId : 0; }
         }
 
-        /// <summary>공개 안내(페이즈·밤 결과 요약·처형 결과·승리)를 이 화면이 직접 남길지. 실제 서버면 서버 채팅이 보낸다.</summary>
-        private bool AnnouncePublic
-        {
-            get { return controller != null && (controller.IsFakeGame || announcePublicWithRealServer); }
-        }
-
-        // [공개 안내 자동 판단 - 주석 처리]
-        // /// <summary>
-        // /// 공개 안내(페이즈·밤 결과 요약·처형 결과·승리)를 이 화면이 직접 남길지.
-        // /// 서버 안내가 이 채팅창에 넘어오면 끔(false), 넘어오지 않으면 켬(true). 가짜 서버 게임은 서버 안내가 없으므로 항상 켬.
-        // /// </summary>
+        // [공개 안내 수동 설정 - 주석 처리]
+        // /// <summary>공개 안내(페이즈·밤 결과 요약·처형 결과·승리)를 이 화면이 직접 남길지. 실제 서버면 서버 채팅이 보낸다.</summary>
         // private bool AnnouncePublic
         // {
-        //     get { return controller != null && (controller.IsFakeGame || !ServerAnnouncesHere); }
+        //     get { return controller != null && (controller.IsFakeGame || announcePublicWithRealServer); }
         // }
-        //
-        // /// <summary>서버 채팅이 서버 시스템 메시지를 이 화면과 같은 채팅창에 보여 주는 중인지.</summary>
-        // private bool ServerAnnouncesHere
-        // {
-        //     get { return serverChat != null && serverChat.ShowsServerMessages && serverChat.chatLog == chatLog; }
-        // }
+
+        /// <summary>
+        /// 공개 안내(페이즈·밤 결과 요약·처형 결과·승리)를 이 화면이 직접 남길지.
+        /// 서버 안내가 이 채팅창에 넘어오면 끔(false), 넘어오지 않으면 켬(true). 가짜 서버 게임은 서버 안내가 없으므로 항상 켬.
+        /// </summary>
+        private bool AnnouncePublic
+        {
+            get { return controller != null && (controller.IsFakeGame || !ServerAnnouncesHere); }
+        }
+
+        /// <summary>서버 채팅이 서버 시스템 메시지를 이 화면과 같은 채팅창에 보여 주는 중인지.</summary>
+        private bool ServerAnnouncesHere
+        {
+            get { return serverChat != null && serverChat.ShowsServerMessages && serverChat.chatLog == chatLog; }
+        }
 
         // ================================================================ Unity
 
@@ -120,11 +120,11 @@ namespace WhoisntCitizen.Game
             {
                 waitingRoom = FindFirstObjectByType<WaitingRoomController>();
             }
-            // [공개 안내 자동 판단 - 주석 처리]
-            // if (serverChat == null)
-            // {
-            //     serverChat = FindFirstObjectByType<GameChatController>(FindObjectsInactive.Include);
-            // }
+            // [공개 안내 자동 판단] 서버 채팅을 씬에서 찾는다 (꺼져 있는 오브젝트 포함)
+            if (serverChat == null)
+            {
+                serverChat = FindFirstObjectByType<GameChatController>(FindObjectsInactive.Include);
+            }
             if (votePanel != null)
             {
                 votePanel.PortraitResolver = PortraitOf;

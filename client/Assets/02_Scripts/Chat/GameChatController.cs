@@ -115,7 +115,7 @@ namespace WhoisntCitizen.Chat
         // /// 연결 중이어도 true: 연결되면 최근 메시지를 한꺼번에 받아 오므로 그 사이 안내도 결국 표시된다.
         // /// GameScreen이 이 값으로 공개 안내를 직접 남길지 정한다.
         // /// </summary>
-        // public bool ShowsServerMessages { get { return isActiveAndEnabled && !_failed && chatLog != null; } }
+        public bool ShowsServerMessages { get { return isActiveAndEnabled && !_failed && chatLog != null; } }
         public long RoomId { get { return api != null ? api.roomId : 0; } }
 
         // ================= Unity =================
