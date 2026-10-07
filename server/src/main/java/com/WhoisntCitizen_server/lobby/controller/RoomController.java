@@ -94,9 +94,17 @@ public class RoomController {
                 .body(roomService.startGame(roomId, memberId(jwt)));
     }
 
+    /**
+     * 방 목록. keyword를 주면 제목으로 검색한다. (선택, 없으면 전체 목록)
+     *   GET /api/v1/rooms               전체
+     *   GET /api/v1/rooms?keyword=초보   제목에 "초보"가 들어간 방 (부분 일치, 대소문자·공백 무시)
+     * 실패: 400 검색어가 30자 초과
+     */
     @GetMapping
-    public ResponseEntity<List<RoomResponseDto>> getRooms() {
-        return ResponseEntity.ok(roomService.getRooms());
+    public ResponseEntity<List<RoomResponseDto>> getRooms(
+            @RequestParam(required = false) String keyword
+    ) {
+        return ResponseEntity.ok(roomService.getRooms(keyword));
     }
 
     // 토큰 sub = memberId. User(프로필) 조회는 service에서 한다.
