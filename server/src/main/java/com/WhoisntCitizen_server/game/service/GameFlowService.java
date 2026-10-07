@@ -13,6 +13,9 @@ import com.WhoisntCitizen_server.game.event.CancelledGameExpiredEvent;
 import com.WhoisntCitizen_server.game.event.GameEndedEvent;
 import com.WhoisntCitizen_server.game.event.PlayersDepartedEvent;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
+import com.WhoisntCitizen_server.game.scheduling.DeferredEventPublisher;
+import com.WhoisntCitizen_server.game.scheduling.GameTimeoutHandler;
+import com.WhoisntCitizen_server.game.scheduling.GameTimer;
 import com.WhoisntCitizen_server.jobs.domain.ActionCode;
 import com.WhoisntCitizen_server.night.entity.NightResult;
 import com.WhoisntCitizen_server.night.service.NightActionResolver;
@@ -20,9 +23,7 @@ import com.WhoisntCitizen_server.vote.entity.ExecutionResult;
 import com.WhoisntCitizen_server.vote.service.VoteResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -52,7 +53,7 @@ import java.util.stream.Collectors;
  *  취소된 게임은 승리 팀이 없고 전적에 반영하지 않으며, 결과 조회 시간이 지나면 방(과 채팅)도 삭제된다.
  */
 @Service
-public class GameFlowService {
+public class GameFlowService implements GameTimeoutHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GameFlowService.class);
 
@@ -60,7 +61,8 @@ public class GameFlowService {
     private final NightActionResolver nightActionResolver;
     private final VoteResolver voteResolver;
     private final WinConditionChecker winConditionChecker;
-    private final TaskScheduler scheduler;
+    private final GameTimer gameTimer;
+    private final DeferredEventPublisher deferredEvents;
     private final GamePhaseProperties phaseProps;
     private final Clock clock;
     private final ApplicationEventPublisher eventPublisher;
@@ -69,7 +71,8 @@ public class GameFlowService {
                            NightActionResolver nightActionResolver,
                            VoteResolver voteResolver,
                            WinConditionChecker winConditionChecker,
-                           @Qualifier("gamePhaseScheduler") TaskScheduler scheduler,
+                           GameTimer gameTimer,
+                           DeferredEventPublisher deferredEvents,
                            GamePhaseProperties phaseProps,
                            Clock clock,
                            ApplicationEventPublisher eventPublisher) {
@@ -77,7 +80,8 @@ public class GameFlowService {
         this.nightActionResolver = nightActionResolver;
         this.voteResolver = voteResolver;
         this.winConditionChecker = winConditionChecker;
-        this.scheduler = scheduler;
+        this.gameTimer = gameTimer;
+        this.deferredEvents = deferredEvents;
         this.phaseProps = phaseProps;
         this.clock = clock;
         this.eventPublisher = eventPublisher;
@@ -310,29 +314,42 @@ public class GameFlowService {
      * 방 삭제를 게임 삭제보다 먼저 한다. 게임이 먼저 사라지면 그사이 방 조회가 방을 대기 상태로 되돌려 삭제되지 않는다.
      */
     private void scheduleCleanup(Game game) {
-        String gameId = game.getGameId();
-        String roomId = game.getRoomId();
-        boolean cancelled = game.isCancelled();
         Instant at = clock.instant().plusSeconds(phaseProps.endedRetentionSeconds());
-        scheduler.schedule(() -> {
-            if (cancelled) {
-                publishNow(new CancelledGameExpiredEvent(gameId, roomId));
-            }
-            gameRepository.delete(gameId);
-            log.info("[{}] 종료된 게임을 메모리에서 삭제", gameId);
-        }, at);
+        gameTimer.scheduleCleanup(game.getGameId(), at);
+    }
+
+    /** 결과 조회 시간이 끝났을 때 타이머가 호출한다. (scheduleCleanup 참고) */
+    @Override
+    public void onCleanup(String gameId) {
+        Optional<Game> found = gameRepository.findById(gameId);
+        if (found.isEmpty()) {
+            return;
+        }
+        Game game = found.get();
+        String roomId;
+        boolean cancelled;
+        synchronized (game) {
+            roomId = game.getRoomId();
+            cancelled = game.isCancelled();
+        }
+        // 방 삭제 이벤트는 게임 잠금 밖에서 발행한다. (로비가 방 잠금을 잡는다)
+        if (cancelled) {
+            publishNow(new CancelledGameExpiredEvent(gameId, roomId));
+        }
+        gameRepository.delete(gameId);
+        log.info("[{}] 종료된 게임을 메모리에서 삭제", gameId);
     }
 
     /**
      * 로비·회원 모듈이 받는 이벤트(게임 종료, 연결 끊김) 발행.
      * 이 메서드는 synchronized(game) 안에서 호출되므로, 이벤트 처리(로비 방 잠금, DB 저장)를
-     * 게임 잠금을 쥔 채로 실행하지 않도록 스케줄러 스레드에서 따로 발행한다.
+     * 게임 잠금을 쥔 채로 실행하지 않도록 DeferredEventPublisher로 잠금이 풀린 뒤 발행한다.
      * (게임 잠금 → 방 잠금 / 방 잠금 → 게임 잠금이 엇갈리며 생길 수 있는 교착 상태 방지)
      * 리스너에서 예외가 나도 게임 진행 스레드에는 영향이 없다.
      * event는 잠금 안에서 만든 값(현재 상태의 복사본)이어야 한다.
      */
     private void publishLater(Object event) {
-        scheduler.schedule(() -> publishNow(event), clock.instant());
+        deferredEvents.publishAfterLock(event);
     }
 
     private void publishNow(Object event) {
@@ -356,12 +373,13 @@ public class GameFlowService {
 
     //페이즈 스케줄 등록
     private void scheduleTimeout(String gameId, long version, Instant at) {
-        scheduler.schedule(() -> onPhaseTimeout(gameId, version), at);
+        gameTimer.schedulePhaseTimeout(gameId, version, at);
     }
 
     //페이즈 시간 초과 시 호출
     /** 페이즈 제한 시간이 끝났을 때 호출된다. 이미 다음 페이즈로 넘어갔으면(버전 불일치) 무시. */
-    void onPhaseTimeout(String gameId, long expectedVersion) {
+    @Override
+    public void onPhaseTimeout(String gameId, long expectedVersion) {
         Optional<Game> found = gameRepository.findById(gameId);
         if (found.isEmpty()) {
             return;

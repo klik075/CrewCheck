@@ -17,6 +17,7 @@ import com.WhoisntCitizen_server.jobs.domain.Faction;
 import com.WhoisntCitizen_server.jobs.domain.RoleDefinition;
 import com.WhoisntCitizen_server.night.service.NightActionResolver;
 import com.WhoisntCitizen_server.support.ManualTaskScheduler;
+import com.WhoisntCitizen_server.support.TestGameFlows;
 import com.WhoisntCitizen_server.support.MutableClock;
 import com.WhoisntCitizen_server.vote.service.VoteResolver;
 import org.junit.jupiter.api.BeforeEach;
@@ -73,7 +74,7 @@ class GameFlowServiceEndlessGameTest {
     }
 
     private GameFlowService newFlow(VoteResolver voteResolver) {
-        return new GameFlowService(repository, new NightActionResolver(new Random(0)), voteResolver,
+        return TestGameFlows.create(repository, new NightActionResolver(new Random(0)), voteResolver,
                 new WinConditionChecker(), scheduler, PROPS, clock, events::add);
     }
 
@@ -250,7 +251,7 @@ class GameFlowServiceEndlessGameTest {
     @Test
     void 연결_끊김_검사는_설정이_0이면_하지_않는다() {
         GamePhaseProperties off = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10);
-        GameFlowService noCheck = new GameFlowService(repository, new NightActionResolver(new Random(0)),
+        GameFlowService noCheck = TestGameFlows.create(repository, new NightActionResolver(new Random(0)),
                 new VoteResolver(), new WinConditionChecker(), scheduler, off, clock, events::add);
         noCheck.begin(game);
         passInactiveTimeout();
