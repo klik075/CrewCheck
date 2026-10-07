@@ -1,6 +1,7 @@
 package com.WhoisntCitizen_server.lobby.service;
 
 import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
+import com.WhoisntCitizen_server.common.exception.RoomPasswordException;
 import com.WhoisntCitizen_server.game.dto.GameParticipant;
 import com.WhoisntCitizen_server.game.dto.StartGameResponse;
 import com.WhoisntCitizen_server.game.service.GameService;
@@ -25,6 +26,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -34,6 +36,11 @@ public class RoomService {
     // 인원 규칙은 게임 쪽(RoleAssigner) 값을 그대로 사용한다. 규칙을 바꿀 때 한 곳만 고치면 된다.
     private static final int MIN_PLAYERS = RoleAssigner.MIN_PLAYERS;
     private static final int MAX_PLAYERS = RoleAssigner.MAX_PLAYERS;
+
+    // 비밀방 비밀번호 규칙: 숫자(0~9)만, 최소 4자리, 최대 길이 제한 없음.
+    // 아라비아 숫자(0~9)만 허용한다는 의도가 바로 보이도록 [0-9]로 적는다.
+    static final int MIN_PASSWORD_LENGTH = 4;
+    private static final Pattern PASSWORD_PATTERN = Pattern.compile("[0-9]{" + MIN_PASSWORD_LENGTH + ",}");
 
     private final LobbyRoomRepository roomRepository;
     private final UserRepository userRepository;
@@ -56,13 +63,18 @@ public class RoomService {
             throw new IllegalArgumentException("최대 인원은 " + MIN_PLAYERS + "~" + MAX_PLAYERS + "명이어야 합니다.");
         }
 
+        // 비밀방이면 비밀번호 형식 검사 (숫자만, 4자리 이상). 공개방이면 비밀번호는 보내도 무시한다.
+        boolean privateRoom = request.isPrivateRoom();
+        if (privateRoom) validatePassword(request.getPassword());
+
         User user = findUser(memberId);
 
-        // 새로운 룸 생성
+        // 새로운 룸 생성 (공개방이면 Room 생성자가 password를 null로 저장한다)
         Long roomId = roomRepository.generateRoomId();
-        Room room = new Room(roomId, request.getTitle(), user.getId(), request.getMaxPlayers());
+        Room room = new Room(roomId, request.getTitle(), user.getId(), request.getMaxPlayers(),
+                privateRoom, request.getPassword());
 
-        // 방을 만든 사람은 자동으로 해당 방에 입장
+        // 방을 만든 사람은 자동으로 해당 방에 입장 (비밀방이어도 방장은 비밀번호를 입력하지 않는다)
         room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
 
         roomRepository.save(room);
@@ -70,8 +82,20 @@ public class RoomService {
         return RoomResponseDto.from(room);
     }
 
-    // 방 참가
-    public RoomResponseDto joinRoom(Long roomId, Long memberId) {
+    /**
+     * 방 참가. 공개방/비밀방 모두 이 메서드 하나로 처리한다.
+     *
+     * 검사 순서 (방 잠금 안에서)
+     *   1. 게임 중         → 409
+     *   2. 이미 참가 중     → 409  (비밀번호보다 먼저 검사: 이미 들어와 있는 사람은 비밀번호 없이도 "이미 참가 중"을 받아야 Unity의 CheckAlreadyJoined가 대기실로 돌려보낼 수 있다)
+     *   3. 비밀번호 불일치   → 403 WRONG_ROOM_PASSWORD  (공개방은 matchesPassword가 항상 true라 통과)
+     *   4. 정원 초과       → 409  (비밀번호보다 뒤: 비밀번호를 모르는 사람에게 방 인원 상태를 먼저 알려주지 않는다)
+     *
+     * 틀린 횟수 제한은 없다. 평문 비교라 금방 끝나므로 잠금 안에서 해도 다른 요청을 오래 막지 않는다.
+     *
+     * @param password 비밀방 비밀번호. 공개방이면 null이어도 된다. (무시됨)
+     */
+    public RoomResponseDto joinRoom(Long roomId, Long memberId, String password) {
         // DB 조회(User)는 잠금 밖에서 먼저 해서 잠금을 쥐고 있는 시간을 줄인다.
         User user = findUser(memberId);
 
@@ -83,6 +107,7 @@ public class RoomService {
             // 게임은 시작할 때 참가자 명단을 고정하므로, 진행 중인 방에는 새로 들어올 수 없다.
             if (room.isInGame()) throw new IllegalStateException("게임이 진행 중인 방입니다.");
             if (room.containsPlayer(user.getId())) throw new IllegalStateException("이미 참가 중입니다.");
+            if (!room.matchesPassword(password)) throw new RoomPasswordException();
             if (room.isFull()) throw new IllegalStateException("방이 가득 찼습니다.");
 
             room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
@@ -291,6 +316,16 @@ public class RoomService {
             }
             return latest;
         });
+    }
+
+    /**
+     * 비밀방 비밀번호 형식 검사: 숫자만, 최소 4자리. 실패하면 400 BAD_REQUEST.
+     * Unity CreateRoomPopup도 같은 규칙으로 먼저 검사하지만, 최종 검증은 서버가 한다.
+     */
+    private static void validatePassword(String password) {
+        if (password == null || !PASSWORD_PATTERN.matcher(password).matches()) {
+            throw new IllegalArgumentException("비밀번호는 숫자 " + MIN_PASSWORD_LENGTH + "자리 이상이어야 합니다.");
+        }
     }
 
     private Room findRoom(Long roomId) {

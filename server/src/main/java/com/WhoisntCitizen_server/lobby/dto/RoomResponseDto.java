@@ -22,7 +22,7 @@ import lombok.Getter;
  *
  * JSON 모양
  *   상속을 써도 JSON은 중첩되지 않고 평평하게 나간다. Jackson은 부모 필드를 먼저, 자식 필드를 뒤에 쓴다.
- *   예) {"id":1,"title":"초보만","hostUserId":3,"maxPlayers":8,"currentPlayers":2,"status":"WAITING","gameId":null}
+ *   예) {"id":1,"title":"초보만","hostUserId":3,"maxPlayers":8,"currentPlayers":2,"status":"WAITING","gameId":null,"privateRoom":false}
  *   Unity(JsonUtility)는 필드 이름으로 값을 채우므로, 필드 이름을 바꾸면 Unity RoomDtos.cs도 같이 바꿔야 한다.
  *
  * 주의
@@ -41,6 +41,13 @@ public class RoomResponseDto {
     private final String gameId;      // 진행 중인 게임 id (대기 중이면 null). 방장이 아닌 참가자는 방을 조회해 이 값으로 게임 화면에 들어간다
 
     /**
+     * 비밀방 여부. Unity 로비는 이 값으로 자물쇠 아이콘을 표시하고, 입장 시 비밀번호 팝업을 띄운다.
+     * 비밀번호 자체는 절대 응답에 넣지 않는다. (여부만 알려준다)
+     * Lombok이 boolean 게터를 isPrivateRoom()으로 만들고, Jackson은 이를 JSON 키 "privateRoom"으로 쓴다.
+     */
+    private final boolean privateRoom;
+
+    /**
      * Room → 응답 필드 매핑. 공통 필드의 매핑은 이 생성자 한 곳에서만 한다.
      *
      * protected인 이유: 외부에서는 from()으로만 만들게 하고,
@@ -55,6 +62,8 @@ public class RoomResponseDto {
         this.currentPlayers = room.getPlayers().size();
         this.status = room.getStatus();
         this.gameId = room.getGameId();
+        this.privateRoom = room.isPrivateRoom();
+        // room.getPassword()는 여기서 읽지 않는다
     }
 
     /** Room으로 요약 응답을 만든다. (방 목록 / 생성 / 입장) */

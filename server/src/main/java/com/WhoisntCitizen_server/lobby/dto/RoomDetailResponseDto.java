@@ -19,8 +19,8 @@ import java.util.List;
  *   방마다 참가자 명단까지 보내면 응답 크기가 (방 수 × 인원)만큼 커진다.
  *   로비에서는 인원 수(currentPlayers)만 있으면 되므로 명단은 단건 조회에서만 내려준다.
  *
- * JSON 예시 (부모 필드가 먼저, players가 마지막에 붙은 평평한 구조. 상속 전과 키·순서가 같다)
- *   {"id":1,"title":"초보만","hostUserId":3,"maxPlayers":8,"currentPlayers":2,"status":"WAITING","gameId":null,
+ * JSON 예시 (부모 필드가 먼저, players가 마지막에 붙은 평평한 구조)
+ *   {"id":1,"title":"초보만","hostUserId":3,"maxPlayers":8,"currentPlayers":2,"status":"WAITING","gameId":null,"privateRoom":false,
  *    "players":[{"userId":3,"nickname":"유진","ready":false}, ...]}
  */
 @Getter
