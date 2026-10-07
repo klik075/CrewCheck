@@ -182,6 +182,75 @@ class GameFlowServiceEndlessGameTest {
                 .containsExactly(new CancelledGameExpiredEvent(game.getGameId(), "1"));
     }
 
+    // 엇갈린 마지막 요청 시각: 이탈 기준 10초, 검사 주기 5초.
+    // 해적(1)은 0초, 선원(2~5)은 3초에 마지막으로 요청하고 모두 끊긴 뒤 11초에 검사하면
+    // 기준(1초)을 넘은 사람은 해적뿐이고, 선원은 다음 검사(16초, 기준 6초) 전에 넘는다.
+
+    @Test
+    void 함께_끊긴_생존자들이_서로_다른_검사에_걸려도_다음_검사_전에_모두_끊기면_아무도_죽이지_않고_취소한다() {
+        flow.begin(game);
+        scheduler.advance(Duration.ofSeconds(3));
+        touch(2L, 3L, 4L, 5L);
+        scheduler.advance(Duration.ofSeconds(8));
+
+        flow.checkInactivePlayers(game);
+        scheduler.runDue();
+
+        // 예전에는 해적만 먼저 사망 처리되어 끊긴 선원 팀이 승리했다
+        assertThat(game.getEndReason()).isEqualTo(GameEndReason.CANCELLED_ALL_DISCONNECTED);
+        assertThat(game.getWinner()).isNull();
+        assertThat(game.getPlayers()).allMatch(GamePlayer::isAlive);
+        assertThat(eventsOf(PlayersDepartedEvent.class)).isEmpty();
+    }
+
+    @Test
+    void 먼저_끊긴_사람과_같은_시각에_끊긴_사람이_있어도_요청을_계속_보내는_생존자가_있으면_취소하지_않는다() {
+        flow.begin(game);
+        scheduler.advance(Duration.ofSeconds(3));
+        touch(2L, 3L, 4L, 5L);
+        scheduler.advance(Duration.ofSeconds(8));
+        touch(2L); // 선장은 계속 접속 중
+
+        flow.checkInactivePlayers(game);
+        scheduler.runDue();
+
+        assertThat(game.getPlayer(1L).isDeparted()).isTrue();
+        assertThat(game.getPlayers().stream().filter(GamePlayer::isDeparted)).hasSize(1); // 3~5는 다음 검사에서
+        assertThat(game.getWinner()).isEqualTo(Winner.CREW);
+        assertThat(game.getEndReason()).isEqualTo(GameEndReason.WIN);
+    }
+
+    @Test
+    void 다음_검사_뒤에야_기준을_넘는_생존자가_있으면_취소하지_않고_먼저_끊긴_사람만_처리한다() {
+        flow.begin(game);
+        scheduler.advance(Duration.ofSeconds(6));
+        touch(2L, 3L, 4L, 5L); // 선원은 6초: 11초 검사의 다음 기준(6초)보다 오래되지 않았다
+        scheduler.advance(Duration.ofSeconds(5));
+
+        flow.checkInactivePlayers(game);
+        scheduler.runDue();
+
+        assertThat(game.getPlayer(1L).isDeparted()).isTrue();
+        assertThat(game.getWinner()).isEqualTo(Winner.CREW);
+    }
+
+    @Test
+    void 죽은_관전자가_접속_중이어도_생존자가_모두_다음_검사_전에_끊기면_취소한다() {
+        flow.begin(game);
+        game.getPlayer(4L).kill();
+        game.getPlayer(5L).kill();
+        scheduler.advance(Duration.ofSeconds(3));
+        touch(2L, 3L);         // 살아 있는 선장·선원3은 3초, 해적은 0초. 죽은 4·5는 계속 접속 중
+        scheduler.advance(Duration.ofSeconds(8));
+        touch(4L, 5L);
+
+        flow.checkInactivePlayers(game);
+        scheduler.runDue();
+
+        assertThat(game.getEndReason()).isEqualTo(GameEndReason.CANCELLED_ALL_DISCONNECTED);
+        assertThat(game.getPlayer(1L).isAlive()).isTrue();
+    }
+
     @Test
     void 이미_죽은_사람이_끊기면_방에서만_빼고_사망_안내는_하지_않는다() {
         flow.begin(game);
@@ -329,5 +398,22 @@ class GameFlowServiceEndlessGameTest {
 
         assertThatCode(() -> brokenFlow.resolveVote(game)).doesNotThrowAnyException();
         assertThat(game.getEndReason()).isEqualTo(GameEndReason.CANCELLED_ERROR);
+    }
+
+    @Test
+    void 판정_중_Error가_나도_타이머든_요청이든_게임을_취소한다() {
+        VoteResolver broken = mock(VoteResolver.class);
+        when(broken.resolve(any())).thenThrow(new StackOverflowError("판정 버그"));
+        GameFlowService brokenFlow = newFlow(broken);
+        brokenFlow.begin(game);
+        scheduler.advance(Duration.ofSeconds(95));
+
+        assertThatCode(() -> brokenFlow.resolveVote(game)).doesNotThrowAnyException();
+        assertThat(game.getEndReason()).isEqualTo(GameEndReason.CANCELLED_ERROR);
+
+        Game other = newGame();
+        brokenFlow.begin(other);
+        assertThatCode(() -> scheduler.advance(Duration.ofSeconds(UNTIL_VOTE_ENDS))).doesNotThrowAnyException();
+        assertThat(other.getEndReason()).isEqualTo(GameEndReason.CANCELLED_ERROR);
     }
 }

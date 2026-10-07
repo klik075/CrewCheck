@@ -46,9 +46,9 @@ import java.util.stream.Collectors;
  *
  * 끝나지 않는 게임 방지:
  *  - 연결 끊김(checkInactivePlayers): 마지막 요청 후 inactiveTimeoutSeconds 동안 요청이 없으면 사망 처리 + 방에서 제외 → 승리 조건 검사.
- *    살아 있는 플레이어가 모두 끊기면 아무도 사망 처리하지 않고 게임을 취소한다.
+ *    살아 있는 플레이어가 모두 끊기면(다음 검사 전에 끊길 사람 포함) 아무도 사망 처리하지 않고 게임을 취소한다.
  *  - 사망자 없는 날: maxDaysWithoutDeath일 연속 아무도 죽지 않으면 그날 투표 결과 직후 게임을 취소한다.
- *  - 페이즈 전환 중 예외: 게임을 취소한다. (그대로 두면 그 페이즈에 영원히 멈춘다)
+ *  - 페이즈 전환 중 예외(Error 포함): 게임을 취소한다. (그대로 두면 그 페이즈에 영원히 멈춘다)
  *  취소된 게임은 승리 팀이 없고 전적에 반영하지 않으며, 결과 조회 시간이 지나면 방(과 채팅)도 삭제된다.
  */
 @Service
@@ -102,7 +102,7 @@ public class GameFlowService {
         synchronized (game) {
             try {
                 doResolveNight(game);
-            } catch (RuntimeException e) {
+            } catch (RuntimeException | Error e) {
                 cancelAfterError(game, e);
             }
         }
@@ -147,7 +147,7 @@ public class GameFlowService {
         synchronized (game) {
             try {
                 doResolveVote(game);
-            } catch (RuntimeException e) {
+            } catch (RuntimeException | Error e) {
                 cancelAfterError(game, e);
             }
         }
@@ -219,12 +219,15 @@ public class GameFlowService {
         scheduleCleanup(game);
     }
 
-    /** 페이즈 전환 중 예외: 그대로 두면 그 페이즈에 영원히 멈추므로 게임을 취소한다. 취소가 실패해도 예외를 밖으로 던지지 않는다. */
-    private void cancelAfterError(Game game, RuntimeException e) {
+    /**
+     * 페이즈 전환 중 예외: 그대로 두면 그 페이즈에 영원히 멈추므로 게임을 취소한다. 취소가 실패해도 예외를 밖으로 던지지 않는다.
+     * 판정 코드의 버그로 나는 Error(StackOverflowError 등)도 같은 이유로 여기서 처리한다.
+     */
+    private void cancelAfterError(Game game, Throwable e) {
         log.error("[{}] 페이즈 전환 실패 (phase={}) → 게임 취소", game.getGameId(), game.getPhase(), e);
         try {
             cancel(game, GameEndReason.CANCELLED_ERROR);
-        } catch (RuntimeException cancelError) {
+        } catch (RuntimeException | Error cancelError) {
             log.error("[{}] 게임 취소 처리 실패", game.getGameId(), cancelError);
         }
     }
@@ -235,6 +238,8 @@ public class GameFlowService {
      * 연결이 끊긴 플레이어 처리. InactivePlayerMonitor가 주기적으로 호출한다.
      * 마지막 요청 후 inactiveTimeoutSeconds 동안 요청이 없는 플레이어를 게임에서 내보낸다.
      *  - 살아 있는 플레이어가 모두 끊겼으면: 아무도 사망 처리하지 않고 게임을 취소한다.
+     *    다음 검사(inactiveCheckSeconds 뒤) 전에 기준을 넘을 사람도 끊긴 것으로 센다. 함께 끊겨도 마지막 요청 시각이
+     *    조금씩 달라 서로 다른 검사에 걸리면, 먼저 걸린 사람만 죽고 그 죽음으로 승패가 나 버리기 때문이다.
      *  - 아니면: 끊긴 사람을 한꺼번에 사망 처리하고 방에서 뺀 뒤 승리 조건을 한 번만 검사한다.
      *    (한 명씩 처리하면 동시에 끊긴 마지막 생존자들 사이에서 승패가 나 버린다)
      *    이미 죽은 사람(관전 중)이 끊기면 방에서만 뺀다.
@@ -252,17 +257,20 @@ public class GameFlowService {
             if (inactive.isEmpty()) {
                 return;
             }
+            // 다음 검사 때의 기준. 이번에는 내보내지 않지만 전원 끊김 판단에는 넣는다.
+            Instant nextCutoff = cutoff.plusSeconds(Math.max(0, phaseProps.inactiveCheckSeconds()));
+            long aliveGoneByNextCheck = game.inactivePlayers(nextCutoff).stream().filter(GamePlayer::isAlive).count();
             try {
-                handleDepartures(game, inactive);
-            } catch (RuntimeException e) {
+                handleDepartures(game, inactive, aliveGoneByNextCheck);
+            } catch (RuntimeException | Error e) {
                 cancelAfterError(game, e);
             }
         }
     }
 
-    private void handleDepartures(Game game, List<GamePlayer> inactive) {
+    private void handleDepartures(Game game, List<GamePlayer> inactive, long aliveGoneByNextCheck) {
         long inactiveAlive = inactive.stream().filter(GamePlayer::isAlive).count();
-        if (inactiveAlive > 0 && inactiveAlive == game.aliveCount()) {
+        if (inactiveAlive > 0 && aliveGoneByNextCheck == game.aliveCount()) {
             cancel(game, GameEndReason.CANCELLED_ALL_DISCONNECTED);
             return;
         }
@@ -385,7 +393,7 @@ public class GameFlowService {
                     case EXECUTION -> enterNight(game);
                     default -> { }
                 }
-            } catch (RuntimeException e) {
+            } catch (RuntimeException | Error e) {
                 cancelAfterError(game, e);
             }
         }

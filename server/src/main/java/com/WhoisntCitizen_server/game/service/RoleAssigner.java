@@ -4,6 +4,7 @@ import com.WhoisntCitizen_server.common.exception.GameRuleException;
 import com.WhoisntCitizen_server.game.dto.RoleComposition;
 import com.WhoisntCitizen_server.game.dto.RoleSetup;
 import com.WhoisntCitizen_server.game.dto.RoleSetupMode;
+import com.WhoisntCitizen_server.jobs.domain.Faction;
 import com.WhoisntCitizen_server.jobs.domain.RoleDefinition;
 import com.WhoisntCitizen_server.jobs.service.RoleCatalog;
 import org.springframework.stereotype.Component;
@@ -26,7 +27,8 @@ import java.util.stream.IntStream;
  *  - RECOMMENDED: 인원수별 추천 구성표(RECOMMENDED). 해적 진영은 max(1, 인원/3)명이다.
  *  - CUSTOM: 방장이 편집한 인원수별 구성표. 편집하지 않은 인원수는 추천 구성을 쓴다.
  *  - RANDOM: 진영 수는 추천 구성과 같고, 각 진영 안의 직업을 후보 중에서 무작위로 뽑는다. 제3 세력은 후보가 될 수 없다.
- * 어떤 방식이든 인원수와 개수가 같고, 공격할 수 있는 해적이 있고, 해적 진영이 선원 진영보다 적어야 한다.
+ * 어떤 방식이든 인원수와 개수가 같고, 공격할 수 있는 해적이 있고, 해적 진영이 선원 진영보다 적어야 하고,
+ * 원숭이가 있으면 원숭이가 위장할 직업도 1개 이상 있어야 한다.
  * 추천 구성표는 서버 시작 시, 커스텀 구성은 방장이 저장할 때와 게임 시작 때 이 규칙으로 검증한다.
  */
 @Component
@@ -45,10 +47,6 @@ public class RoleAssigner {
     public static final String BOATSWAIN_ROLE = "CREW_BOATSWAIN";
     public static final String DRUNK_ROLE = "CREW_DRUNK";
     public static final String MONKEY_ROLE = "CREW_MONKEY";
-
-    // 원숭이의 위장 후보. 원숭이는 자신이 원숭이인 줄 모르고 이 중 하나로 보인다.
-    public static final List<String> MONKEY_DISGUISE_ROLES =
-            List.of(POLICE_ROLE, DOCTOR_ROLE, LOOKOUT_ROLE, BOATSWAIN_ROLE, DRUNK_ROLE);
 
     // 9인 이상 구성의 공통 직업(해적 2 + 앵무새 + 특수 선원 6)
     private static final List<String> NINE = List.of(
@@ -77,7 +75,6 @@ public class RoleAssigner {
     private final RoleCatalog roleCatalog;
     private final RoleDefinition raider;
     private final RoleDefinition sailor;
-    private final List<RoleDefinition> monkeyDisguises;
     private final Map<Integer, List<RoleDefinition>> recommended;
     // 고를 수 있는 직업 전체와 그중 랜덤 후보가 될 수 있는 특수 직업(해적·선원 제외). 둘 다 화면 표시 순서다.
     private final List<RoleDefinition> roles;
@@ -86,10 +83,9 @@ public class RoleAssigner {
     public RoleAssigner(Random random, RoleCatalog roleCatalog) {
         this.random = random;
         this.roleCatalog = roleCatalog;
-        // 서버 시작 시 위장 후보와 구성표의 직업이 DB에 모두 있는지 확인된다(없으면 RoleCatalog.get이 예외).
+        // 서버 시작 시 구성표의 직업이 DB에 모두 있는지 확인된다(없으면 RoleCatalog.get이 예외).
         this.raider = roleCatalog.get(MAFIA_ROLE);
         this.sailor = roleCatalog.get(CITIZEN_ROLE);
-        this.monkeyDisguises = MONKEY_DISGUISE_ROLES.stream().map(roleCatalog::get).toList();
         this.recommended = resolveRecommended(roleCatalog);
         this.roles = roleCatalog.all().stream().sorted(displayOrder()).toList();
         // 제3 세력(크라켄·세이렌 등)은 인원 구성을 정할 때까지 랜덤 후보에서 빼고 커스텀 구성에서만 고른다.
@@ -100,14 +96,30 @@ public class RoleAssigner {
     }
 
     /**
-     * 본인에게 보일 직업. 원숭이면 위장 후보 중 무작위로 정하고, 아니면 실제 직업 그대로.
+     * 본인에게 보일 직업. 원숭이면 이번 게임 구성(composition)에 있는 위장 후보 중 무작위로 정하고, 아니면 실제 직업 그대로.
+     * 구성에 없는 직업으로 보이면 원숭이가 바로 눈치채므로 구성 밖에서는 뽑지 않는다. 같은 직업이 여럿이어도 한 번으로 센다.
      * 배정할 때 한 번만 호출해 GamePlayer에 고정한다.
+     *
+     * @param composition 이번 게임에 배정된 직업 전체 (assign의 반환값)
      */
-    public RoleDefinition shownRoleOf(RoleDefinition role) {
+    public RoleDefinition shownRoleOf(RoleDefinition role, List<RoleDefinition> composition) {
         if (!role.isMonkey()) {
             return role;
         }
-        return monkeyDisguises.get(random.nextInt(monkeyDisguises.size()));
+        List<RoleDefinition> disguises = composition.stream()
+                .filter(RoleAssigner::isMonkeyDisguise)
+                .distinct()
+                .toList();
+        if (disguises.isEmpty()) {
+            // 구성 규칙(problemOf)이 막으므로 오지 않는다. 랜덤 구성은 선원 진영 자리가 2개 이상이라 항상 후보가 있다.
+            throw new IllegalStateException("원숭이가 위장할 직업이 구성에 없습니다: " + composition);
+        }
+        return disguises.get(random.nextInt(disguises.size()));
+    }
+
+    /** 원숭이가 위장할 수 있는 직업: 원숭이를 뺀 선원 진영 전부와 능력이 없는 제3 세력(유령 선장·인어). */
+    static boolean isMonkeyDisguise(RoleDefinition role) {
+        return (role.faction() == Faction.CREW && !role.isMonkey()) || role.isGhostCaptain() || role.isMermaid();
     }
 
     /** 추천 구성으로 배정한다. 반환 리스트의 i번째 역할이 i번째 플레이어의 역할이다. */
@@ -280,6 +292,9 @@ public class RoleAssigner {
         long pirates = roles.stream().filter(RoleDefinition::isPirate).count();
         if (pirates * 2 >= playerCount) {
             return "해적 진영(" + pirates + "명)은 선원 진영(" + (playerCount - pirates) + "명)보다 적어야 합니다.";
+        }
+        if (roles.stream().anyMatch(RoleDefinition::isMonkey) && roles.stream().noneMatch(RoleAssigner::isMonkeyDisguise)) {
+            return "원숭이가 있으면 원숭이가 위장할 직업(원숭이를 뺀 선원 진영, 유령 선장, 인어)도 1명 이상 있어야 합니다.";
         }
         return null;
     }

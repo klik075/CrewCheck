@@ -6,6 +6,7 @@ import com.WhoisntCitizen_server.game.dto.MyRoleResponse;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
+import com.WhoisntCitizen_server.game.entity.Team;
 import com.WhoisntCitizen_server.jobs.domain.ActionCode;
 import com.WhoisntCitizen_server.jobs.domain.Faction;
 import com.WhoisntCitizen_server.jobs.domain.RoleDefinition;
@@ -16,8 +17,10 @@ import com.WhoisntCitizen_server.night.entity.ReportType;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
@@ -45,6 +48,8 @@ class MonkeyTest {
             new RoleDefinition("CREW_MONKEY", "원숭이", Faction.CREW, null);
     private static final RoleDefinition SAILOR =
             new RoleDefinition("CREW_SAILOR", "선원", Faction.CREW, null);
+    private static final RoleDefinition GHOST_CAPTAIN =
+            new RoleDefinition("NEUTRAL_GHOST_CAPTAIN", "유령 선장", Faction.NEUTRAL, null);
 
     private final NightActionResolver resolver = new NightActionResolver(new Random(42));
 
@@ -60,6 +65,11 @@ class MonkeyTest {
         Game game = new Game("room-1", List.of(players));
         game.changePhase(GamePhase.NIGHT, Instant.now().plusSeconds(30));
         return game;
+    }
+
+    /** 다음 밤으로 넘긴다. (판정은 페이즈를 바꾸지 않는다) */
+    private static void nextNight(Game game) {
+        game.changePhase(GamePhase.NIGHT, Instant.now().plusSeconds(30));
     }
 
     // ---------- 효과 없음 ----------
@@ -166,6 +176,66 @@ class MonkeyTest {
         assertThat(game.getPlayer(2L).remainingUses(ActionCode.READ_CORPSE_ROLE)).isEqualTo(1);
     }
 
+    // ---------- 가짜 결과는 한 게임 안에서 고정 ----------
+
+    @Test
+    void 원숭이_선장은_같은_대상을_다시_조사하면_처음과_같은_진영을_받는다() {
+        Set<Faction> firstResults = new HashSet<>();
+        for (int g = 0; g < 20; g++) { // 같은 Random을 이어 쓰며 게임 20판
+            Game game = night(player(1, RAIDER), monkeyAs(2, CAPTAIN), player(3, SAILOR), player(4, SAILOR));
+
+            // 3 → 4 → 3 → 4 … 다른 대상을 사이에 끼워도 같은 대상의 결과는 그대로다
+            Map<Long, Set<Faction>> resultsByTarget = new HashMap<>();
+            for (int day = 0; day < 6; day++) {
+                if (day > 0) {
+                    nextNight(game);
+                }
+                long target = day % 2 == 0 ? 3L : 4L;
+                game.recordNightAction(2L, target);
+                Faction faction = resolver.resolve(game).reportsFor(2L).get(0).faction();
+                resultsByTarget.computeIfAbsent(target, t -> new HashSet<>()).add(faction);
+            }
+
+            assertThat(resultsByTarget.get(3L)).hasSize(1);
+            assertThat(resultsByTarget.get(4L)).hasSize(1);
+            firstResults.addAll(resultsByTarget.get(3L));
+        }
+        assertThat(firstResults).containsExactlyInAnyOrder(Faction.CREW, Faction.PIRATE); // 처음 결과는 여전히 무작위다
+    }
+
+    @Test
+    void 원숭이_주정뱅이는_같은_시체를_다시_보면_처음과_같은_직업을_받는다() {
+        for (int g = 0; g < 20; g++) { // 같은 Random을 이어 쓰며 게임 20판
+            Game game = night(player(1, RAIDER), monkeyAs(2, DRUNK), player(3, CAPTAIN),
+                    player(4, SAILOR), player(5, LOOKOUT));
+            game.getPlayer(4L).kill();
+
+            game.recordNightAction(2L, 4L);
+            String first = resolver.resolve(game).reportsFor(2L).get(0).roleCode();
+            nextNight(game);
+            game.recordNightAction(2L, 4L);
+            String second = resolver.resolve(game).reportsFor(2L).get(0).roleCode();
+
+            assertThat(second).isEqualTo(first);
+        }
+    }
+
+    @Test
+    void 원숭이_망루지기의_가짜_방문자는_진짜처럼_밤마다_달라질_수_있다() {
+        Game game = night(player(1, RAIDER), monkeyAs(2, LOOKOUT), player(3, SAILOR),
+                player(4, SAILOR), player(5, SAILOR), player(6, SAILOR));
+
+        Set<List<Long>> seen = new HashSet<>();
+        for (int day = 0; day < 20; day++) {
+            if (day > 0) {
+                nextNight(game);
+            }
+            game.recordNightAction(2L, 3L);
+            seen.add(resolver.resolve(game).reportsFor(2L).get(0).playerIds());
+        }
+        assertThat(seen).hasSizeGreaterThan(1);
+    }
+
     @Test
     void 원숭이_선의는_결과가_없고_원숭이_갑판장은_진짜처럼_차단_결과를_받는다() {
         Game game = night(player(1, RAIDER), monkeyAs(2, DOCTOR), monkeyAs(3, BOATSWAIN), player(4, SAILOR));
@@ -252,6 +322,30 @@ class MonkeyTest {
         assertThat(me.role()).isEqualTo("CREW_CAPTAIN");
         assertThat(me.roleName()).isEqualTo("선장");
         assertThat(me.actionCode()).isEqualTo(ActionCode.INVESTIGATE_FACTION);
+        assertThat(me.team()).isEqualTo(Team.CREW);
         assertThat(result.role()).isEqualTo("CREW_MONKEY");
+    }
+
+    @Test
+    void 유령_선장으로_위장한_원숭이는_팀도_제3_세력으로_보이고_실제_팀은_선원이다() {
+        GamePlayer monkey = monkeyAs(2, GHOST_CAPTAIN);
+        Game game = night(player(1, RAIDER), monkey, player(3, SAILOR));
+
+        MyRoleResponse me = MyRoleResponse.of(game, monkey);
+
+        assertThat(me.role()).isEqualTo("NEUTRAL_GHOST_CAPTAIN");
+        assertThat(me.faction()).isEqualTo(Faction.NEUTRAL);
+        assertThat(me.team()).isEqualTo(Team.NEUTRAL); // 진짜 유령 선장과 같다
+        assertThat(monkey.getTeam()).isEqualTo(Team.CREW); // 승리 판정과 게임 결과는 실제 팀
+        assertThat(GameResultResponse.PlayerResult.from(monkey).team()).isEqualTo(Team.CREW);
+    }
+
+    @Test
+    void 유혹당한_원숭이는_위장과_관계없이_세이렌_팀으로_보인다() {
+        GamePlayer monkey = monkeyAs(2, GHOST_CAPTAIN);
+        Game game = night(player(1, RAIDER), monkey, player(3, SAILOR));
+        monkey.joinSirenTeam(Instant.now());
+
+        assertThat(MyRoleResponse.of(game, monkey).team()).isEqualTo(Team.SIREN);
     }
 }
