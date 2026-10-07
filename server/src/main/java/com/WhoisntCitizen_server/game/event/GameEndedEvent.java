@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.event;
 
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GameEndReason;
+import com.WhoisntCitizen_server.game.entity.Winner;
 import com.WhoisntCitizen_server.jobs.domain.Faction;
 
 import java.util.List;
@@ -15,27 +16,27 @@ import java.util.List;
 public record GameEndedEvent(
         String gameId,
         String roomId,
-        Faction winner,               // 취소된 게임이면 null
+        Winner winner,                // 취소된 게임이면 null
         GameEndReason endReason,
         int lastDay,
         boolean recordStats,          // true면 회원 전적에 반영 (방에서 시작한 실제 게임)
         List<PlayerOutcome> outcomes
 ) {
-    /** userId = User(프로필)의 id = 게임의 playerId */
+    /** userId = User(프로필)의 id = 게임의 playerId. win은 Game.winnerIds 기준(팀 승리면 사망자 포함, 단독 승리면 그 사람만) */
     public record PlayerOutcome(Long userId, String roleCode, Faction faction, boolean alive, boolean win) {
     }
 
     public static GameEndedEvent from(Game game) {
-        Faction winner = game.getWinner();
+        List<Long> winnerIds = game.getWinnerIds();
         List<PlayerOutcome> outcomes = game.getPlayers().stream()
                 .map(p -> new PlayerOutcome(
                         p.getPlayerId(),
                         p.getRole().code(),
                         p.getRole().faction(),
                         p.isAlive(),
-                        p.getRole().faction() == winner))
+                        winnerIds.contains(p.getPlayerId())))
                 .toList();
-        return new GameEndedEvent(game.getGameId(), game.getRoomId(), winner, game.getEndReason(), game.getDay(),
+        return new GameEndedEvent(game.getGameId(), game.getRoomId(), game.getWinner(), game.getEndReason(), game.getDay(),
                 game.isRecordStats(), outcomes);
     }
 

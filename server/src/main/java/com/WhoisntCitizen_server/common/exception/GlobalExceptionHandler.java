@@ -45,6 +45,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse("CONFLICT", e.getMessage()));
     }
 
+    // ---------- 로비 ----------
+
+    /** 비밀방 비밀번호 없음/불일치: 403. Unity는 code로 비밀번호 재입력 여부를 판단한다 */
+    @ExceptionHandler(RoomPasswordException.class)
+    public ResponseEntity<ErrorResponse> handleRoomPassword(RoomPasswordException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ErrorResponse(RoomPasswordException.CODE, e.getMessage()));
+    }
+
     // ---------- 채팅 ----------
 
     /** 채팅 대상 방 없음: 404 */

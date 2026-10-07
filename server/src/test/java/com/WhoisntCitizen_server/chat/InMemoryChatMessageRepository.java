@@ -19,9 +19,10 @@ class InMemoryChatMessageRepository implements ChatMessageRepository {
 
     @Override
     public synchronized ChatMessage save(long roomId, MessageType type, Long userId, String nickname, String message,
-                                         String gameId, boolean pirateOnly) {
+                                         String gameId, boolean pirateOnly, boolean sirenOnly) {
         long id = seqs.computeIfAbsent(roomId, k -> new AtomicLong()).incrementAndGet();
-        ChatMessage m = new ChatMessage(id, roomId, type, userId, nickname, message, LocalDateTime.now(), gameId, pirateOnly);
+        ChatMessage m = new ChatMessage(id, roomId, type, userId, nickname, message, LocalDateTime.now(), gameId,
+                pirateOnly, sirenOnly);
         rooms.computeIfAbsent(roomId, k -> new ArrayList<>()).add(m);
         return m;
     }

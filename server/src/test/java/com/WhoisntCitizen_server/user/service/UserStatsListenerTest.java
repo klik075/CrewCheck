@@ -1,6 +1,7 @@
 package com.WhoisntCitizen_server.user.service;
 
 import com.WhoisntCitizen_server.game.entity.GameEndReason;
+import com.WhoisntCitizen_server.game.entity.Winner;
 import com.WhoisntCitizen_server.game.event.GameEndedEvent;
 import com.WhoisntCitizen_server.jobs.domain.Faction;
 import org.junit.jupiter.api.Test;
@@ -33,7 +34,7 @@ class UserStatsListenerTest {
     void 승리_팀이_정해진_게임은_전적에_반영한다() {
         UserStatsService stats = mock(UserStatsService.class);
         UserStatsListener listener = new UserStatsListener(stats, event -> { });
-        GameEndedEvent event = new GameEndedEvent("g-1", "1", Faction.CREW, GameEndReason.WIN, 3, true, OUTCOMES);
+        GameEndedEvent event = new GameEndedEvent("g-1", "1", Winner.CREW, GameEndReason.WIN, 3, true, OUTCOMES);
 
         listener.onGameEnded(event);
 

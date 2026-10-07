@@ -51,9 +51,10 @@ public class RedisChatMessageRepository implements ChatMessageRepository {
 
     @Override
     public ChatMessage save(long roomId, MessageType type, Long userId, String nickname, String text,
-                            String gameId, boolean pirateOnly) {
+                            String gameId, boolean pirateOnly, boolean sirenOnly) {
         Long id = redis.opsForValue().increment(seqKey(roomId));
-        ChatMessage message = new ChatMessage(id, roomId, type, userId, nickname, text, LocalDateTime.now(), gameId, pirateOnly);
+        ChatMessage message = new ChatMessage(id, roomId, type, userId, nickname, text, LocalDateTime.now(), gameId,
+                pirateOnly, sirenOnly);
 
         String key = messagesKey(roomId);
         redis.opsForZSet().add(key, toJson(message), id);

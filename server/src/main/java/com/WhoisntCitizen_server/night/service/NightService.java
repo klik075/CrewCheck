@@ -6,6 +6,7 @@ import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
+import com.WhoisntCitizen_server.jobs.domain.ActionCode;
 import com.WhoisntCitizen_server.night.dto.NightActionResponse;
 import com.WhoisntCitizen_server.night.dto.NightResultResponse;
 import com.WhoisntCitizen_server.night.entity.NightResult;
@@ -28,11 +29,19 @@ public class NightService {
         this.clock = clock;
     }
 
-    /** 3. 밤 능력 사용. 앵무새가 해적을 지목하면 즉시 접선하고, 알게 된 해적 id를 응답으로 알려 준다. */
+    /** 3. 직업의 기본 능력으로 밤 능력 사용 */
     public NightActionResponse submitAction(String gameId, Long actorId, Long targetId) {
+        return submitAction(gameId, actorId, null, targetId);
+    }
+
+    /**
+     * 3. 밤 능력 사용. 앵무새가 해적을 지목하면 즉시 접선하고, 알게 된 해적 id를 응답으로 알려 준다.
+     * actionCode가 null이면 직업의 기본 능력. 크라켄은 KRAKEN_STRIKE(대상 없음)를 고를 수 있다.
+     */
+    public NightActionResponse submitAction(String gameId, Long actorId, ActionCode actionCode, Long targetId) {
         Game game = findGame(gameId);
         synchronized (game) {
-            boolean contacted = game.recordNightAction(actorId, targetId, clock.instant());
+            boolean contacted = game.recordNightAction(actorId, actionCode, targetId, clock.instant());
             gameRepository.save(game);
             announceToPirates(game, actorId, targetId, contacted);
             // 전원 제출 시 타이머를 기다리지 않고 바로 결과 공개.
@@ -76,8 +85,11 @@ public class NightService {
             List<NightResultResponse.ReportView> myReports = nightResult.reportsFor(requester.getPlayerId()).stream()
                     .map(r -> toView(game, r))
                     .toList();
+            List<NightResultResponse.DeathView> deaths = nightResult.deaths().stream()
+                    .map(d -> new NightResultResponse.DeathView(d.playerId(), nicknameOf(game, d.playerId()), d.cause()))
+                    .toList();
             return new NightResultResponse(nightResult.day(), nightResult.killedPlayerId(),
-                    nicknameOf(game, nightResult.killedPlayerId()), nightResult.protectedByDoctor(), myReports);
+                    nicknameOf(game, nightResult.killedPlayerId()), nightResult.protectedByDoctor(), myReports, deaths);
         }
     }
 

@@ -512,4 +512,44 @@ class ChatMessageControllerTest {
         loginAs(JISU_MEMBER); // 선원
         getMessages().andExpect(jsonPath("$", hasSize(0)));
     }
+
+    // ---------- 게임 중 채팅: 세이렌 팀 (세이렌만 말하고 팀원은 읽기만) ----------
+
+    static final RoleDefinition SIREN = new RoleDefinition("NEUTRAL_SIREN", "세이렌", Faction.NEUTRAL, null);
+
+    @Test
+    void 밤에_세이렌이_입력한_채팅은_유혹당한_뒤의_팀원에게만_보이고_팀원은_밤에_입력할_수_없다() throws Exception {
+        Game game = new Game(String.valueOf(ROOM_ID), List.of(
+                new GamePlayer(CHULSOO_USER, "철수", SIREN),
+                new GamePlayer(MINSU_USER, "민수", SAILOR),
+                new GamePlayer(JISU_USER, "지수", RAIDER)));
+        game.changePhase(GamePhase.NIGHT, Instant.now().plusSeconds(60));
+        games.save(game);
+        room.startGame(game.getGameId());
+
+        send(ROOM_ID, "유혹 전의 노래")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sirenChat").value(true))
+                .andExpect(jsonPath("$.nightChat").value(false));
+
+        Thread.sleep(5);
+        game.getPlayer(MINSU_USER).joinSirenTeam(Instant.now());
+        Thread.sleep(5);
+
+        send(ROOM_ID, "이제 우리 팀이야").andExpect(status().isCreated());
+
+        loginAs(MINSU_MEMBER); // 유혹당한 팀원: 유혹 뒤의 메시지만 읽고, 밤에 입력할 수 없다
+        getMessages()
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].message").value("이제 우리 팀이야"))
+                .andExpect(jsonPath("$[0].sirenChat").value(true));
+        send(ROOM_ID, "알겠어").andExpect(status().isForbidden());
+
+        loginAs(JISU_MEMBER); // 해적: 세이렌 채팅은 보이지 않는다
+        getMessages().andExpect(jsonPath("$", hasSize(0)));
+
+        game.getPlayer(MINSU_USER).kill(); // 사망한 팀원도 계속 읽는다
+        loginAs(MINSU_MEMBER);
+        getMessages().andExpect(jsonPath("$", hasSize(1)));
+    }
 }

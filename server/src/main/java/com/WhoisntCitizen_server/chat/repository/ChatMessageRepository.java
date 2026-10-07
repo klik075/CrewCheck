@@ -12,9 +12,16 @@ public interface ChatMessageRepository {
      * 새 메시지를 저장하고, id와 createdAt이 채워진 메시지를 반환합니다.
      * gameId: 게임 중 일부에게만 보이는 메시지(사망자 채팅, 밤의 해적 채팅)면 그 게임 id, 아니면 null
      * pirateOnly: 밤에 해적이 보내 해적에게만 보이는 메시지인지
+     * sirenOnly: 밤에 세이렌이 보내 세이렌 팀에게만 보이는 메시지인지
      */
     ChatMessage save(long roomId, MessageType type, Long userId, String nickname, String message,
-                     String gameId, boolean pirateOnly);
+                     String gameId, boolean pirateOnly, boolean sirenOnly);
+
+    /** 세이렌 채팅이 아닌 메시지 저장 */
+    default ChatMessage save(long roomId, MessageType type, Long userId, String nickname, String message,
+                             String gameId, boolean pirateOnly) {
+        return save(roomId, type, userId, nickname, message, gameId, pirateOnly, false);
+    }
 
     /** 해적 전용이 아닌 메시지 저장 */
     default ChatMessage save(long roomId, MessageType type, Long userId, String nickname, String message, String gameId) {

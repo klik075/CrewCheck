@@ -1,6 +1,7 @@
 package com.WhoisntCitizen_server.lobby.service;
 
 import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
+import com.WhoisntCitizen_server.common.exception.RoomPasswordException;
 import com.WhoisntCitizen_server.game.dto.GameParticipant;
 import com.WhoisntCitizen_server.game.dto.StartGameResponse;
 import com.WhoisntCitizen_server.game.service.GameService;
@@ -23,8 +24,10 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -34,6 +37,26 @@ public class RoomService {
     // 인원 규칙은 게임 쪽(RoleAssigner) 값을 그대로 사용한다. 규칙을 바꿀 때 한 곳만 고치면 된다.
     private static final int MIN_PLAYERS = RoleAssigner.MIN_PLAYERS;
     private static final int MAX_PLAYERS = RoleAssigner.MAX_PLAYERS;
+
+    // 비밀방 비밀번호 규칙: 숫자(0~9)만, 최소 4자리, 최대 길이 제한 없음.
+    // 아라비아 숫자(0~9)만 허용한다는 의도가 바로 보이도록 [0-9]로 적는다.
+    static final int MIN_PASSWORD_LENGTH = 4;
+    private static final Pattern PASSWORD_PATTERN = Pattern.compile("[0-9]{" + MIN_PASSWORD_LENGTH + ",}");
+
+    // 방 검색: 검색어 최대 길이 (공백을 뺀 글자 수). Unity 검색 입력칸의 Character Limit과 맞춘다.
+    static final int MAX_SEARCH_KEYWORD_LENGTH = 30;
+    // 공백을 찾는 정규식 패턴을 미리 만들어 상수로 저장
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+    /*
+     * \s: 공백 문자 하나를 뜻함. 스페이스, 탭(\t), 줄바꿈(\n) 등이 해당
+     * +: 앞의 것이 1개 이상 연속된다는 뜻
+     * -> 합치면 "연속된 공백 덩어리".
+     * 자바 문자열 안에서는 \ 자체를 \\로 써야 해서 "\\s+"가 됐다. 정규식 엔진이 실제로 받는 값은 \s+
+     *
+     * static final로 둔 이유
+     *  Pattern.compile은 정규식을 해석하는 작업이라 비용이 있다. 검색할 때마다 새로 컴파일하지 않도록 클래스가 처음 로드될 때 한 번만 만들어 두고 계속 재사용.
+     *  text.replaceAll("\\s+", "")로 써도 결과는 같지만 이렇게 쓰면 호출할 때마다 패턴을 새로 컴파일한다.
+     */
 
     private final LobbyRoomRepository roomRepository;
     private final UserRepository userRepository;
@@ -56,13 +79,18 @@ public class RoomService {
             throw new IllegalArgumentException("최대 인원은 " + MIN_PLAYERS + "~" + MAX_PLAYERS + "명이어야 합니다.");
         }
 
+        // 비밀방이면 비밀번호 형식 검사 (숫자만, 4자리 이상). 공개방이면 비밀번호는 보내도 무시한다.
+        boolean privateRoom = request.isPrivateRoom();
+        if (privateRoom) validatePassword(request.getPassword());
+
         User user = findUser(memberId);
 
-        // 새로운 룸 생성
+        // 새로운 룸 생성 (공개방이면 Room 생성자가 password를 null로 저장한다)
         Long roomId = roomRepository.generateRoomId();
-        Room room = new Room(roomId, request.getTitle(), user.getId(), request.getMaxPlayers());
+        Room room = new Room(roomId, request.getTitle(), user.getId(), request.getMaxPlayers(),
+                privateRoom, request.getPassword());
 
-        // 방을 만든 사람은 자동으로 해당 방에 입장
+        // 방을 만든 사람은 자동으로 해당 방에 입장 (비밀방이어도 방장은 비밀번호를 입력하지 않는다)
         room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
 
         roomRepository.save(room);
@@ -70,8 +98,20 @@ public class RoomService {
         return RoomResponseDto.from(room);
     }
 
-    // 방 참가
-    public RoomResponseDto joinRoom(Long roomId, Long memberId) {
+    /**
+     * 방 참가. 공개방/비밀방 모두 이 메서드 하나로 처리한다.
+     *
+     * 검사 순서 (방 잠금 안에서)
+     *   1. 게임 중         → 409
+     *   2. 이미 참가 중     → 409  (비밀번호보다 먼저 검사: 이미 들어와 있는 사람은 비밀번호 없이도 "이미 참가 중"을 받아야 Unity의 CheckAlreadyJoined가 대기실로 돌려보낼 수 있다)
+     *   3. 비밀번호 불일치   → 403 WRONG_ROOM_PASSWORD  (공개방은 matchesPassword가 항상 true라 통과)
+     *   4. 정원 초과       → 409  (비밀번호보다 뒤: 비밀번호를 모르는 사람에게 방 인원 상태를 먼저 알려주지 않는다)
+     *
+     * 틀린 횟수 제한은 없다. 평문 비교라 금방 끝나므로 잠금 안에서 해도 다른 요청을 오래 막지 않는다.
+     *
+     * @param password 비밀방 비밀번호. 공개방이면 null이어도 된다. (무시됨)
+     */
+    public RoomResponseDto joinRoom(Long roomId, Long memberId, String password) {
         // DB 조회(User)는 잠금 밖에서 먼저 해서 잠금을 쥐고 있는 시간을 줄인다.
         User user = findUser(memberId);
 
@@ -83,6 +123,7 @@ public class RoomService {
             // 게임은 시작할 때 참가자 명단을 고정하므로, 진행 중인 방에는 새로 들어올 수 없다.
             if (room.isInGame()) throw new IllegalStateException("게임이 진행 중인 방입니다.");
             if (room.containsPlayer(user.getId())) throw new IllegalStateException("이미 참가 중입니다.");
+            if (!room.matchesPassword(password)) throw new RoomPasswordException();
             if (room.isFull()) throw new IllegalStateException("방이 가득 찼습니다.");
 
             room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
@@ -243,8 +284,29 @@ public class RoomService {
                 .toList();
     }
 
-    // 현재 룸 조회
+    // 현재 룸 조회 (전체)
     public List<RoomResponseDto> getRooms() {
+        return getRooms(null);
+    }
+
+    /**
+     * 방 목록 조회 + 제목 검색. GET /api/v1/rooms?keyword=초보
+     *
+     * 검색 규칙
+     *   - keyword가 null/공백뿐이면 전체 목록 (기존 동작과 같음)
+     *   - 제목에 keyword가 포함되면 결과에 넣는다 (부분 일치)
+     *   - 대소문자 무시, 공백 무시: "초보 만"으로 검색해도 "초보만" 방이 나온다
+     *   - 비밀방도 포함한다 (목록에서도 제목은 원래 보인다)
+     *   - keyword가 MAX_SEARCH_KEYWORD_LENGTH자를 넘으면 400
+     *
+     * Redis에 제목 인덱스는 없다. 원래 목록 조회가 방 전체를 읽는 구조라 메모리에서 필터만 추가한다.
+     */
+    public List<RoomResponseDto> getRooms(String keyword) {
+        String normalizedKeyword = normalizeSearchText(keyword);
+        if (normalizedKeyword.length() > MAX_SEARCH_KEYWORD_LENGTH) {
+            throw new IllegalArgumentException("검색어는 " + MAX_SEARCH_KEYWORD_LENGTH + "자 이하로 입력해주세요.");
+        }
+
         Set<String> roomIds = roomRepository.findAllRoomIds();
 
         if (roomIds == null || roomIds.isEmpty()) return List.of();
@@ -253,10 +315,36 @@ public class RoomService {
                 .map(Long::valueOf) //String을 Long으로 바꿈
                 .map(roomRepository::findById)// 각 id를 room으로 바꿈 Stream<String>에서 -> Stream<Room>이 됨
                 .filter(Objects::nonNull)
+                // 제목 검색은 복구보다 먼저: 복구는 잠금을 잡을 수 있는데, 검색에서 빠질 방까지 복구할 필요는 없다 (복구해도 제목은 그대로)
+                .filter(room -> titleMatches(room, normalizedKeyword))
                 .map(this::recoverInListIfOrphaned) // 서버 재시작 등으로 게임이 사라진 방은 WAITING으로 복구해서 보여준다
                 .filter(Objects::nonNull)           // 복구 중 방이 삭제된 경우 제외
                 .map(RoomResponseDto::from)// Room -> RoomResponseDto 변환
                 .toList();
+    }
+
+    /** 빈 검색어("")는 모든 방과 일치한다. */
+    private static boolean titleMatches(Room room, String normalizedKeyword) {
+        if (normalizedKeyword.isEmpty()) return true;
+        return normalizeSearchText(room.getTitle()).contains(normalizedKeyword);
+    }
+
+    /** 검색 비교용 정규화: 모든 공백 제거 + 소문자. null이면 "". */
+    static String normalizeSearchText(String text) {
+        if (text == null) return "";
+        return WHITESPACE.matcher(text).replaceAll("") // 공백 덩어리를 전부 ""로 바꿈(==삭제) ex:" 고수 전용 " → "고수전용"
+                .toLowerCase(Locale.ROOT);
+        /*
+        인자 없는 toLowerCase()는 서버가 돌아가는 컴퓨터의 언어 설정을 기준으로 소문자를 만든다.
+        예를들어 터키어 설정인 서버에서는 검색어 "mafia"와 제목 "MAFIA"가 일치하지 않게 된다.
+        같은 코드인데 서버 환경에 따라 검색 결과가 달라지는 버그다.
+
+        Locale.ROOT : "특정 언어 규칙을 쓰지 말고 중립 규칙으로 변환해라"
+            서버가 어느 나라 설정으로 돌아가든 항상 같은 결과가 나온다.
+            한글은 대소문자가 없어서 영향을 받지 않지만,
+            화면에 보여 줄 문장이 아니라 비교·검색·키 생성처럼 프로그램 내부에서 쓰는 문자열을 대소문자 변환할 때는
+            Locale.ROOT를 붙이는 게 자바의 관례라고 한다.
+        */
     }
 
     /**
@@ -291,6 +379,16 @@ public class RoomService {
             }
             return latest;
         });
+    }
+
+    /**
+     * 비밀방 비밀번호 형식 검사: 숫자만, 최소 4자리. 실패하면 400 BAD_REQUEST.
+     * Unity CreateRoomPopup도 같은 규칙으로 먼저 검사하지만, 최종 검증은 서버가 한다.
+     */
+    private static void validatePassword(String password) {
+        if (password == null || !PASSWORD_PATTERN.matcher(password).matches()) {
+            throw new IllegalArgumentException("비밀번호는 숫자 " + MIN_PASSWORD_LENGTH + "자리 이상이어야 합니다.");
+        }
     }
 
     private Room findRoom(Long roomId) {
