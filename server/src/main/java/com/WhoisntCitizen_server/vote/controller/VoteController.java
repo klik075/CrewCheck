@@ -27,12 +27,12 @@ public class VoteController {
         this.currentUser = currentUser;
     }
 
-    /** 6. 투표 (VOTE 페이즈에서만) */
+    /** 6. 투표 (VOTE 페이즈에서만). targetId=null이면 기권, confirm=false면 임시 선택(시간 종료 시 집계) */
     @PostMapping("/votes")
     public VoteResponse vote(@PathVariable String gameId,
                              @AuthenticationPrincipal Jwt jwt,
                              @Valid @RequestBody VoteRequest request) {
-        return voteService.vote(gameId, currentUser.userId(jwt), request.targetId());
+        return voteService.vote(gameId, currentUser.userId(jwt), request.targetId(), request.confirmed());
     }
 
     /** 7. 처형 결과 */

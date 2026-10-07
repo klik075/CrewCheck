@@ -25,11 +25,19 @@ public class VoteService {
         this.gameFlowService = gameFlowService;
     }
 
-    /** 6. 투표 (재투표 시 덮어쓰기). 전원 투표하면 바로 7. 처형 → 8. 승리 검사 → 9. 반복/종료 */
+    /** 6. 투표 + 투표 완료 (기존 방식) */
     public VoteResponse vote(String gameId, Long voterId, Long targetId) {
+        return vote(gameId, voterId, targetId, true);
+    }
+
+    /**
+     * 6. 투표 (재투표 시 덮어쓰기). targetId=null이면 표를 거둔다(기권).
+     * confirm=true("투표 완료")면 지금 상태로 고정한다. 투표할 수 있는 생존자가 모두 완료하면 바로 7. 처형 → 8. 승리 검사 → 9. 반복/종료
+     */
+    public VoteResponse vote(String gameId, Long voterId, Long targetId, boolean confirm) {
         Game game = findGame(gameId);
         synchronized (game) {
-            game.recordVote(voterId, targetId);
+            game.recordVote(voterId, targetId, confirm);
             gameRepository.save(game);
             if (game.allVotesSubmitted()) {
                 gameFlowService.resolveVote(game);
