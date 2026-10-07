@@ -37,9 +37,9 @@ namespace WhoisntCitizen.Game
             ApiClient.Get<NightResultDto>(GameApiPaths.NightResult(gameId), r => Reply(onDone, r));
         }
 
-        public void Vote(string gameId, long targetId, Action<GameApiResult<VoteResultDto>> onDone)
+        public void Vote(string gameId, long targetId, bool confirm, Action<GameApiResult<VoteResultDto>> onDone)
         {
-            var body = new TargetRequestDto { targetId = targetId };
+            var body = new VoteRequestDto { targetId = targetId, confirm = confirm }; // targetId 0 = 기권
             ApiClient.Post<VoteResultDto>(GameApiPaths.Votes(gameId), body, r => Reply(onDone, r));
         }
 

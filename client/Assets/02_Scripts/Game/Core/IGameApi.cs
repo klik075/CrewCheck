@@ -27,8 +27,12 @@ namespace WhoisntCitizen.Game
         /// <summary>GET /api/v1/games/{gameId}/night-result — 가장 최근 밤 결과. 페이즈와 상관없이 조회된다.</summary>
         void GetNightResult(string gameId, Action<GameApiResult<NightResultDto>> onDone);
 
-        /// <summary>POST /api/v1/games/{gameId}/votes {"targetId": 대상} — 다시 내면 덮어쓴다.</summary>
-        void Vote(string gameId, long targetId, Action<GameApiResult<VoteResultDto>> onDone);
+        /// <summary>
+        /// POST /api/v1/games/{gameId}/votes {"targetId": 대상, "confirm": 완료 여부} — 다시 내면 덮어쓴다.
+        /// targetId가 0이면 표를 거둔다(기권). confirm이면 "투표 완료": 지금 상태로 고정하고, 전원이 완료하면 바로 처형 판정한다.
+        /// confirm이 아니면 임시 선택이다(시간이 끝나면 그 표가 집계된다).
+        /// </summary>
+        void Vote(string gameId, long targetId, bool confirm, Action<GameApiResult<VoteResultDto>> onDone);
 
         /// <summary>GET /api/v1/games/{gameId}/execution-result — 가장 최근 처형 결과. 페이즈와 상관없이 조회된다.</summary>
         void GetExecutionResult(string gameId, Action<GameApiResult<ExecutionResultDto>> onDone);

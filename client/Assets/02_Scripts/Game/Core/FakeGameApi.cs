@@ -63,6 +63,7 @@ namespace WhoisntCitizen.Game
         private readonly HashSet<long> skippedActors = new HashSet<long>();
         private readonly HashSet<long> lockedActors = new HashSet<long>();      // 이번 밤 접선해서 행동이 확정된 앵무새
         private readonly Dictionary<long, long> votes = new Dictionary<long, long>(); // 투표자 → 대상
+        private readonly HashSet<long> confirmedVoters = new HashSet<long>(); // "투표 완료"한 플레이어 (표가 없으면 기권)
 
         private string phase;
         private int day;
@@ -126,11 +127,13 @@ namespace WhoisntCitizen.Game
             left.Alive = false;
 
             votes.Remove(playerId);
+            confirmedVoters.Remove(playerId);
             foreach (long voter in new List<long>(votes.Keys))
             {
                 if (votes[voter] == playerId)
                 {
                     votes.Remove(voter);
+                    confirmedVoters.Remove(voter); // 그 표로 투표 완료한 사람도 다시 고를 수 있다 (서버와 같다)
                 }
             }
             skippedActors.Remove(playerId);
@@ -298,13 +301,14 @@ namespace WhoisntCitizen.Game
                 : GameApiResult<NightResultDto>.Ok(lastNightResult));
         }
 
-        public void Vote(string gameId, long targetId, Action<GameApiResult<VoteResultDto>> onDone)
+        public void Vote(string gameId, long targetId, bool confirm, Action<GameApiResult<VoteResultDto>> onDone)
         {
             if (!Begin(gameId, onDone))
             {
                 return;
             }
-            FakePlayer target = Find(targetId);
+            bool abstain = targetId == 0; // 0이면 표를 거둔다 (기권)
+            FakePlayer target = abstain ? null : Find(targetId);
             string error = null;
             if (phase != GamePhases.Vote)
             {
@@ -313,6 +317,14 @@ namespace WhoisntCitizen.Game
             else if (!Me.Alive)
             {
                 error = "투표하는 플레이어가 이미 사망했습니다: " + MyPlayerId;
+            }
+            else if (!confirm && confirmedVoters.Contains(MyPlayerId))
+            {
+                error = "이미 투표를 완료했습니다.";
+            }
+            else if (abstain)
+            {
+                // 기권: 대상 검사 없음
             }
             else if (target == null)
             {
@@ -328,7 +340,18 @@ namespace WhoisntCitizen.Game
                 return;
             }
 
-            votes[MyPlayerId] = targetId;
+            if (abstain)
+            {
+                votes.Remove(MyPlayerId);
+            }
+            else
+            {
+                votes[MyPlayerId] = targetId;
+            }
+            if (confirm)
+            {
+                confirmedVoters.Add(MyPlayerId);
+            }
             if (AllVotesSubmitted())
             {
                 ResolveVote(clock());
@@ -426,6 +449,7 @@ namespace WhoisntCitizen.Game
         private void EnterVote(double at)
         {
             votes.Clear();
+            confirmedVoters.Clear();
             MoveTo(GamePhases.Vote, at, options.VoteSeconds);
             if (options.BotsAct)
             {
@@ -938,7 +962,7 @@ namespace WhoisntCitizen.Game
                 if (p.Alive)
                 {
                     alive++;
-                    if (votes.ContainsKey(p.Id))
+                    if (confirmedVoters.Contains(p.Id))
                     {
                         voted++;
                     }
@@ -969,6 +993,7 @@ namespace WhoisntCitizen.Game
                 {
                     votes[bot.Id] = candidates[random.Next(candidates.Count)].Id;
                 }
+                confirmedVoters.Add(bot.Id); // 봇은 바로 투표 완료한다 (대상이 없으면 기권)
             }
         }
 

@@ -12,8 +12,12 @@ namespace WhoisntCitizen.Vote
     /// 화면(캔버스, 상단 정보, 조작 버튼, 하단 탭 바 자리)은 실행할 때 코드로 만든다.
     ///
     /// 조작
-    ///  - 투표 시작 : 카드패가 아래에서 올라온다 (타이머 시작)
+    ///  - 투표 시작 : 카드패가 아래에서 올라온다 (타이머 시작). 오른쪽 하단에 [투표 완료] 버튼이 뜬다
+    ///  - 카드 클릭 : 카드를 뽑는다(임시 선택). 뽑은 카드를 다시 누르면 카드패로 돌아간다 → 아무 카드도 없으면 기권(넘기기)
+    ///  - 투표 완료 : 지금 상태(뽑은 카드, 없으면 기권)로 고정되고 카드패가 내려간다
+    ///  - 완료 취소 : 서버가 투표 완료를 거절한 경우처럼 잠금을 풀고 카드패를 다시 올린다
     ///  - 투표 종료 : 카드패가 내려가고 뽑은 카드가 흐려지며 사라진다 (타이머가 0이 되어도 같다)
+    ///               완료하지 않은 채 끝나면 마지막 선택으로, 뽑은 카드가 없으면 기권으로 처리된다(기록에 남김)
     ///  - 인원 −/+  : 다음 투표 시작 때 카드 수 (나를 뺀 나머지가 카드가 된다)
     ///  - 한 명 이탈 : 투표 도중 연결이 끊긴 플레이어처럼 카드 한 장을 뺀다 (뽑은 카드가 있으면 그 카드)
     ///  - 자동 종료 : 켜면 voteSeconds가 지나면 저절로 투표 종료
@@ -75,8 +79,8 @@ namespace WhoisntCitizen.Vote
             {
                 remaining = -1f;
                 timerText.text = "투표 종료";
+                LogVoteResult("시간 종료");
                 hand.Hide();
-                Log("시간 종료 → 카드패가 내려갑니다.");
                 return;
             }
             int s = Mathf.CeilToInt(remaining);
@@ -106,8 +110,32 @@ namespace WhoisntCitizen.Vote
             }
             remaining = -1f;
             timerText.text = "투표 종료";
+            LogVoteResult("투표 종료");
             hand.Hide();
-            Log("투표 종료 → 카드패가 내려갑니다.");
+        }
+
+        /// <summary>투표가 끝날 때의 처리 결과 (GameScreen의 시간 초과 안내와 같다).</summary>
+        private void LogVoteResult(string reason)
+        {
+            if (hand.IsLocked)
+            {
+                Log(reason + " → 카드패가 내려갑니다. (이미 투표 완료)");
+                return;
+            }
+            long drawnId = hand.DrawnPlayerId;
+            Log(drawnId == 0
+                ? reason + " → 카드를 뽑지 않아 기권(넘기기)으로 처리"
+                : reason + " → 뽑아 둔 " + NameOf(drawnId) + " 카드로 투표 처리");
+        }
+
+        private void Unlock()
+        {
+            if (!hand.IsLocked)
+            {
+                return;
+            }
+            hand.Unlock();
+            Log("투표 완료 취소 → 카드패가 다시 올라옵니다.");
         }
 
         private void ChangeCount(int delta)
@@ -144,10 +172,33 @@ namespace WhoisntCitizen.Vote
             }
         }
 
+        // [넘기기(기권) 기능 - 주석 처리] 기존: 카드를 뽑을 때만 불렸다
+        // private void OnVoteRequested(long playerId)
+        // {
+        //     PlayerView p = targets.Find(t => t.playerId == playerId);
+        //     Log((p != null ? p.nickname : "#" + playerId) + " 카드를 뽑음 (전송 안 함)");
+        // }
+
+        /// <summary>임시 선택이 바뀜. 0이면 뽑은 카드를 카드패로 되돌림(기권 상태).</summary>
         private void OnVoteRequested(long playerId)
         {
+            Log(playerId == 0
+                ? "뽑은 카드를 되돌림 → 기권(넘기기) 상태 (전송 안 함)"
+                : NameOf(playerId) + " 카드를 뽑음 · 임시 선택 (전송 안 함)");
+        }
+
+        /// <summary>[투표 완료]. 0이면 기권으로 완료.</summary>
+        private void OnVoteConfirmed(long playerId)
+        {
+            Log(playerId == 0
+                ? "투표 완료: 기권(넘기기) 고정 → 카드패가 내려갑니다. (전송 안 함)"
+                : "투표 완료: " + NameOf(playerId) + " 고정 → 카드패가 내려갑니다. (전송 안 함)");
+        }
+
+        private string NameOf(long playerId)
+        {
             PlayerView p = targets.Find(t => t.playerId == playerId);
-            Log((p != null ? p.nickname : "#" + playerId) + " 카드를 뽑음 (전송 안 함)");
+            return p != null ? p.nickname : "#" + playerId;
         }
 
         private Sprite PortraitOf(long playerId)
@@ -211,9 +262,10 @@ namespace WhoisntCitizen.Vote
 
             // 조작 버튼 두 줄
             RectTransform row1 = NewRow("Controls1", root, TopBarHeight + 20f);
-            NewButton("Start", row1, "투표 시작", StartVote, 260f);
-            NewButton("End", row1, "투표 종료", EndVote, 260f);
-            NewButton("Remove", row1, "한 명 이탈", RemoveOne, 260f);
+            NewButton("Start", row1, "투표 시작", StartVote, 235f);
+            NewButton("End", row1, "투표 종료", EndVote, 235f);
+            NewButton("Remove", row1, "한 명 이탈", RemoveOne, 235f);
+            NewButton("Unlock", row1, "완료 취소", Unlock, 235f);
 
             RectTransform row2 = NewRow("Controls2", root, TopBarHeight + 140f);
             NewButton("Minus", row2, "인원 −", () => ChangeCount(-1), 170f);
@@ -248,6 +300,7 @@ namespace WhoisntCitizen.Vote
             hand.SetFont(font);
             hand.SetBottomAnchor(tabBar);
             hand.VoteRequested += OnVoteRequested;
+            hand.VoteConfirmed += OnVoteConfirmed;
         }
 
         private static void EnsureEventSystem()
