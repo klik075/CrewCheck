@@ -15,6 +15,7 @@ namespace WhoisntCitizen.Lobby
     ///   2) Button_CreatRoom : 방 만들기 팝업(CreateRoomPopup) 열기
     ///   3) Button_Refresh : 방 목록 새로고침
     ///   4) RoomListArea : RoomItem 프리팹으로 방 목록 표시, Enter → 방 입장 → Room 씬
+    ///      비밀방이면 Enter → 비밀번호 팝업(RoomPasswordPopup) → 방 입장 → Room 씬
     ///   5) 로그아웃 버튼 (선택) : 연결하면 세션을 비우고 타이틀 씬으로 이동
     ///
     /// 진입 조건
@@ -38,6 +39,8 @@ namespace WhoisntCitizen.Lobby
 
         [Header("Popup")]
         [SerializeField] private CreateRoomPopup createRoomPopup; // Popup/Popup_CreateRoom
+        [Tooltip("비밀방 입장 시 비밀번호 입력 팝업. 비워 두면 비밀방에 들어갈 수 없다.")]
+        [SerializeField] private RoomPasswordPopup roomPasswordPopup; // Popup/Popup_RoomPassword
 
         [Header("Status")]
         [SerializeField] private StatusMessageView statusMessage; // Canvas/StatusMessageText
@@ -83,6 +86,7 @@ namespace WhoisntCitizen.Lobby
             // 3) 화면 초기 상태
             ShowUserInfo();
             if (createRoomPopup != null) createRoomPopup.Close(); // 씬에서 켜 둔 채 저장했어도 닫고 시작
+            if (roomPasswordPopup != null) roomPasswordPopup.Close();
             ClearRoomList();                                      // Content에 놓여 있던 샘플 RoomItem 제거
 
             // 4) 방 목록 불러오기 (이후에는 새로고침 버튼을 눌렀을 때만 갱신한다)
@@ -240,28 +244,79 @@ namespace WhoisntCitizen.Lobby
 
         /// <summary>
         /// RoomItem의 Enter 버튼을 눌렀을 때 호출된다.
-        /// 성공하면 방 정보를 RoomSession에 저장하고 Room 씬으로 이동한다.
+        ///
+        /// 공개방과 비밀방의 차이는 "API 호출 전에 비밀번호 팝업을 거치느냐" 하나뿐이다.
+        ///   공개방: Enter → RequestJoin(room, null)
+        ///   비밀방: Enter → 비밀번호 팝업 → 확인 → RequestJoin(room, 비밀번호)
+        /// 입장 요청과 결과 처리(성공 → Room 씬, 409 → 이미 참가 중 확인, 그 밖 → 에러)는 RequestJoin 한 곳에서 같이 처리한다.
         /// </summary>
         private void JoinRoom(RoomResponse room)
         {
             if (isJoining || SceneLoader.IsLoading) return;
 
+            if (!room.privateRoom)
+            {
+                RequestJoin(room, null);
+                return;
+            }
+
+            if (roomPasswordPopup == null)
+            {
+                Debug.LogError("[Lobby] roomPasswordPopup이 연결되지 않아 비밀방에 입장할 수 없습니다.");
+                statusMessage?.ShowError("비밀번호 입력 창을 열 수 없습니다.");
+                return;
+            }
+
+            // 팝업이 열려 있는 동안은 입장 중으로 보고 목록 갱신/다른 방 입장/방 만들기를 막는다.
             SetJoining(true);
+            statusMessage?.ShowInfo($"'{room.title}' 방은 비밀방입니다. 비밀번호를 입력하세요.", keep: true);
+            roomPasswordPopup.Open(
+                submit: password => RequestJoin(room, password),
+                cancel: () =>
+                {
+                    SetJoining(false);
+                    statusMessage?.Clear();
+                });
+        }
+
+        /// <summary>
+        /// 방 입장 API 호출. 공개방/비밀방 공통.
+        /// 성공하면 방 정보를 RoomSession에 저장하고 Room 씬으로 이동한다.
+        /// </summary>
+        /// <param name="password">비밀방 비밀번호. 공개방이면 null (body 없이 요청)</param>
+        private void RequestJoin(RoomResponse room, string password)
+        {
+            if (SceneLoader.IsLoading) return;
+
+            SetJoining(true); // 공개방은 여기서 처음 잠그고, 비밀방은 팝업을 열 때 이미 잠근 상태
             statusMessage?.ShowInfo($"'{room.title}' 방에 입장하는 중...", keep: true);
 
-            RoomApi.JoinRoom(room.id, result =>
+            RoomApi.JoinRoom(room.id, password, result =>
             {
                 if (this == null) return;
 
                 if (result.success)
                 {
+                    // 팝업을 닫고 이동한다. (씬 이동이 실패해 로비에 남아도 팝업이 잠긴 채로 남지 않도록)
+                    ClosePasswordPopup();
                     EnterRoomScene(result.data);
                     return;
                 }
 
+                // 비밀번호 틀림(403): 팝업을 닫지 않고 다시 입력받는다. 입장 중 잠금도 그대로 둔다. (횟수 제한 없음)
+                if (result.errorCode == RoomErrorCode.WrongRoomPassword && roomPasswordPopup != null && roomPasswordPopup.IsOpen)
+                {
+                    roomPasswordPopup.ShowWrongPassword(result.message); // 에러 문구는 팝업 안에 표시
+                    return;
+                }
+
+                // 그 밖의 실패는 비밀번호 문제가 아니므로 팝업을 닫고 기존 처리로 넘긴다.
+                ClosePasswordPopup();
+
                 // 409 중에서 "이미 참가 중"인 경우는 실패가 아니다.
                 // (서버 재시작 후 같은 방에 다시 들어가는 경우 등 - 작업정리 문서 남은 과제 3번)
                 // 방 상세를 조회해서 내가 참가자 목록에 있으면 그대로 Room 씬으로 들어간다.
+                // 서버는 "이미 참가 중"을 비밀번호 검사보다 먼저 하므로 비밀방이어도 비밀번호 없이 이 경로로 온다.
                 if (result.IsConflict)
                 {
                     CheckAlreadyJoined(room, result.message);
@@ -270,6 +325,12 @@ namespace WhoisntCitizen.Lobby
 
                 OnJoinFailed(result.message);
             });
+        }
+
+        /// <summary>비밀번호 팝업이 열려 있으면 닫는다. (취소 콜백은 부르지 않음)</summary>
+        private void ClosePasswordPopup()
+        {
+            if (roomPasswordPopup != null && roomPasswordPopup.IsOpen) roomPasswordPopup.Close();
         }
 
         /// <summary>입장이 409로 실패했을 때, 이미 그 방의 참가자인지 확인한다.</summary>

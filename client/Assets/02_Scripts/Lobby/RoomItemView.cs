@@ -13,6 +13,8 @@ namespace WhoisntCitizen.Lobby
     ///   - 대기 중이고 자리가 있으면: Enter 버튼 활성화
     ///   - 게임 중이면              : 버튼 비활성화, 버튼 글자 "게임 중"
     ///   - 정원이 찼으면            : 버튼 비활성화, 버튼 글자 "FULL"
+    ///   - 비밀방이면              : 자물쇠 아이콘(lockIcon) 표시. 아이콘을 연결하지 않았으면 제목 앞에 "[비밀]"을 붙인다.
+    ///                               (비밀방도 Enter 버튼 규칙은 같다. 비밀번호 팝업은 LobbyUIController가 띄운다)
     ///
     /// 버튼을 눌렀을 때 실제 입장 요청은 하지 않고 LobbyUIController에 알리기만 한다.
     /// (중복 클릭 방지, 상태 메시지, 씬 이동을 한 곳에서 처리하기 위해서)
@@ -24,11 +26,15 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private TMP_Text memberInfoText;  // MemberInfo_Text (TMP) (1)
         [SerializeField] private Button enterButton;       // Button_Enter
         [SerializeField] private TMP_Text enterButtonText; // Button_Enter/Text (TMP)
+        [Tooltip("(선택) 비밀방일 때만 켜지는 자물쇠 아이콘 오브젝트")]
+        [SerializeField] private GameObject lockIcon;      // Icon_Lock
 
         [Header("Button Labels")]
         [SerializeField] private string enterLabel = "Enter";
         [SerializeField] private string inGameLabel = "게임 중";
         [SerializeField] private string fullLabel = "FULL";
+        [Tooltip("lockIcon이 없을 때 비밀방 제목 앞에 붙이는 글자")]
+        [SerializeField] private string privatePrefix = "[비밀] ";
 
         private RoomResponse room;              // 이 줄에 표시 중인 방
         private Action<RoomResponse> onEnter;   // Enter 클릭 시 호출할 콜백 (LobbyUIController.JoinRoom)
@@ -59,7 +65,9 @@ namespace WhoisntCitizen.Lobby
             room = data;
             onEnter = onEnterClicked;
 
-            if (titleText != null) titleText.text = data.title;
+            // 비밀방 표시: 아이콘이 있으면 아이콘만 켜고, 없으면 제목 앞에 글자로 표시한다.
+            if (lockIcon != null) lockIcon.SetActive(data.privateRoom);
+            if (titleText != null) titleText.text = data.privateRoom && lockIcon == null ? privatePrefix + data.title : data.title;
 
             // 예) "Member : 3/6"   게임 중이면 "Member : 5/6 (게임 중)"
             if (memberInfoText != null)

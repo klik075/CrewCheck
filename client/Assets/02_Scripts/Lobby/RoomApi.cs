@@ -33,13 +33,28 @@ namespace WhoisntCitizen.Lobby
 
         /// <summary>
         /// 방 생성. POST /api/v1/rooms
-        /// 만든 사람은 방장으로 자동 입장된다. (따로 JoinRoom을 부를 필요 없음)
-        /// 실패: 400 제목 없음 / 인원 범위(4~12) 벗어남
+        /// 만든 사람은 방장으로 자동 입장된다. (따로 JoinRoom을 부를 필요 없음, 비밀방이어도 방장은 비밀번호 입력 없음)
+        /// 실패: 400 제목 없음 / 인원 범위(4~12) 벗어남 / 비밀방인데 비밀번호가 숫자 4자리 이상이 아님
         /// </summary>
+        /// <param name="privateRoom">비밀방 여부</param>
+        /// <param name="password">비밀방 비밀번호 (숫자 문자열). 공개방이면 null이어도 된다 (서버가 무시)</param>
+        public static void CreateRoom(string title, int maxPlayers, bool privateRoom, string password,
+            Action<ApiResult<RoomResponse>> onDone)
+        {
+            var body = new CreateRoomRequest
+            {
+                title = title,
+                maxPlayers = maxPlayers,
+                privateRoom = privateRoom,
+                password = privateRoom ? password : null, // 공개방이면 보내지 않는다 (JsonUtility는 null을 ""로 보냄 → 서버가 무시)
+            };
+            ApiClient.Post(RoomsPath, body, onDone);
+        }
+
+        /// <summary>공개방 생성 (privateRoom = false)</summary>
         public static void CreateRoom(string title, int maxPlayers, Action<ApiResult<RoomResponse>> onDone)
         {
-            var body = new CreateRoomRequest { title = title, maxPlayers = maxPlayers };
-            ApiClient.Post(RoomsPath, body, onDone);
+            CreateRoom(title, maxPlayers, false, null, onDone);
         }
 
         /// <summary>
@@ -54,11 +69,21 @@ namespace WhoisntCitizen.Lobby
 
         /// <summary>
         /// 방 입장. POST /api/v1/rooms/{roomId}/players
-        /// 실패: 409 게임 중 / 정원 초과 / 이미 참가 중, 400 존재하지 않는 방
+        /// 공개방/비밀방 모두 같은 API다. 비밀방이면 password를 body로 보내고, 공개방이면 body 없이 보낸다.
+        /// 실패: 403 WRONG_ROOM_PASSWORD 비밀번호 없음/불일치 (errorCode로 확인, 횟수 제한 없음)
+        ///       409 게임 중 / 정원 초과 / 이미 참가 중, 400 존재하지 않는 방
         /// </summary>
+        /// <param name="password">비밀방 비밀번호. 공개방이면 null</param>
+        public static void JoinRoom(long roomId, string password, Action<ApiResult<RoomResponse>> onDone)
+        {
+            object body = password != null ? new JoinRoomRequest { password = password } : null;
+            ApiClient.Post($"{RoomsPath}/{roomId}/players", body, onDone);
+        }
+
+        /// <summary>공개방 입장 (비밀번호 없음)</summary>
         public static void JoinRoom(long roomId, Action<ApiResult<RoomResponse>> onDone)
         {
-            ApiClient.Post($"{RoomsPath}/{roomId}/players", null, onDone);
+            JoinRoom(roomId, null, onDone);
         }
 
         /// <summary>참가자 목록 조회. GET /api/v1/rooms/{roomId}/players</summary>

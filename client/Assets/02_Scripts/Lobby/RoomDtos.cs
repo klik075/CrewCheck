@@ -16,12 +16,56 @@ namespace WhoisntCitizen.Lobby
         public const string InGame = "IN_GAME";  // 게임 중 → 입장/나가기 불가 (409)
     }
 
-    /// <summary>POST /api/v1/rooms 요청 body. 방장 id는 서버가 토큰에서 꺼내므로 보내지 않는다.</summary>
+    /// <summary>서버 에러 코드 중 로비에서 따로 처리하는 것 (ApiResult.errorCode와 비교)</summary>
+    public static class RoomErrorCode
+    {
+        /// <summary>비밀방 입장 시 비밀번호 없음/불일치 (403). 비밀번호 팝업을 닫지 않고 다시 입력받는다.</summary>
+        public const string WrongRoomPassword = "WRONG_ROOM_PASSWORD";
+    }
+
+    /// <summary>
+    /// 비밀방 비밀번호 규칙 (서버 RoomService와 같은 규칙): 숫자(0~9)만, 최소 4자리, 최대 길이 제한 없음.
+    /// 방 만들기 팝업과 비밀번호 입력 팝업이 같이 쓴다. 최종 검증은 서버가 다시 한다.
+    /// </summary>
+    public static class RoomPasswordRule
+    {
+        public const int MinLength = 4;
+
+        /// <summary>규칙을 설명하는 안내 문구</summary>
+        public static readonly string Description = $"숫자 {MinLength}자리 이상";
+
+        /// <summary>규칙에 맞는 비밀번호인지 (null/빈 문자열이면 false)</summary>
+        public static bool IsValid(string password)
+        {
+            if (string.IsNullOrEmpty(password) || password.Length < MinLength) return false;
+            foreach (char c in password)
+                if (c < '0' || c > '9') return false; // char.IsDigit은 전각 숫자 등도 통과시키므로 직접 비교
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// POST /api/v1/rooms 요청 body. 방장 id는 서버가 토큰에서 꺼내므로 보내지 않는다.
+    /// 예) 공개방 {"title":"초보만","maxPlayers":8,"privateRoom":false,"password":""}
+    ///     비밀방 {"title":"친구만","maxPlayers":8,"privateRoom":true,"password":"0427"}
+    /// </summary>
     [Serializable]
     public class CreateRoomRequest
     {
         public string title;
-        public int maxPlayers; // 서버 규칙: 4~12명
+        public int maxPlayers;    // 서버 규칙: 4~12명
+        public bool privateRoom;  // 비밀방 여부 (서버 키 이름과 같아야 함)
+        public string password;   // 비밀방 비밀번호. 숫자 문자열("0427" - 앞자리 0 유지). 공개방이면 서버가 무시한다
+    }
+
+    /// <summary>
+    /// POST /api/v1/rooms/{roomId}/players 요청 body (비밀방 입장용).
+    /// 공개방은 이 body 없이(null) 보낸다.
+    /// </summary>
+    [Serializable]
+    public class JoinRoomRequest
+    {
+        public string password;
     }
 
     /// <summary>
@@ -45,6 +89,7 @@ namespace WhoisntCitizen.Lobby
         public int currentPlayers;
         public string status;       // "WAITING" / "IN_GAME"
         public string gameId;       // 게임 중일 때만 값이 있음 (대기 중이면 null/빈 문자열)
+        public bool privateRoom;    // 비밀방이면 true → 목록에 자물쇠 표시, 입장 시 비밀번호 팝업. (비밀번호 자체는 서버가 절대 보내지 않는다)
 
         public bool IsInGame => status == RoomStatus.InGame;
         public bool IsFull => currentPlayers >= maxPlayers;
