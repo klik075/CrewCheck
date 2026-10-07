@@ -17,6 +17,9 @@ namespace WhoisntCitizen.Lobby
     ///   4) RoomListArea : RoomItem 프리팹으로 방 목록 표시, Enter → 방 입장 → Room 씬
     ///      비밀방이면 Enter → 비밀번호 팝업(RoomPasswordPopup) → 방 입장 → Room 씬
     ///   5) 로그아웃 버튼 (선택) : 연결하면 세션을 비우고 타이틀 씬으로 이동
+    ///   6) FindRoomArea : 방 제목 검색. 입력칸에서 Enter 또는 검색 버튼을 눌렀을 때만 검색한다.
+    ///      검색어를 비우고 Enter/버튼 → 전체 목록. 새로고침 버튼은 현재 검색어를 유지한 채 다시 불러온다.
+    ///      ClearButton → 검색어를 지우고 전체 목록으로 돌아간다.
     ///
     /// 진입 조건
     ///   로그인하지 않은 상태(토큰 없음)로 이 씬에 들어오면 타이틀 씬으로 돌려보낸다.
@@ -37,6 +40,14 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private Transform roomListContent;  // Scroll View/Viewport/Content
         [SerializeField] private RoomItemView roomItemPrefab; // 03_Prefabs/RoomItem (RoomItemView 부착 필요)
 
+        [Header("Search (FindRoomArea)")]
+        [Tooltip("방 제목 검색 입력칸. Enter를 누르면 검색한다. 비워 두면 검색 기능을 쓰지 않는다.")]
+        [SerializeField] private TMP_InputField searchInput;  // FindRoomArea/InputField (TMP)
+        [Tooltip("검색 버튼 (돋보기 아이콘 등). 비워 두면 Enter로만 검색한다.")]
+        [SerializeField] private Button searchButton;
+        [Tooltip("검색어 지우기 버튼. 누르면 입력칸을 비우고 전체 방 목록을 보여 준다. 비워 두면 사용하지 않는다.")]
+        [SerializeField] private Button clearButton;          // FindRoomArea/ClearButton
+
         [Header("Popup")]
         [SerializeField] private CreateRoomPopup createRoomPopup; // Popup/Popup_CreateRoom
         [Tooltip("비밀방 입장 시 비밀번호 입력 팝업. 비워 두면 비밀방에 들어갈 수 없다.")]
@@ -55,6 +66,12 @@ namespace WhoisntCitizen.Lobby
         private bool isJoining;    // 방 입장 요청 중 (이 동안은 목록 갱신/다른 입장을 막는다)
         private string lobbyNotice; // 로비로 돌아온 이유 (방 목록을 처음 불러온 뒤 한 번 보여 준다)
 
+        // 검색어 최대 길이. 서버 RoomService.MAX_SEARCH_KEYWORD_LENGTH(30)와 맞춘다.
+        private const int SearchKeywordMaxLength = 30;
+
+        private string currentKeyword = string.Empty; // 지금 목록에 적용된 검색어 ("" = 전체 목록)
+        private bool hasPendingSearch;                // 목록 요청 중에 검색을 눌렀으면, 응답 뒤에 한 번 더 요청한다
+
         // ------------------------------------------------------------------
         // Unity 생명주기
         // ------------------------------------------------------------------
@@ -65,6 +82,16 @@ namespace WhoisntCitizen.Lobby
             BindIfEmpty(createRoomButton, OnCreateRoomClicked);
             BindIfEmpty(refreshButton, OnRefreshClicked);
             BindIfEmpty(logoutButton, OnLogoutClicked);
+            BindIfEmpty(searchButton, OnSearchClicked);
+            BindIfEmpty(clearButton, OnClearSearchClicked);
+
+            if (searchInput != null)
+            {
+                // Enter로 제출되려면 한 줄 입력이어야 한다. (MultiLine이면 Enter가 줄바꿈이 된다)
+                searchInput.lineType = TMP_InputField.LineType.SingleLine;
+                if (searchInput.characterLimit <= 0 || searchInput.characterLimit > SearchKeywordMaxLength) searchInput.characterLimit = SearchKeywordMaxLength;
+                searchInput.onSubmit.AddListener(OnSearchSubmitted);
+            }
         }
 
         private void Start()
@@ -98,6 +125,9 @@ namespace WhoisntCitizen.Lobby
             if (createRoomButton != null) createRoomButton.onClick.RemoveListener(OnCreateRoomClicked);
             if (refreshButton != null) refreshButton.onClick.RemoveListener(OnRefreshClicked);
             if (logoutButton != null) logoutButton.onClick.RemoveListener(OnLogoutClicked);
+            if (searchButton != null) searchButton.onClick.RemoveListener(OnSearchClicked);
+            if (clearButton != null) clearButton.onClick.RemoveListener(OnClearSearchClicked);
+            if (searchInput != null) searchInput.onSubmit.RemoveListener(OnSearchSubmitted);
         }
 
         // ------------------------------------------------------------------
@@ -115,6 +145,46 @@ namespace WhoisntCitizen.Lobby
         // Button_Refresh: 방 목록 새로고침
         public void OnRefreshClicked()
         {
+            RefreshRooms(silent: false);
+        }
+
+        // FindRoomArea 검색 버튼: 입력칸의 검색어로 검색
+        public void OnSearchClicked()
+        {
+            Search(searchInput != null ? searchInput.text : string.Empty);
+        }
+
+        // FindRoomArea ClearButton: 검색어를 지우고 전체 목록으로
+        public void OnClearSearchClicked()
+        {
+            if (isJoining || SceneLoader.IsLoading) return;
+            if (searchInput != null) searchInput.text = string.Empty;
+            if (string.IsNullOrEmpty(currentKeyword)) return; // 이미 전체 목록이면 입력칸만 비운다. (불필요한 요청 방지)
+
+            Search(string.Empty);
+        }
+
+        // FindRoomArea 입력칸에서 Enter
+        private void OnSearchSubmitted(string text)
+        {
+            Search(text);
+        }
+
+        /// <summary>
+        /// 검색어를 적용하고 목록을 다시 불러온다. 빈 검색어면 전체 목록으로 돌아간다.
+        /// 목록 요청이 이미 진행 중이면 그 응답은 버리고, 끝난 직후 새 검색어로 다시 요청한다.
+        /// </summary>
+        private void Search(string keyword)
+        {
+            if (isJoining || SceneLoader.IsLoading) return;
+
+            currentKeyword = (keyword ?? string.Empty).Trim();
+
+            if (isRefreshing)
+            {
+                hasPendingSearch = true;
+                return;
+            }
             RefreshRooms(silent: false);
         }
 
@@ -155,14 +225,24 @@ namespace WhoisntCitizen.Lobby
 
             isRefreshing = true;
             if (refreshButton != null) refreshButton.interactable = false;
-            if (!silent) statusMessage?.ShowInfo("방 목록을 불러오는 중...", keep: true);
+            string keyword = currentKeyword; // 응답이 올 때까지 검색어가 바뀌어도 이 요청의 검색어로 문구를 만든다
+            bool searching = !string.IsNullOrEmpty(keyword);
+            if (!silent) statusMessage?.ShowInfo(searching ? $"'{keyword}' 검색 중..." : "방 목록을 불러오는 중...", keep: true);
 
-            RoomApi.GetRooms(result =>
+            RoomApi.GetRooms(keyword, result =>
             {
                 if (this == null) return; // 응답 전에 씬이 바뀐 경우
 
                 isRefreshing = false;
-                if (refreshButton != null) refreshButton.interactable = true;
+                if (refreshButton != null) refreshButton.interactable = !isJoining;
+
+                // 요청 중에 검색어가 바뀌었으면 이 응답은 그리지 않고 새 검색어로 다시 요청한다.
+                if (hasPendingSearch)
+                {
+                    hasPendingSearch = false;
+                    RefreshRooms(silent: false);
+                    return;
+                }
 
                 if (!result.success)
                 {
@@ -182,9 +262,13 @@ namespace WhoisntCitizen.Lobby
                     lobbyNotice = null;
                 }
                 else if (result.data.Count == 0)
-                    statusMessage?.ShowInfo(EmptyRoomNotice, keep: true);  // 방이 없으면 안내 문구 유지
+                    statusMessage?.ShowInfo(searching
+                        ? $"'{keyword}'에 해당하는 방이 없습니다."
+                        : EmptyRoomNotice, keep: true);  // 방이 없으면 안내 문구 유지
                 else if (!silent)
-                    statusMessage?.ShowSuccess($"방 {result.data.Count}개를 불러왔습니다.");
+                    statusMessage?.ShowSuccess(searching
+                        ? $"'{keyword}' 검색 결과 {result.data.Count}개"
+                        : $"방 {result.data.Count}개를 불러왔습니다.");
             });
         }
 
@@ -388,6 +472,9 @@ namespace WhoisntCitizen.Lobby
 
             if (createRoomButton != null) createRoomButton.interactable = !value;
             if (refreshButton != null) refreshButton.interactable = !value && !isRefreshing;
+            if (searchInput != null) searchInput.interactable = !value;
+            if (searchButton != null) searchButton.interactable = !value;
+            if (clearButton != null) clearButton.interactable = !value;
         }
 
         // ------------------------------------------------------------------
@@ -396,8 +483,7 @@ namespace WhoisntCitizen.Lobby
 
         private static void BindIfEmpty(Button button, UnityEngine.Events.UnityAction action)
         {
-            if (button != null && button.onClick.GetPersistentEventCount() == 0)
-                button.onClick.AddListener(action);
+            if (button != null && button.onClick.GetPersistentEventCount() == 0) button.onClick.AddListener(action);
         }
     }
 }

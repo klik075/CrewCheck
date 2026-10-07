@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine.Networking;
 using WhoisntCitizen.Network;
 
 namespace WhoisntCitizen.Lobby
@@ -28,7 +29,21 @@ namespace WhoisntCitizen.Lobby
         /// </summary>
         public static void GetRooms(Action<ApiResult<List<RoomResponse>>> onDone)
         {
-            ApiClient.GetList(RoomsPath, onDone);
+            GetRooms(null, onDone);
+        }
+
+        /// <summary>
+        /// 방 제목 검색. GET /api/v1/rooms?keyword=초보
+        /// keyword가 null/공백이면 전체 목록과 같다.
+        /// 서버 규칙: 제목 부분 일치, 대소문자·공백 무시, 비밀방 포함. 공백을 뺀 검색어가 30자를 넘으면 400.
+        /// 한글·공백·특수문자가 깨지지 않도록 keyword는 URL 인코딩해서 보낸다.
+        /// </summary>
+        public static void GetRooms(string keyword, Action<ApiResult<List<RoomResponse>>> onDone)
+        {
+            string path = string.IsNullOrWhiteSpace(keyword)
+                ? RoomsPath
+                : RoomsPath + "?keyword=" + UnityWebRequest.EscapeURL(keyword.Trim());
+            ApiClient.GetList(path, onDone);
         }
 
         /// <summary>
