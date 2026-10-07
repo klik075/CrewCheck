@@ -30,6 +30,17 @@ public class GoogleAuthService {
 	}
 
 	public OAuthUserInfo verifyToken(String idTokenString) {
+		// 가짜 토큰 (테스트용)
+		if (idTokenString != null && idTokenString.startsWith("mock_")) {
+			log.warn("[Google Mock 토큰 감지] 에디터 테스트용 검증 우회: {}", idTokenString);
+			return OAuthUserInfo.builder()
+					.providerId("google_mock_" + idTokenString.hashCode()) // 고유 식별자 생성
+					.provider(AuthProvider.GOOGLE)
+					.email("mock_google@test.com")
+					.nickname("구글테스터")
+					.build();
+		}
+
 		try {
 			GoogleIdToken idToken = verifier.verify(idTokenString);
 			if (idToken == null) {

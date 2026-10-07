@@ -31,4 +31,9 @@ public class Member {
 
 	@Column(unique = true, length = 100)
 	private String providerId;
+
+	public void linkSocialAccount(AuthProvider provider, String providerId) {
+		this.provider = provider;
+		this.providerId = providerId;
+	}
 }
