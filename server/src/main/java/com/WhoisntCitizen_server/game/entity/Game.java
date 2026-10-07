@@ -39,6 +39,8 @@ public class Game {
     private final Set<Long> skippedActors = new HashSet<>(); // 이번 밤 능력을 쓰지 않고 넘긴 플레이어
     private final Map<Long, Long> votes = new LinkedHashMap<>();        // voterId -> targetId
     @Getter(AccessLevel.NONE)
+    private final Set<Long> confirmedVoters = new HashSet<>(); // 이번 투표에서 "투표 완료"를 누른 플레이어 (표가 없으면 기권)
+    @Getter(AccessLevel.NONE)
     private final Set<Long> voteBanned = new HashSet<>(); // 요리사 때문에 오늘 투표를 못 하는 플레이어. 밤 판정 때 정하고 다음 밤에 지운다
 
     // 플레이어별 마지막 요청 시각. 상태 조회(폴링)가 게임 잠금 밖에서 기록하므로 동시 접근 가능한 Map을 쓴다.
@@ -86,6 +88,7 @@ public class Game {
         }
         if (next == GamePhase.VOTE) {
             votes.clear();
+            confirmedVoters.clear();
         }
         this.phase = next;
         this.phaseEndsAt = endsAt;
@@ -164,7 +167,15 @@ public class Game {
         }
 
         votes.remove(playerId);
-        votes.values().removeIf(playerId::equals);
+        confirmedVoters.remove(playerId);
+        // 떠난 사람에게 던진 표는 지운다. 그 표로 "투표 완료"한 사람도 다시 고를 수 있게 완료를 푼다
+        votes.entrySet().removeIf(e -> {
+            if (playerId.equals(e.getValue())) {
+                confirmedVoters.remove(e.getKey());
+                return true;
+            }
+            return false;
+        });
 
         nightActions.remove(playerId);
         skippedActors.remove(playerId);
@@ -400,19 +411,45 @@ public class Game {
 
     // ---------- 6. 투표 ----------
 
+    /** 투표 + 투표 완료 (기존 방식: 한 번 내면 제출한 것으로 본다). 재투표 시 덮어쓰기 */
     public void recordVote(Long voterId, Long targetId) {
+        recordVote(voterId, targetId, true);
+    }
+
+    /**
+     * 투표.
+     * - targetId == null(또는 0) 이면 표를 거둔다(카드를 카드패로 되돌림). 이 상태로 시간이 끝나거나 완료하면 기권이다.
+     * - confirm == true 이면 "투표 완료": 지금 상태(표 또는 기권)로 고정한다. 완료한 뒤에는 임시 선택(confirm=false)을 받지 않는다.
+     * - confirm == false 이면 임시 선택: 시간이 끝나면 그 표가 그대로 집계된다.
+     */
+    public void recordVote(Long voterId, Long targetId, boolean confirm) {
         requirePhase(GamePhase.VOTE);
         getAlivePlayer(voterId, "투표하는 플레이어");
         if (voteBanned.contains(voterId)) {
             throw new GameRuleException("오늘은 투표할 수 없습니다.");
         }
-        getAlivePlayer(targetId, "투표 대상");
-        votes.put(voterId, targetId); // 재투표 시 덮어쓰기
+        if (!confirm && confirmedVoters.contains(voterId)) {
+            throw new GameRuleException("이미 투표를 완료했습니다.");
+        }
+        if (targetId == null || targetId == 0L) {
+            votes.remove(voterId); // 표를 거둔다 (기권). Unity JsonUtility는 null을 못 보내서 0도 기권으로 본다
+        } else {
+            getAlivePlayer(targetId, "투표 대상");
+            votes.put(voterId, targetId); // 재투표 시 덮어쓰기
+        }
+        if (confirm) {
+            confirmedVoters.add(voterId);
+        }
     }
 
-    /** 투표할 수 있는 생존자가 모두 투표했는지. 요리사에게 당한 사람은 기다리지 않는다. */
+    /** 이 플레이어가 이번 투표를 완료했는지 */
+    public boolean hasConfirmedVote(Long voterId) {
+        return confirmedVoters.contains(voterId);
+    }
+
+    /** 투표할 수 있는 생존자가 모두 "투표 완료"했는지(기권 포함). 요리사에게 당한 사람은 기다리지 않는다. */
     public boolean allVotesSubmitted() {
-        return votes.size() >= eligibleVoterCount();
+        return confirmedVoters.size() >= eligibleVoterCount();
     }
 
     /** 오늘 투표할 수 있는 생존자 수 (요리사에게 당한 사람 제외) */
