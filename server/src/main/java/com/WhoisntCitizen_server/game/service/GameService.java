@@ -131,12 +131,7 @@ public class GameService {
         Game game = findGame(gameId);
         game.touch(playerId, clock.instant());
         synchronized (game) {
-            GamePlayer me = game.getPlayer(playerId);
-            // isPirate()로 거르면 접선 전 앵무새가 드러나므로 접선 규칙이 들어간 knownPirateAllies를 쓴다.
-            List<Long> teammates = game.knownPirateAllies(me).stream()
-                    .map(GamePlayer::getPlayerId)
-                    .toList();
-            return MyRoleResponse.of(me, teammates);
+            return MyRoleResponse.of(game, game.getPlayer(playerId));
         }
     }
 
@@ -150,9 +145,10 @@ public class GameService {
                 return new GameResultResponse(false, null, null, game.getDay(), List.of());
             }
             List<GameResultResponse.PlayerResult> results = game.getPlayers().stream()
-                    .map(GameResultResponse.PlayerResult::from)
+                    .map(p -> GameResultResponse.PlayerResult.from(p, game.getWinnerIds()))
                     .toList();
-            return new GameResultResponse(true, game.getWinner(), game.getEndReason(), game.getDay(), results);
+            return new GameResultResponse(true, game.getWinner(), game.getEndReason(), game.getDay(), results,
+                    game.getWinnerIds());
         }
     }
 

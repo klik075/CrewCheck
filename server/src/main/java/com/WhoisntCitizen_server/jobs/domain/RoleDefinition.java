@@ -12,6 +12,10 @@ public record RoleDefinition(String code, String name, Faction faction, ActionCo
     public static final String RAIDER_CODE = "PIRATE_RAIDER";
     public static final String PARROT_CODE = "PIRATE_PARROT";
     public static final String MONKEY_CODE = "CREW_MONKEY";
+    public static final String SIREN_CODE = "NEUTRAL_SIREN";
+    public static final String KRAKEN_CODE = "NEUTRAL_KRAKEN";
+    public static final String GHOST_CAPTAIN_CODE = "NEUTRAL_GHOST_CAPTAIN";
+    public static final String MERMAID_CODE = "NEUTRAL_MERMAID";
 
     public static RoleDefinition from(RoleEntity e) {
         return new RoleDefinition(
@@ -42,5 +46,30 @@ public record RoleDefinition(String code, String name, Faction faction, ActionCo
     /** 자신이 원숭이인 줄 모르고 위장 직업으로 행동하는 선원. 행동은 효과가 없고 가짜 결과를 받는다. */
     public boolean isMonkey() {
         return MONKEY_CODE.equals(code);
+    }
+
+    /** 선원·해적 어느 쪽도 아닌 제3 세력. 선장이 조사하면 선원(CREW)으로 보인다. */
+    public boolean isNeutral() {
+        return faction == Faction.NEUTRAL;
+    }
+
+    /** 유혹한 사람을 자기 팀(세이렌 팀)으로 만드는 제3 세력의 리더 */
+    public boolean isSiren() {
+        return SIREN_CODE.equals(code);
+    }
+
+    /** 표식을 남겼다가 한 번에 처치하는 제3 세력. 혼자 이긴다. */
+    public boolean isKraken() {
+        return KRAKEN_CODE.equals(code);
+    }
+
+    /** 밤에 죽지 않는 제3 세력. 사망자가 생존자보다 많아지면 혼자 이긴다. */
+    public boolean isGhostCaptain() {
+        return GHOST_CAPTAIN_CODE.equals(code);
+    }
+
+    /** 투표로 처형되면 혼자 이기는 제3 세력 */
+    public boolean isMermaid() {
+        return MERMAID_CODE.equals(code);
     }
 }

@@ -7,6 +7,7 @@ import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GameEndReason;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
+import com.WhoisntCitizen_server.game.entity.Winner;
 import com.WhoisntCitizen_server.game.event.CancelledGameExpiredEvent;
 import com.WhoisntCitizen_server.game.event.GameEndedEvent;
 import com.WhoisntCitizen_server.game.event.PlayersDepartedEvent;
@@ -148,11 +149,11 @@ class GameFlowServiceEndlessGameTest {
         scheduler.runDue();
 
         assertThat(game.isEnded()).isTrue();
-        assertThat(game.getWinner()).isEqualTo(Faction.CREW);
+        assertThat(game.getWinner()).isEqualTo(Winner.CREW);
         assertThat(game.getEndReason()).isEqualTo(GameEndReason.WIN);
         GameEndedEvent ended = eventsOf(GameEndedEvent.class).get(0);
         assertThat(ended.cancelled()).isFalse();
-        assertThat(ended.winner()).isEqualTo(Faction.CREW);
+        assertThat(ended.winner()).isEqualTo(Winner.CREW);
     }
 
     @Test
@@ -243,7 +244,7 @@ class GameFlowServiceEndlessGameTest {
         flow.checkInactivePlayers(game);
 
         assertThat(game.getLastExecutionResult().executedPlayerId()).isEqualTo(1L);
-        assertThat(game.getWinner()).isEqualTo(Faction.CREW);
+        assertThat(game.getWinner()).isEqualTo(Winner.CREW);
     }
 
     @Test

@@ -50,4 +50,35 @@ public record PrivateReport(
     public static PrivateReport blocked() {
         return new PrivateReport(ReportType.BLOCKED, null, null, null, null, List.of(), List.of());
     }
+
+    /** 요리사: 대상이 다음 투표를 못 하게 했다. */
+    public static PrivateReport voteBan(Long targetId) {
+        return new PrivateReport(ReportType.VOTE_BAN, targetId, null, null, null, List.of(), List.of());
+    }
+
+    /** 요리사에게 당해 오늘 투표를 못 한다. 누가 했는지는 알려 주지 않는다. */
+    public static PrivateReport voteBanned() {
+        return new PrivateReport(ReportType.VOTE_BANNED, null, null, null, null, List.of(), List.of());
+    }
+
+    /** 세이렌: 유혹 결과. 성공하면 대상이 세이렌 팀이 되고 다음 밤은 쉰다. */
+    public static PrivateReport seduce(Long targetId, boolean success) {
+        ReportType type = success ? ReportType.SEDUCE_SUCCESS : ReportType.SEDUCE_FAIL;
+        return new PrivateReport(type, targetId, null, null, null, List.of(), List.of());
+    }
+
+    /** 세이렌에게 유혹당해 세이렌 팀이 됐다. 세이렌 팀 동료(세이렌 포함)를 함께 알려 준다. */
+    public static PrivateReport seduced(List<Long> sirenTeamIds) {
+        return new PrivateReport(ReportType.SEDUCED, null, null, null, null, List.copyOf(sirenTeamIds), List.of());
+    }
+
+    /** 크라켄: 대상에게 표식을 남겼다. */
+    public static PrivateReport krakenMark(Long targetId) {
+        return new PrivateReport(ReportType.KRAKEN_MARK, targetId, null, null, null, List.of(), List.of());
+    }
+
+    /** 크라켄의 표식이 남았다. 누가 남겼는지는 알려 주지 않는다. */
+    public static PrivateReport krakenMarked() {
+        return new PrivateReport(ReportType.KRAKEN_MARKED, null, null, null, null, List.of(), List.of());
+    }
 }

@@ -27,12 +27,12 @@ public class NightController {
         this.currentUser = currentUser;
     }
 
-    /** 3. 밤 능력 사용 (NIGHT 페이즈에서만) */
+    /** 3. 밤 능력 사용 (NIGHT 페이즈에서만). 크라켄 발동은 {"actionCode":"KRAKEN_STRIKE"} (대상 없음) */
     @PostMapping("/night-actions")
     public NightActionResponse submitNightAction(@PathVariable String gameId,
                                                  @AuthenticationPrincipal Jwt jwt,
                                                  @Valid @RequestBody NightActionRequest request) {
-        return nightService.submitAction(gameId, currentUser.userId(jwt), request.targetId());
+        return nightService.submitAction(gameId, currentUser.userId(jwt), request.actionCodeOrNull(), request.targetId());
     }
 
     /** 3. 이번 밤 능력을 쓰지 않고 넘기기 (NIGHT 페이즈에서만). 요청 본문 없음 */

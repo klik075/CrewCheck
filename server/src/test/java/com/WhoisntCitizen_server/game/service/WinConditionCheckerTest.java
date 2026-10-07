@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
+import com.WhoisntCitizen_server.game.entity.Winner;
 import com.WhoisntCitizen_server.jobs.domain.ActionCode;
 import com.WhoisntCitizen_server.jobs.domain.Faction;
 import com.WhoisntCitizen_server.jobs.domain.RoleDefinition;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -23,6 +25,10 @@ class WinConditionCheckerTest {
             new RoleDefinition("CREW_SAILOR", "선원", Faction.CREW, null);
 
     private final WinConditionChecker checker = new WinConditionChecker();
+
+    private Optional<Winner> winnerOf(Game game) {
+        return checker.check(game).map(WinConditionChecker.Victory::winner);
+    }
 
     // 1: 해적, 2: 앵무새, 3~6: 선원
     private Game newGame() {
@@ -45,7 +51,7 @@ class WinConditionCheckerTest {
         Game game = newGame();
         game.getPlayer(1L).kill();
 
-        assertThat(checker.check(game)).contains(Faction.CREW);
+        assertThat(winnerOf(game)).contains(Winner.CREW);
     }
 
     @Test
@@ -66,7 +72,7 @@ class WinConditionCheckerTest {
         game.getPlayer(4L).kill();
         game.getPlayer(5L).kill();
 
-        assertThat(checker.check(game)).contains(Faction.PIRATE);
+        assertThat(winnerOf(game)).contains(Winner.PIRATE);
     }
 
     @Test
@@ -76,7 +82,7 @@ class WinConditionCheckerTest {
         game.getPlayer(1L).kill();
         game.getPlayer(2L).kill();
 
-        assertThat(checker.check(game)).contains(Faction.CREW);
+        assertThat(winnerOf(game)).contains(Winner.CREW);
     }
 
     @Test
@@ -85,6 +91,6 @@ class WinConditionCheckerTest {
         game.getPlayer(3L).kill();
         game.getPlayer(4L).kill();
 
-        assertThat(checker.check(game)).contains(Faction.PIRATE);
+        assertThat(winnerOf(game)).contains(Winner.PIRATE);
     }
 }
