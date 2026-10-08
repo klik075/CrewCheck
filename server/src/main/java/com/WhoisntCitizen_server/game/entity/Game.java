@@ -40,6 +40,8 @@ public class Game {
     @Getter(AccessLevel.NONE)
     private final Set<Long> confirmedVoters = new HashSet<>(); // 이번 투표에서 "투표 완료"를 누른 플레이어 (표가 없으면 기권)
     @Getter(AccessLevel.NONE)
+    private final Set<Long> daySkippers = new HashSet<>(); // 이번 낮 토론을 넘긴 플레이어. 살아 있는 전원이 넘기면 바로 투표로 넘어간다
+    @Getter(AccessLevel.NONE)
     private final Set<Long> voteBanned = new HashSet<>(); // 요리사 때문에 오늘 투표를 못 하는 플레이어. 밤 판정 때 정하고 다음 밤에 지운다
 
     // 마지막으로 누군가 죽은 날. 아무도 죽지 않은 날이 이어지는지(daysWithoutDeath) 셀 때 쓴다. 시작 전은 0
@@ -81,6 +83,9 @@ public class Game {
             lockedActors.clear();
             skippedActors.clear();
             voteBanned.clear();
+        }
+        if (next == GamePhase.DAY) {
+            daySkippers.clear();
         }
         if (next == GamePhase.VOTE) {
             votes.clear();
@@ -161,6 +166,7 @@ public class Game {
             recordDeath();
         }
 
+        daySkippers.remove(playerId);
         votes.remove(playerId);
         confirmedVoters.remove(playerId);
         // 떠난 사람에게 던진 표는 지운다. 그 표로 "투표 완료"한 사람도 다시 고를 수 있게 완료를 푼다
@@ -434,6 +440,37 @@ public class Game {
     /** 오늘 투표를 못 하는지 (요리사). 본인 외에는 공개하지 않는다. */
     public boolean isVoteBanned(Long playerId) {
         return voteBanned.contains(playerId);
+    }
+
+    // ---------- 낮 토론 넘기기 ----------
+
+    /**
+     * 이번 낮 토론을 넘긴다(밤의 능력 넘기기와 같은 방식). 살아 있는 전원이 넘기면 시간을 기다리지 않고 바로 투표로 넘어간다.
+     * 이미 넘겼으면 아무것도 하지 않는다.
+     *
+     * @return 이번에 새로 넘겼으면 true
+     */
+    public boolean skipDay(Long playerId) {
+        requirePhase(GamePhase.DAY);
+        getAlivePlayer(playerId, "넘기는 플레이어");
+        return daySkippers.add(playerId);
+    }
+
+    /** 이 플레이어가 이번 낮 토론을 넘겼는지 */
+    public boolean hasSkippedDay(Long playerId) {
+        return phase == GamePhase.DAY && daySkippers.contains(playerId);
+    }
+
+    /** 이번 낮 토론을 넘긴 생존자 수 */
+    public long daySkipCount() {
+        return players.values().stream()
+                .filter(p -> p.isAlive() && daySkippers.contains(p.getPlayerId()))
+                .count();
+    }
+
+    /** 살아 있는 플레이어가 모두 이번 낮 토론을 넘겼는지 */
+    public boolean allDaySkipped() {
+        return phase == GamePhase.DAY && aliveCount() > 0 && daySkipCount() >= aliveCount();
     }
 
     // ---------- 조회/헬퍼 ----------

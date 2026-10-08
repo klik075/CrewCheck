@@ -159,6 +159,30 @@ public class GameFlowService implements GameTimeoutHandler {
         moveTo(game, GamePhase.VOTE, phaseProps.voteSeconds());
     }
 
+    /**
+     * 5. 낮 토론 넘기기. 넘긴 사실과 인원을 방 채팅으로 알리고, 살아 있는 전원이 넘기면 시간을 기다리지 않고 바로 6. 투표로.
+     * 규칙 위반(낮이 아님, 사망자)은 GameRuleException으로 그대로 던진다. GameService가 호출한다.
+     */
+    public void skipDay(Game game, Long playerId) {
+        // GameService가 잡은 잠금과 같으므로 재진입한다. 다른 경로에서 불러도 타이머·연결 끊김 검사와 겹치지 않게 직접 잠근다.
+        gameLock.runWithLock(game.getGameId(), () -> {
+            if (!game.skipDay(playerId)) {
+                return; // 이미 넘겼다
+            }
+            gameRepository.save(game);
+            announce(game, game.getPlayer(playerId).getNickname() + "님이 토론을 넘겼습니다. ("
+                    + game.daySkipCount() + "/" + game.aliveCount() + ")");
+            if (game.allDaySkipped()) {
+                try {
+                    announce(game, "모두 토론을 넘겨 바로 투표를 시작합니다.");
+                    enterVote(game);
+                } catch (RuntimeException e) {
+                    cancelAfterError(game, e);
+                }
+            }
+        });
+    }
+
     // ---------- 7. 처형 → 8. 승리 조건 검사 → 9. 반복/종료 ----------
 
     /**
@@ -331,6 +355,8 @@ public class GameFlowService implements GameTimeoutHandler {
             doResolveNight(game);
         } else if (game.getPhase() == GamePhase.VOTE && game.allVotesSubmitted()) {
             doResolveVote(game);
+        } else if (game.allDaySkipped()) {
+            enterVote(game); // 남은 사람이 모두 낮 토론을 넘겼다
         }
     }
 
