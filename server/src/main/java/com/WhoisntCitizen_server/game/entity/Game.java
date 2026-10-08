@@ -31,7 +31,6 @@ public class Game {
     private long phaseVersion;    // 페이즈가 바뀔 때마다 증가. 오래된 타이머 작업을 무시하는 데 사용
     private Instant phaseEndsAt;
 
-//    private final Map<Long, Long> nightActions = new LinkedHashMap<>(); // actorId -> targetId
     private final Map<Long, NightAction> nightActions = new LinkedHashMap<>(); // actorId -> 최종 제출 행동
     @Getter(AccessLevel.NONE)
     private final Set<Long> lockedActors = new HashSet<>(); // 이번 밤 행동이 확정되어 바꿀 수 없는 플레이어 (접선한 앵무새)
@@ -207,34 +206,6 @@ public class Game {
 
     // ---------- 3. 밤 능력 ----------
 
-//    public void recordNightAction(Long actorId, Long targetId) {
-//        requirePhase(GamePhase.NIGHT);
-//        GamePlayer actor = getAlivePlayer(actorId, "행동하는 플레이어");
-//        GamePlayer target = getAlivePlayer(targetId, "대상 플레이어");
-//
-//        // 직업 이름이 아니라 DB에 연결된 ActionCode 규칙으로 검증한다.
-//        if (!actor.getRole().hasNightAction()) {
-//            throw new GameRuleException("밤에 사용할 능력이 없는 직업입니다.");
-//        }
-//        ActionCode code = actor.getRole().actionCode();
-//        switch (code) {
-//            // 현재 게임 로직이 처리하는 밤 능력: 공격(해적) / 조사(선장) / 보호(선의)
-//            case SELECT_ATTACK_TARGET, INVESTIGATE_FACTION, PROTECT -> { }
-//            default -> throw new GameRuleException("아직 지원하지 않는 능력입니다: " + code);
-//        }
-//        if (!code.allowsSelfTarget() && actor.getPlayerId().equals(target.getPlayerId())) {
-//            throw new GameRuleException("자신을 대상으로 할 수 없는 능력입니다.");
-//        }
-////        nightActions.put(actorId, targetId);
-//        nightActions.put(actorId, new NightAction(actorId, code, targetId)); // 판정 전 다시 제출은 덮어쓰기
-//    }
-//
-//    public boolean allNightActionsSubmitted() {
-//        long required = players.values().stream()
-//                .filter(p -> p.isAlive() && p.getRole().hasNightAction())
-//                .count();
-//        return nightActions.size() >= required;
-//    }
     /** 제출 시각이 중요하지 않은 곳(테스트 등)에서 쓰는 편의 메서드. */
     public boolean recordNightAction(Long actorId, Long targetId) {
         return recordNightAction(actorId, targetId, Instant.now());
@@ -534,9 +505,6 @@ public class Game {
         return List.copyOf(players.values());
     }
 
-//    public Map<Long, Long> getNightActions() {
-//        return Collections.unmodifiableMap(nightActions);
-//    }
     public Map<Long, NightAction> getNightActions() {
         return Collections.unmodifiableMap(nightActions);
     }

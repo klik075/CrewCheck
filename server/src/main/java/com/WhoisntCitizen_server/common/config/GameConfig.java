@@ -48,7 +48,8 @@ public class GameConfig {
         scheduler.setPoolSize(4);
         scheduler.setThreadNamePrefix("game-phase-");
         scheduler.setClock(clock);
-        //scheduler.initialize();
+        // initialize()는 직접 부르지 않는다. ThreadPoolTaskScheduler가 InitializingBean이라
+        // Spring이 Bean 등록 시 afterPropertiesSet() → initialize()를 호출한다. (직접 부르면 두 번 초기화)
         return scheduler;
     }
 

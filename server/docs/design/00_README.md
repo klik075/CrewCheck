@@ -63,7 +63,7 @@ flowchart LR
 
 | 패키지 | 역할 | 주요 클래스 |
 | --- | --- | --- |
-| `lobby` (연동 수정) | 방 상태, 시작 API, 방 복귀, 이탈자 제외·취소 방 삭제 | `Room`, `RoomService`, `RoomLockManager`, `RoomGameListener`, `RoomController` |
+| `lobby` (연동 수정) | 방 상태, 시작 API, 방 복귀, 이탈자 제외·취소 방 삭제 | `Room`, `RoomService`, `RoomLock`(예전 `RoomLockManager`), `RoomGameListener`, `RoomController` |
 | `game` | 게임 생성, 역할 배정, 페이즈 진행, 승리 판정, 연결 끊김 검사 | `GameService`, `GameFlowService`, `RoleAssigner`, `WinConditionChecker`, `InactivePlayerMonitor`, `Game`, `GamePlayer` |
 | `night` | 밤 능력 제출·넘기기, 밤 판정, 밤 결과 | `NightService`, `NightActionResolver`, `NightResult`, `PrivateReport` |
 | `vote` | 투표, 처형 | `VoteService`, `VoteResolver`, `ExecutionResult` |
