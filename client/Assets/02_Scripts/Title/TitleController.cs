@@ -1,5 +1,4 @@
-using System;
-using TMPro;
+﻿using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using WhoisntCitizen.Common;
@@ -8,41 +7,22 @@ using WhoisntCitizen.Chat; // ChatNotice: 내 화면 전용 안내 (채팅창 + 
 
 namespace WhoisntCitizen.Title
 {
-    // Title 씬: 게스트 / 소셜 / 일반 계정 로그인과 회원가입 처리.
-    //
-    // 화면 흐름
-    //   Main        : [게스트 로그인] [로그인]
-    //   LoginSelect : [구글 로그인] [카카오 로그인] [계정 로그인]   ("로그인" 버튼으로 여는 선택 팝업, 메인 위에 겹쳐 표시)
-    //   Account     : ID/PW 입력(+ 회원가입 패널). 기존 Login 그룹을 그대로 사용한다.
-    // 어떤 방식이든 로그인에 성공하면 AuthSession에 JWT와 유저 정보를 저장하고 로비 씬으로 이동한다.
-    //
+    // Title 씬: 로그인 / 회원가입 처리.
+    // 로그인 성공 시 AuthSession에 JWT와 유저 정보(userId, nickname 등)를 저장하고 로비 씬으로 이동한다.
     // 필드 연결은 Tools > Bind Title Scene (TitleSceneBindTool)이 자동으로 해 준다.
-    // 서버 주소/타임아웃은 ApiConfig, 씬 이름은 SceneLoader, API 호출은 AuthService가 담당한다.
+    //
+    // 서버 주소/타임아웃은 ApiConfig에서, 씬 이름은 SceneLoader에서 한 번에 관리한다.
+    // (이전에 있던 baseUrl / timeoutSeconds / lobbySceneName 필드는 그쪽으로 옮겨서 제거했다)
     public class TitleController : MonoBehaviour
     {
-        private enum TitlePanel { Main, LoginSelect, Account }
+        private const string LoginPath = "/api/members/login";
+        private const string SignupPath = "/api/members/signup";
 
-        [Header("Main")]
-        [SerializeField] private GameObject mainPanel;
-        [SerializeField] private Button guestLoginButton;
-        [SerializeField] private Button openLoginSelectButton;
-        [SerializeField] private TextMeshProUGUI mainMessageText;
-
-        [Header("Login Select (소셜/계정 선택 팝업)")]
-        [SerializeField] private GameObject loginSelectPanel;
-        [SerializeField] private Button googleLoginButton;
-        [SerializeField] private Button kakaoLoginButton;
-        [SerializeField] private Button accountLoginButton;
-        [SerializeField] private Button loginSelectCloseButton;
-        [SerializeField] private TextMeshProUGUI loginSelectMessageText;
-
-        [Header("Account Login (ID/PW)")]
-        [SerializeField] private GameObject accountPanel; // 기존 Login 그룹
+        [Header("Login")]
         [SerializeField] private TMP_InputField loginIdInput;
         [SerializeField] private TMP_InputField loginPasswordInput;
         [SerializeField] private Button loginButton;
         [SerializeField] private Button openRegisterButton;
-        [SerializeField] private Button accountBackButton;
         [SerializeField] private TextMeshProUGUI loginMessageText;
 
         [Header("Register")]
@@ -55,24 +35,15 @@ namespace WhoisntCitizen.Title
         [SerializeField] private Button registerCloseButton; // 회원가입 패널의 X 버튼
         [SerializeField] private TextMeshProUGUI registerMessageText;
 
-        [Header("Editor Mock (소셜 SDK 대신 쓰는 더미 토큰)")]
-        [SerializeField] private MockSocialAuthProvider mockSocialAuth = new MockSocialAuthProvider();
-
         [Header("Colors")]
         [SerializeField] private Color errorColor = new Color(1f, 0.4f, 0.4f);
         [SerializeField] private Color successColor = new Color(0.3f, 0.85f, 0.4f);
         [SerializeField] private Color infoColor = Color.white;
 
-        private TitlePanel currentPanel = TitlePanel.Main;
         private bool isBusy;
 
         private void Awake()
         {
-#if UNITY_EDITOR
-            // 에디터에서는 인스펙터에서 수정한 Mock 토큰을 사용한다. (실기기 빌드에서는 SocialAuth.Provider를 실제 SDK 구현으로 교체)
-            SocialAuth.Provider = mockSocialAuth;
-#endif
-
             // 비밀번호 칸이 평문으로 보이지 않도록 보장한다.
             MaskPassword(loginPasswordInput);
             MaskPassword(registerPasswordInput);
@@ -82,13 +53,6 @@ namespace WhoisntCitizen.Title
         // 에디터 툴이 OnClick 영구 리스너를 연결해 두므로, 없을 때만 코드로 연결한다.
         private void OnEnable()
         {
-            BindIfEmpty(guestLoginButton, OnGuestLoginClicked);
-            BindIfEmpty(openLoginSelectButton, OnOpenLoginSelectClicked);
-            BindIfEmpty(googleLoginButton, OnGoogleLoginClicked);
-            BindIfEmpty(kakaoLoginButton, OnKakaoLoginClicked);
-            BindIfEmpty(accountLoginButton, OnAccountLoginClicked);
-            BindIfEmpty(loginSelectCloseButton, OnCloseLoginSelectClicked);
-            BindIfEmpty(accountBackButton, OnAccountBackClicked);
             BindIfEmpty(loginButton, OnLoginClicked);
             BindIfEmpty(openRegisterButton, OnOpenRegisterClicked);
             BindIfEmpty(registerButton, OnRegisterClicked);
@@ -97,17 +61,10 @@ namespace WhoisntCitizen.Title
 
         private void OnDisable()
         {
-            Unbind(guestLoginButton, OnGuestLoginClicked);
-            Unbind(openLoginSelectButton, OnOpenLoginSelectClicked);
-            Unbind(googleLoginButton, OnGoogleLoginClicked);
-            Unbind(kakaoLoginButton, OnKakaoLoginClicked);
-            Unbind(accountLoginButton, OnAccountLoginClicked);
-            Unbind(loginSelectCloseButton, OnCloseLoginSelectClicked);
-            Unbind(accountBackButton, OnAccountBackClicked);
-            Unbind(loginButton, OnLoginClicked);
-            Unbind(openRegisterButton, OnOpenRegisterClicked);
-            Unbind(registerButton, OnRegisterClicked);
-            Unbind(registerCloseButton, OnCloseRegisterClicked);
+            if (loginButton != null) loginButton.onClick.RemoveListener(OnLoginClicked);
+            if (openRegisterButton != null) openRegisterButton.onClick.RemoveListener(OnOpenRegisterClicked);
+            if (registerButton != null) registerButton.onClick.RemoveListener(OnRegisterClicked);
+            if (registerCloseButton != null) registerCloseButton.onClick.RemoveListener(OnCloseRegisterClicked);
         }
 
         private void Start()
@@ -120,104 +77,12 @@ namespace WhoisntCitizen.Title
                 return;
             }
 
-            ShowPanel(TitlePanel.Main);
-            ClearAllMessages();
+            if (registerPanel != null) registerPanel.SetActive(false);
+            SetMessage(loginMessageText, "", infoColor);
+            SetMessage(registerMessageText, "", infoColor);
         }
 
-        // ---------- 패널 전환 ----------
-
-        // 한 번에 한 화면만 보이도록 모든 패널의 활성 상태를 정리한다.
-        //   Main        : 메인만
-        //   LoginSelect : 메인 + 선택 팝업 (팝업이 메인 위에 겹침)
-        //   Account     : 계정 로그인 패널만 (회원가입 패널은 열기 전까지 닫힘)
-        private void ShowPanel(TitlePanel panel)
-        {
-            currentPanel = panel;
-            SetActive(mainPanel, panel != TitlePanel.Account);
-            SetActive(loginSelectPanel, panel == TitlePanel.LoginSelect);
-            SetActive(accountPanel, panel == TitlePanel.Account);
-            SetActive(registerPanel, false);
-        }
-
-        // ---------- 메인 ----------
-
-        public void OnGuestLoginClicked()
-        {
-            if (isBusy) return;
-
-            SetMessage(mainMessageText, "게스트 로그인 중...", infoColor);
-            SetBusy(true);
-            // UUID는 GuestAccountManager가 PlayerPrefs에서 읽거나 새로 발급한다.
-            AuthService.GuestLogin(result => OnLoginResult(result, "게스트"));
-        }
-
-        public void OnOpenLoginSelectClicked()
-        {
-            if (isBusy) return;
-
-            ClearAllMessages();
-            ShowPanel(TitlePanel.LoginSelect);
-        }
-
-        // ---------- 로그인 수단 선택 ----------
-
-        public void OnCloseLoginSelectClicked()
-        {
-            if (isBusy) return;
-
-            ClearAllMessages();
-            ShowPanel(TitlePanel.Main);
-        }
-
-        public void OnGoogleLoginClicked() => StartSocialLogin(SocialProvider.Google);
-        public void OnKakaoLoginClicked() => StartSocialLogin(SocialProvider.Kakao);
-
-        public void OnAccountLoginClicked()
-        {
-            if (isBusy) return;
-
-            ClearAllMessages();
-            ShowPanel(TitlePanel.Account);
-        }
-
-        // 소셜 SDK에서 토큰을 받고(비동기) → 서버 소셜 로그인 API 호출
-        private void StartSocialLogin(SocialProvider provider)
-        {
-            if (isBusy) return;
-
-            SetMessage(loginSelectMessageText, $"{provider} 로그인 중...", infoColor);
-            SetBusy(true);
-
-            RunSocialLogin(provider);
-        }
-
-        private async void RunSocialLogin(SocialProvider provider)
-        {
-            string token = null;
-            string error = null;
-            try { token = await SocialAuth.GetTokenAsync(provider); }
-            catch (Exception e) { error = e.Message; }
-
-            if (this == null) return; // 대기 중 씬이 바뀐 경우
-
-            if (string.IsNullOrEmpty(token))
-            {
-                SetBusy(false);
-                SetMessage(loginSelectMessageText, error ?? $"{provider} 로그인에 실패했습니다.", errorColor);
-                return;
-            }
-            AuthService.SocialLogin(provider, token, result => OnLoginResult(result, provider.ToString()));
-        }
-
-        // ---------- 계정(ID/PW) 로그인 / 회원가입 ----------
-
-        public void OnAccountBackClicked()
-        {
-            if (isBusy) return;
-
-            ClearAllMessages();
-            ShowPanel(TitlePanel.LoginSelect);
-        }
+        // ---------- 버튼 핸들러 ----------
 
         // Register 버튼: 회원가입 패널 열기 (이미 열려 있으면 입력 내용을 유지한다)
         public void OnOpenRegisterClicked()
@@ -255,7 +120,10 @@ namespace WhoisntCitizen.Title
 
             SetMessage(loginMessageText, "로그인 중...", infoColor);
             SetBusy(true);
-            AuthService.AccountLogin(username, password, result => OnLoginResult(result, "계정"));
+
+            // 로그인은 토큰이 필요 없는 요청이라 requireAuth: false
+            var body = new LoginRequest { username = username, password = password };
+            ApiClient.Post<AuthResponse>(LoginPath, body, OnLoginResult, requireAuth: false);
         }
 
         public void OnRegisterClicked()
@@ -290,13 +158,12 @@ namespace WhoisntCitizen.Title
 
             // 회원가입도 토큰이 필요 없는 요청. 응답 본문은 쓰지 않으므로 파싱 없는 Post를 사용한다.
             var body = new SignupRequest { username = username, password = password, nickname = nickname };
-            ApiClient.Post(AuthService.SignupPath, body, result => OnRegisterResult(result, username), requireAuth: false);
+            ApiClient.Post(SignupPath, body, result => OnRegisterResult(result, username), requireAuth: false);
         }
 
         // ---------- 응답 처리 ----------
 
-        // 게스트/소셜/계정 로그인 공통 응답 처리. (세션 저장은 AuthService가 이미 끝낸 상태)
-        private void OnLoginResult(ApiResult<AuthResponse> result, string label)
+        private void OnLoginResult(ApiResult<AuthResponse> result)
         {
             // 응답 전에 씬이 바뀌어 이 오브젝트가 파괴됐으면 아무것도 하지 않는다.
             if (this == null) return;
@@ -304,23 +171,34 @@ namespace WhoisntCitizen.Title
             if (!result.success)
             {
                 SetBusy(false);
-                SetPanelMessage(result.message, errorColor);
+                SetMessage(loginMessageText, result.message, errorColor);
                 return;
             }
 
-            AuthResponse res = result.data;
-            Debug.Log($"[Title] {label} 로그인 성공 - userId={res.userId}, username={res.username}, nickname={res.nickname}");
+            AuthResponse res = result.data; // ApiClient가 이미 JSON을 AuthResponse로 파싱해 둔 값
+            if (string.IsNullOrEmpty(res.accessToken))
+            {
+                SetBusy(false);
+                SetMessage(loginMessageText, "로그인 응답이 올바르지 않습니다.", errorColor);
+                return;
+            }
+
+            // 로비/게임에서 쓰는 userId, nickname까지 모두 세션에 저장한다.
+            //   userId   : 로비 UserInfoArea의 ID 표시, 방장 여부 판단(hostUserId == userId), 게임 playerId
+            //   nickname : 게임 내 표시 이름
+            AuthSession.SetSession(res.memberId, res.userId, res.username, res.nickname, res.accessToken);
+            Debug.Log($"[Title] 로그인 성공 - userId={res.userId}, username={res.username}, nickname={res.nickname}");
             ChatNotice.Post($"{(string.IsNullOrEmpty(res.nickname) ? res.username : res.nickname)}님, 환영합니다.");
 
-            if (loginPasswordInput != null) loginPasswordInput.text = "";
-            SetPanelMessage("로그인 성공!", successColor);
+            loginPasswordInput.text = "";
+            SetMessage(loginMessageText, "로그인 성공!", successColor);
 
             // 로비로 이동. 씬 이동 중에는 버튼을 잠근 상태로 둔다.
             // 이동을 시작하지 못하면(Build Settings 누락) 원인을 보여주고 잠금을 푼다.
             if (!SceneLoader.Load(SceneType.Lobby))
             {
                 SetBusy(false);
-                SetPanelMessage(
+                SetMessage(loginMessageText,
                     $"로그인은 성공했지만 '{SceneLoader.GetSceneName(SceneType.Lobby)}' 씬이 Build Settings에 없습니다. (Tools > Bind Title Scene 실행)",
                     errorColor);
             }
@@ -351,44 +229,22 @@ namespace WhoisntCitizen.Title
         private void SetBusy(bool busy)
         {
             isBusy = busy;
-            bool value = !busy;
-            SetInteractable(guestLoginButton, value);
-            SetInteractable(openLoginSelectButton, value);
-            SetInteractable(googleLoginButton, value);
-            SetInteractable(kakaoLoginButton, value);
-            SetInteractable(accountLoginButton, value);
-            SetInteractable(loginSelectCloseButton, value);
-            SetInteractable(accountBackButton, value);
-            SetInteractable(loginButton, value);
-            SetInteractable(openRegisterButton, value);
-            SetInteractable(registerButton, value);
+            SetButtons(!busy);
         }
 
-        // 현재 화면의 메시지 칸에 표시한다. (로그인 수단마다 보이는 패널이 달라서)
-        private void SetPanelMessage(string message, Color color)
+        private void SetButtons(bool value)
         {
-            switch (currentPanel)
-            {
-                case TitlePanel.Account: SetMessage(loginMessageText, message, color); break;
-                case TitlePanel.LoginSelect: SetMessage(loginSelectMessageText, message, color); break;
-                default: SetMessage(mainMessageText, message, color); break;
-            }
-        }
-
-        private void ClearAllMessages()
-        {
-            SetMessage(mainMessageText, "", infoColor);
-            SetMessage(loginSelectMessageText, "", infoColor);
-            SetMessage(loginMessageText, "", infoColor);
-            SetMessage(registerMessageText, "", infoColor);
+            if (loginButton != null) loginButton.interactable = value;
+            if (openRegisterButton != null) openRegisterButton.interactable = value;
+            if (registerButton != null) registerButton.interactable = value;
         }
 
         private void ClearRegisterFields()
         {
-            if (registerIdInput != null) registerIdInput.text = "";
-            if (registerPasswordInput != null) registerPasswordInput.text = "";
-            if (registerPasswordConfirmInput != null) registerPasswordConfirmInput.text = "";
-            if (registerNicknameInput != null) registerNicknameInput.text = "";
+            registerIdInput.text = "";
+            registerPasswordInput.text = "";
+            registerPasswordConfirmInput.text = "";
+            registerNicknameInput.text = "";
         }
 
         private static void MaskPassword(TMP_InputField input)
@@ -405,25 +261,10 @@ namespace WhoisntCitizen.Title
             text.color = color;
         }
 
-        private static void SetActive(GameObject go, bool active)
-        {
-            if (go != null && go.activeSelf != active) go.SetActive(active);
-        }
-
-        private static void SetInteractable(Button button, bool value)
-        {
-            if (button != null) button.interactable = value;
-        }
-
         private static void BindIfEmpty(Button button, UnityEngine.Events.UnityAction action)
         {
             if (button != null && button.onClick.GetPersistentEventCount() == 0)
                 button.onClick.AddListener(action);
-        }
-
-        private static void Unbind(Button button, UnityEngine.Events.UnityAction action)
-        {
-            if (button != null) button.onClick.RemoveListener(action);
         }
     }
 }

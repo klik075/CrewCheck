@@ -69,9 +69,9 @@ namespace WhoisntCitizen.Game.Tests
             Handle("GetNightResult", onDone, cb => inner.GetNightResult(gameId, cb));
         }
 
-        public void Vote(string gameId, long targetId, bool confirm, Action<GameApiResult<VoteResultDto>> onDone)
+        public void Vote(string gameId, long targetId, Action<GameApiResult<VoteResultDto>> onDone)
         {
-            Handle("Vote", onDone, cb => inner.Vote(gameId, targetId, confirm, cb));
+            Handle("Vote", onDone, cb => inner.Vote(gameId, targetId, cb));
         }
 
         public void GetExecutionResult(string gameId, Action<GameApiResult<ExecutionResultDto>> onDone)

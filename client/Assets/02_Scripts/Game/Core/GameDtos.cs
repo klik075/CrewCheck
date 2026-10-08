@@ -122,14 +122,6 @@ namespace WhoisntCitizen.Game
 
     // ---------------------------------------------------------------- 투표 POST /votes, 처형 결과 GET /execution-result
 
-    /// <summary>POST /votes 본문. targetId 0 = 기권(표를 거둔다), confirm = 투표 완료(지금 상태로 고정).</summary>
-    [Serializable]
-    public class VoteRequestDto
-    {
-        public long targetId;
-        public bool confirm;
-    }
-
     [Serializable]
     public class VoteResultDto
     {
