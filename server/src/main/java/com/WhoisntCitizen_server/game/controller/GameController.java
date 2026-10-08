@@ -1,11 +1,13 @@
 package com.WhoisntCitizen_server.game.controller;
 
+import com.WhoisntCitizen_server.game.dto.DaySkipResponse;
 import com.WhoisntCitizen_server.game.dto.GameResultResponse;
 import com.WhoisntCitizen_server.game.dto.GameStateResponse;
 import com.WhoisntCitizen_server.game.dto.MyRoleResponse;
 import com.WhoisntCitizen_server.game.service.GameService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import com.WhoisntCitizen_server.user.service.CurrentUserResolver;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -46,6 +48,13 @@ public class GameController {
     public MyRoleResponse myRole(@PathVariable String gameId,
                                  @AuthenticationPrincipal Jwt jwt) {
         return gameService.getMyRole(gameId, currentUser.userId(jwt));
+    }
+
+    /** 5. 낮 토론 넘기기 (DAY 페이즈에서만). 요청 본문 없음. 살아 있는 전원이 넘기면 바로 투표로 넘어간다 */
+    @PostMapping("/{gameId}/day/skip")
+    public DaySkipResponse skipDay(@PathVariable String gameId,
+                                   @AuthenticationPrincipal Jwt jwt) {
+        return gameService.skipDay(gameId, currentUser.userId(jwt));
     }
 
     /** 8·9. 승리 결과 (종료 전이면 ended=false) */

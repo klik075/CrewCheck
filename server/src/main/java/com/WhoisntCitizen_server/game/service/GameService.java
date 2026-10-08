@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.exception.GameNotFoundException;
 import com.WhoisntCitizen_server.common.exception.GameRuleException;
+import com.WhoisntCitizen_server.game.dto.DaySkipResponse;
 import com.WhoisntCitizen_server.game.dto.DevRoleView;
 import com.WhoisntCitizen_server.game.dto.GameParticipant;
 import com.WhoisntCitizen_server.game.dto.GameResultResponse;
@@ -176,6 +177,16 @@ public class GameService {
         Game game = findGame(gameId);
         synchronized (game) {
             return game.getPlayers().stream().map(DevRoleView::from).toList();
+        }
+    }
+
+    /** 5. 낮 토론 넘기기. 살아 있는 전원이 넘기면 바로 투표로 넘어간다(응답의 phase가 VOTE). */
+    public DaySkipResponse skipDay(String gameId, Long playerId) {
+        Game game = findGame(gameId);
+        synchronized (game) {
+            gameFlowService.skipDay(game, playerId);
+            return new DaySkipResponse(true, game.getPhase(), game.getPhaseVersion(),
+                    game.daySkipCount(), game.aliveCount());
         }
     }
 
