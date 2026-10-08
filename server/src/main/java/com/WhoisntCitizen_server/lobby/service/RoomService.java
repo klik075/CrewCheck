@@ -218,6 +218,27 @@ public class RoomService {
         return deleted;
     }
 
+    /**
+     * 준비 / 준비 취소 (방장 제외 참가자).
+     * 입장·나가기·게임 시작과 같은 방 잠금 안에서 처리한다.
+     * 실패: 409 게임 중 / 참가 중이 아님 / 방장, 400 존재하지 않는 방
+     */
+    public void setReady(Long roomId, Long memberId, boolean ready) {
+        Long userId = findUser(memberId).getId();
+
+        roomLock.runWithLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            if (room.isInGame()) throw new IllegalStateException("게임 중에는 준비 상태를 바꿀 수 없습니다.");
+            if (!room.containsPlayer(userId)) throw new IllegalStateException("해당 방에 참가 중이지 않습니다.");
+            if (userId.equals(room.getHostUserId())) throw new IllegalStateException("방장은 준비할 필요가 없습니다.");
+
+            room.changeReady(userId, ready);
+            roomRepository.save(room);
+        });
+    }
+
     // 게임 시작 (방장만)
     public StartGameResponse startGame(Long roomId, Long memberId) {
         Long userId = findUser(memberId).getId();
@@ -230,9 +251,8 @@ public class RoomService {
             if (!userId.equals(room.getHostUserId())) throw new IllegalStateException("방장만 게임을 시작할 수 있습니다.");
             if (room.isInGame()) throw new IllegalStateException("이미 게임이 진행 중인 방입니다.");
             // 사용자에게 빠르게 알려주기 위한 검사. 최종 인원 검사는 게임 쪽(RoleAssigner)이 한 번 더 한다.
-            if (room.getPlayers().size() < MIN_PLAYERS) {
-                throw new IllegalStateException("게임을 시작하려면 최소 " + MIN_PLAYERS + "명이 필요합니다.");
-            }
+            if (room.getPlayers().size() < MIN_PLAYERS) throw new IllegalStateException("게임을 시작하려면 최소 " + MIN_PLAYERS + "명이 필요합니다.");
+            if (!room.allGuestsReady()) throw new IllegalStateException("모든 참가자가 준비해야 게임을 시작할 수 있습니다.");
 
             // Room 참가자(userId = User.id)를 그대로 게임 참가자(playerId)로 넘긴다.
             List<GameParticipant> participants = room.getPlayers().stream()
