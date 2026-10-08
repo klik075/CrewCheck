@@ -31,6 +31,9 @@ namespace WhoisntCitizen.Game
         /// <summary>내 밤 행동·넘기기가 접수됨. 앵무새가 접선했으면 contactedPirateIds가 채워져 있다.</summary>
         void ShowActionAccepted(NightActionResultDto result);
 
+        /// <summary>내 낮 토론 넘기기가 접수됨. 넘긴 인원(skippedCount/requiredCount)이 들어 있다.</summary>
+        void ShowDaySkipAccepted(DaySkipResultDto result);
+
         /// <summary>내 투표가 접수됨.</summary>
         void ShowVoteAccepted(VoteResultDto result);
 

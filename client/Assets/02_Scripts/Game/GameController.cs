@@ -7,7 +7,7 @@ namespace WhoisntCitizen.Game
     /// Game 씬의 게임 진행 담당 MonoBehaviour. 흐름은 GameSession(Core)이 하고, 여기서는 Unity 수명주기와 서버 선택만 맡는다.
     /// - 실제 서버: Room 씬(대기실)에서 받은 RoomSession.GameId로 WaitingRoomController가 BeginGame(gameId)를 부른다.
     /// - 가짜 서버(useFakeServer): 로그인·방 없이 BeginFakeGame()으로 바로 시작한다(Play만 누르면 된다).
-    /// - UI(G 단계)는 IGameView를 구현해 gameView에 넣고, 버튼은 SubmitNightAction·SkipNightAction·Vote를 부른다.
+    /// - UI(G 단계)는 IGameView를 구현해 gameView에 넣고, 버튼은 SubmitNightAction·SkipNightAction·SkipDay·Vote를 부른다.
     ///   gameView가 비어 있으면 같은 오브젝트·자식에서 IGameView를 찾고, 그래도 없으면 Console 로그(LogGameView)로 대신한다.
     /// </summary>
     public sealed class GameController : MonoBehaviour
@@ -127,6 +127,11 @@ namespace WhoisntCitizen.Game
         public bool SkipNightAction()
         {
             return Session != null && Session.SkipNightAction();
+        }
+
+        public bool SkipDay()
+        {
+            return Session != null && Session.SkipDay();
         }
 
         public bool Vote(long targetId)

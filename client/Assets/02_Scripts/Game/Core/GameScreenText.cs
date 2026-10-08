@@ -61,6 +61,8 @@ namespace WhoisntCitizen.Game
         public const string YouDied = "당신은 사망했습니다. 이제 지켜볼 수만 있습니다.";
         public const string WaitingForServer = "판정 중";
         public const string SkippedTonight = "이번 밤은 능력을 쓰지 않습니다.";
+        public const string DayDiscussionHint = "토론을 넘길 수 있습니다.\n살아 있는 전원이 넘기면 바로 투표합니다.";
+        public const string DeadCannotSkipDay = "사망한 플레이어는 토론을 넘길 수 없습니다.";
         public const string GameClosed = "게임이 끝나 대기실로 돌아갑니다.";
         public const string CancelledGameClosed = "게임이 취소되어 로비로 돌아갑니다.";
         /// <summary>취소된 게임의 방은 서버가 곧 지우므로 로비로 보낸 뒤 보여 준다.</summary>
@@ -110,6 +112,45 @@ namespace WhoisntCitizen.Game
                 return action + " 대상: " + GameStateQueries.NicknameOf(state, chosenTargetId) + "님\n다른 사람을 골라 바꿀 수 있습니다.";
             }
             return action + " 대상을 고르세요.";
+        }
+
+        /// <summary>넘긴 인원 표시. 예: "(3/5)". 인원을 모르면 빈 문자열.</summary>
+        public static string DaySkipCount(DaySkipResultDto progress)
+        {
+            return progress == null || progress.requiredCount <= 0
+                ? string.Empty
+                : "(" + progress.skippedCount + "/" + progress.requiredCount + ")";
+        }
+
+        /// <summary>
+        /// 낮 토론 패널 안내. 낮이 아니면 빈 문자열, 사망했으면 이유, 넘겼으면 넘긴 인원, 아니면 넘길 수 있다는 안내.
+        /// </summary>
+        public static string DayStatus(bool isDay, bool alive, bool skipped, DaySkipResultDto progress)
+        {
+            if (!isDay)
+            {
+                return string.Empty;
+            }
+            if (!alive)
+            {
+                return DeadCannotSkipDay;
+            }
+            if (skipped)
+            {
+                string count = DaySkipCount(progress);
+                return "토론을 넘겼습니다. " + count + "\n다른 사람을 기다리는 중입니다.";
+            }
+            return DayDiscussionHint;
+        }
+
+        /// <summary>토론 넘기기가 접수됐을 때 채팅 기록에 남길 문구. (실제 서버는 방 채팅에 닉네임과 인원을 따로 알린다)</summary>
+        public static string DaySkipAccepted(DaySkipResultDto result)
+        {
+            if (result.phase == GamePhases.Vote)
+            {
+                return "모두 토론을 넘겨 바로 투표를 시작합니다.";
+            }
+            return "토론을 넘겼습니다. " + DaySkipCount(result);
         }
 
         /// <summary>밤 행동이 접수됐을 때 채팅 기록에 남길 문구. 접선이면 접선 알림.</summary>

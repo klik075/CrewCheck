@@ -413,6 +413,48 @@ namespace WhoisntCitizen.Game.Tests
             Assert.AreEqual(1, ExecutionResult(api).day);
         }
 
+        // ---------------------------------------------------------------- 낮 토론 넘기기
+
+        private static GameApiResult<DaySkipResultDto> SkipDay(FakeGameApi api)
+        {
+            return Call<DaySkipResultDto>(cb => api.SkipDay(Id, cb));
+        }
+
+        [Test]
+        public void 토론을_넘기면_넘긴_인원을_돌려주고_낮에만_넘길_수_있다()
+        {
+            var api = Create(RoleCodes.CrewSailor, false);
+
+            AssertRule(SkipDay(api), "현재 페이즈(NIGHT)에서는 할 수 없는 요청입니다. 필요 페이즈: DAY");
+
+            SkipTo(api, GamePhases.Day);
+            var r = SkipDay(api);
+            Assert.IsTrue(r.Success);
+            Assert.AreEqual(GamePhases.Day, r.Data.phase, "봇이 넘기지 않아 시간 종료까지 기다린다");
+            Assert.AreEqual(1L, r.Data.skippedCount);
+            Assert.AreEqual(8L, r.Data.requiredCount);
+
+            var again = SkipDay(api);
+            Assert.IsTrue(again.Success, "이미 넘겼어도 오류가 아니다");
+            Assert.AreEqual(1L, again.Data.skippedCount);
+        }
+
+        [Test]
+        public void 봇이_있으면_내가_토론을_넘기는_순간_투표가_시작된다()
+        {
+            var api = Create(RoleCodes.PirateRaider, true); // 봇 해적은 나를 공격하지 않는다
+            Act(api, 104);
+            SkipTo(api, GamePhases.Day);
+            long dayVersion = State(api).phaseVersion;
+
+            var r = SkipDay(api);
+
+            Assert.IsTrue(r.Success);
+            Assert.AreEqual(GamePhases.Vote, r.Data.phase, "살아 있는 전원이 넘김 → 바로 투표");
+            Assert.AreEqual(dayVersion + 1, r.Data.phaseVersion);
+            Assert.AreEqual(r.Data.requiredCount, r.Data.skippedCount);
+        }
+
         // ---------------------------------------------------------------- 승패
 
         [Test]

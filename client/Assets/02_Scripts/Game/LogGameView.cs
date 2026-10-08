@@ -63,6 +63,11 @@ namespace WhoisntCitizen.Game
             Debug.Log(Tag + "밤 행동 접수" + (string.IsNullOrEmpty(contact) ? string.Empty : " · " + contact));
         }
 
+        public void ShowDaySkipAccepted(DaySkipResultDto result)
+        {
+            Debug.Log(Tag + "토론 넘기기 접수 (" + result.skippedCount + "/" + result.requiredCount + ")");
+        }
+
         public void ShowVoteAccepted(VoteResultDto result)
         {
             Debug.Log(Tag + "투표 접수");
