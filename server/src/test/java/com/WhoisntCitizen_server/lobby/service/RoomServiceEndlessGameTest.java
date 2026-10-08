@@ -5,6 +5,7 @@ import com.WhoisntCitizen_server.game.service.GameService;
 import com.WhoisntCitizen_server.lobby.domain.room.Room;
 import com.WhoisntCitizen_server.lobby.domain.room.RoomPlayer;
 import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
+import com.WhoisntCitizen_server.lobby.lock.LocalRoomLock;
 import com.WhoisntCitizen_server.user.entity.User;
 import com.WhoisntCitizen_server.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +36,7 @@ class RoomServiceEndlessGameTest {
         rooms = new InMemoryLobbyRoomRepository();
         users = mock(UserRepository.class);
         gameService = mock(GameService.class);
-        roomService = new RoomService(rooms, users, new RoomLockManager(), gameService, events::add);
+        roomService = new RoomService(rooms, users, new LocalRoomLock(), gameService, events::add);
     }
 
     /** 방장 10, 참가자 20·30. gameId가 있으면 그 게임이 진행 중인 방 */

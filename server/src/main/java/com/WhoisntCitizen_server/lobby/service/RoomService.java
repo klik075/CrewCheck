@@ -15,6 +15,7 @@ import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
 import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerJoinedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerLeftEvent;
+import com.WhoisntCitizen_server.lobby.lock.RoomLock;
 import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
 import com.WhoisntCitizen_server.user.entity.User;
 import com.WhoisntCitizen_server.user.repository.UserRepository;
@@ -60,7 +61,7 @@ public class RoomService {
 
     private final LobbyRoomRepository roomRepository;
     private final UserRepository userRepository;
-    private final RoomLockManager roomLockManager;
+    private final RoomLock roomLock; // 방 단위 잠금. 잠금 순서: 방 잠금 → 게임 잠금
     private final GameService gameService;
     // 입장/퇴장 이벤트 발행 (채팅의 ChatLobbyEventListener가 받아 "OOO님이 입장했습니다." 시스템 메시지를 남긴다)
     private final ApplicationEventPublisher eventPublisher;
@@ -116,7 +117,7 @@ public class RoomService {
         User user = findUser(memberId);
 
         // 읽기 → 검사 → 추가 → 저장을 같은 방 잠금 안에서 처리 (동시 입장 시 덮어쓰기 방지)
-        RoomResponseDto joined = roomLockManager.withLock(roomId, () -> {
+        RoomResponseDto joined = roomLock.withLock(roomId, () -> {
             Room room = findRoom(roomId);
             recoverIfOrphaned(room);
 
@@ -143,7 +144,7 @@ public class RoomService {
         Long userId = user.getId();
 
         // 반환값: 방이 남아 있으면 true, 마지막 사람이 나가 방이 삭제되면 false
-        boolean roomRemains = roomLockManager.withLock(roomId, () -> {
+        boolean roomRemains = roomLock.withLock(roomId, () -> {
             Room room = findRoom(roomId);
             recoverIfOrphaned(room);
 
@@ -179,7 +180,7 @@ public class RoomService {
      * 그사이 같은 방에서 다른 게임이 시작됐으면 무시한다.
      */
     public void removeDepartedPlayers(Long roomId, String gameId, List<Long> userIds) {
-        boolean deleted = roomLockManager.withLock(roomId, () -> {
+        boolean deleted = roomLock.withLock(roomId, () -> {
             Room room = roomRepository.findById(roomId);
             if (room == null) return false;
             if (room.isInGame() && !Objects.equals(room.getGameId(), gameId)) return false;
@@ -205,7 +206,7 @@ public class RoomService {
      * @return 삭제했으면 true
      */
     public boolean deleteRoomOfCancelledGame(Long roomId, String gameId) {
-        boolean deleted = roomLockManager.withLock(roomId, () -> {
+        boolean deleted = roomLock.withLock(roomId, () -> {
             Room room = roomRepository.findById(roomId);
             if (room == null || !Objects.equals(room.getGameId(), gameId)) return false;
             roomRepository.delete(roomId);
@@ -222,7 +223,7 @@ public class RoomService {
         Long userId = findUser(memberId).getId();
 
         // 입장/나가기와 같은 방 잠금 안에서 처리: 시작 도중 누가 들어오거나 나가지 못한다.
-        return roomLockManager.withLock(roomId, () -> {
+        return roomLock.withLock(roomId, () -> {
             Room room = findRoom(roomId);
             recoverIfOrphaned(room);
 
@@ -255,7 +256,7 @@ public class RoomService {
      *         (방이 이미 없음 / 이미 WAITING / 다른 게임의 이벤트인 경우 무시)
      */
     public boolean returnToWaiting(Long roomId, String gameId) {
-        return roomLockManager.withLock(roomId, () -> {
+        return roomLock.withLock(roomId, () -> {
             Room room = roomRepository.findById(roomId);
             if (room == null) return false;                          // 게임 중 방이 사라진 경우
             if (!room.isInGame()) return false;                      // 이미 복귀됨
@@ -352,7 +353,7 @@ public class RoomService {
      * - 서버 재시작: 진행 중인 게임(메모리)은 사라지지만 방(Redis)은 IN_GAME으로 남는다.
      * - 종료 이벤트 처리 실패: 게임은 끝났는데 방 복귀가 안 된 경우.
      * 취소된 게임의 방은 곧 삭제되므로 게임이 메모리에 남아 있는 동안은 되돌리지 않는다. (GameService.keepsRoomInGame)
-     * 반드시 해당 방의 잠금(roomLockManager) 안에서 호출한다.
+     * 반드시 해당 방의 잠금(roomLock) 안에서 호출한다.
      *
      * @return 복구했으면 true
      */
@@ -372,7 +373,7 @@ public class RoomService {
         if (!room.isInGame() || gameService.keepsRoomInGame(room.getGameId())) {
             return room; // 대부분의 방은 잠금 없이 그대로 반환
         }
-        return roomLockManager.withLock(room.getId(), () -> {
+        return roomLock.withLock(room.getId(), () -> {
             Room latest = roomRepository.findById(room.getId()); // 잠금 안에서 최신 상태로 다시 확인
             if (latest != null) {
                 recoverIfOrphaned(latest);
