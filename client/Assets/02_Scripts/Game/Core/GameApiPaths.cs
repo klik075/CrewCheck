@@ -27,6 +27,12 @@ namespace WhoisntCitizen.Game
             return State(gameId) + "/night-actions/skip";
         }
 
+        /// <summary>낮 토론 넘기기 (서버 GameController.skipDay)</summary>
+        public static string SkipDay(string gameId)
+        {
+            return State(gameId) + "/day/skip";
+        }
+
         public static string NightResult(string gameId)
         {
             return State(gameId) + "/night-result";

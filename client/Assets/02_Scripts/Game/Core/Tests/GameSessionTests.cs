@@ -378,6 +378,33 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 낮_토론_넘기기를_기억하고_다음_페이즈에_지운다()
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+
+            Assert.IsFalse(session.CanSkipDay, "밤에는 넘길 수 없다");
+            Assert.IsFalse(session.SkipDay());
+            Assert.AreEqual(GameSession.CannotSkipDayMessage, view.Errors.Last());
+            Assert.AreEqual(0, api.Calls("SkipDay"), "넘길 수 없으면 서버에 보내지 않는다");
+
+            SkipUntil(GamePhases.Day);
+            Assert.IsTrue(session.CanSkipDay);
+            Assert.IsTrue(session.SkipDay());
+
+            Assert.IsTrue(session.SkippedToday);
+            Assert.IsFalse(session.CanSkipDay, "한 번 넘기면 다시 누를 수 없다");
+            Assert.AreEqual(1L, session.DaySkipProgress.skippedCount);
+            Assert.AreEqual(8L, session.DaySkipProgress.requiredCount);
+            Assert.AreEqual(1, view.DaySkipsAccepted.Count);
+
+            SkipAndPoll();
+            Assert.AreEqual(GamePhases.Vote, session.State.phase);
+            Assert.IsFalse(session.SkippedToday);
+            Assert.IsNull(session.DaySkipProgress);
+        }
+
+        [Test]
         public void 응답을_기다리는_동안_다른_입력은_무시한다()
         {
             Start(RoleCodes.PirateRaider, false);

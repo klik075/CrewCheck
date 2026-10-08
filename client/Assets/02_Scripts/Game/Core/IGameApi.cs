@@ -24,6 +24,9 @@ namespace WhoisntCitizen.Game
         /// <summary>POST /api/v1/games/{gameId}/night-actions/skip — 이번 밤 능력을 쓰지 않는다.</summary>
         void SkipNightAction(string gameId, Action<GameApiResult<NightActionResultDto>> onDone);
 
+        /// <summary>POST /api/v1/games/{gameId}/day/skip — 이번 낮 토론을 넘긴다. 살아 있는 전원이 넘기면 바로 투표로 넘어간다.</summary>
+        void SkipDay(string gameId, Action<GameApiResult<DaySkipResultDto>> onDone);
+
         /// <summary>GET /api/v1/games/{gameId}/night-result — 가장 최근 밤 결과. 페이즈와 상관없이 조회된다.</summary>
         void GetNightResult(string gameId, Action<GameApiResult<NightResultDto>> onDone);
 

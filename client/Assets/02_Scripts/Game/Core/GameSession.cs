@@ -15,6 +15,7 @@ namespace WhoisntCitizen.Game
     public sealed class GameSession
     {
         public const string CannotVoteMessage = "지금은 투표할 수 없습니다.";
+        public const string CannotSkipDayMessage = "지금은 토론을 넘길 수 없습니다.";
 
         private readonly IGameApi api;
         private readonly IGameView view;
@@ -27,7 +28,7 @@ namespace WhoisntCitizen.Game
         private bool connected = true;
         private double nextPollAt;          // 0 → 다음 Tick에 바로
         private bool pollInFlight;
-        private bool actionInFlight;        // 밤 행동·넘기기·투표는 한 번에 하나만
+        private bool actionInFlight;        // 밤 행동·넘기기·토론 넘기기·투표는 한 번에 하나만
         private bool meNeeded = true;
         private bool meInFlight;
         private bool nightInFlight;
@@ -41,6 +42,8 @@ namespace WhoisntCitizen.Game
         private long nightChoiceTarget;     // 0 = 넘김
         private long voteVersion = -1;
         private long voteTarget;
+        private long daySkipVersion = -1;   // 토론을 넘긴 낮의 phaseVersion
+        private DaySkipResultDto daySkipResult;
 
         /// <param name="clock">단조 증가 시간(초). Unity에서는 () => Time.realtimeSinceStartupAsDouble</param>
         public GameSession(IGameApi api, string gameId, IGameView view, Func<double> clock, double pollIntervalSeconds)
@@ -134,6 +137,28 @@ namespace WhoisntCitizen.Game
         public bool SkippedTonight
         {
             get { return IsCurrentNight(nightChoiceVersion) && nightChoiceTarget == 0; }
+        }
+
+        /// <summary>이번 낮 토론을 넘겼는지. 다음 낮(phaseVersion이 바뀜)이 되면 저절로 false가 된다.</summary>
+        public bool SkippedToday
+        {
+            get { return State != null && State.phase == GamePhases.Day && daySkipVersion == State.phaseVersion; }
+        }
+
+        /// <summary>이번 낮에 넘겼을 때 서버가 알려 준 인원. 넘기지 않았으면 null.</summary>
+        public DaySkipResultDto DaySkipProgress
+        {
+            get { return SkippedToday ? daySkipResult : null; }
+        }
+
+        /// <summary>지금 낮 토론을 넘길 수 있는지 (낮, 내가 살아 있음, 아직 넘기지 않음).</summary>
+        public bool CanSkipDay
+        {
+            get
+            {
+                return Me != null && State != null && State.phase == GamePhases.Day
+                    && GameStateQueries.IsAlive(State, Me.playerId) && !SkippedToday;
+            }
         }
 
         /// <summary>이번 투표에서 내가 고른 대상. 아직 투표하지 않았으면 0.</summary>
@@ -254,6 +279,34 @@ namespace WhoisntCitizen.Game
                 nightChoiceVersion = version;
                 nightChoiceTarget = 0;
                 view.ShowActionAccepted(r.Data);
+                PollNowIfChanged(version, r.Data.phaseVersion);
+            });
+            return true;
+        }
+
+        /// <summary>이번 낮 토론을 넘긴다. 보냈으면 true. 살아 있는 전원이 넘기면 서버가 바로 투표로 넘긴다.</summary>
+        public bool SkipDay()
+        {
+            if (!CanSendAction())
+            {
+                return false;
+            }
+            if (!CanSkipDay)
+            {
+                view.ShowError(CannotSkipDayMessage);
+                return false;
+            }
+            long version = State.phaseVersion;
+            actionInFlight = true;
+            api.SkipDay(GameId, r =>
+            {
+                if (!OnActionResponse(r))
+                {
+                    return;
+                }
+                daySkipVersion = version;
+                daySkipResult = r.Data;
+                view.ShowDaySkipAccepted(r.Data);
                 PollNowIfChanged(version, r.Data.phaseVersion);
             });
             return true;

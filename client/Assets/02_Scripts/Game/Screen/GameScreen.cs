@@ -10,10 +10,10 @@ namespace WhoisntCitizen.Game
     /// <summary>
     /// 게임 화면의 단일 진입점(IGameView). GameSession이 알려 주는 것을 각 패널에 나눠 준다.
     /// - feat/vote(klik075)의 부품: ChatLogView(시스템 메시지), BottomTabController(하단 시트), VotePanelController(투표)
-    /// - G의 부품: NightActionPanel(밤 능력), RoleCardView(직업 카드), GameResultPanel(결과 + "대기실로")
+    /// - G의 부품: NightActionPanel(밤 능력), DaySkipPanel(낮 토론 넘기기), RoleCardView(직업 카드), GameResultPanel(결과 + "대기실로")
     /// 패널끼리는 서로 모르고, 입력(투표·밤 능력·대기실로)은 모두 여기서 GameController·WaitingRoomController로 넘긴다.
     /// GameController의 gameView 칸에 이 컴포넌트를 넣는다.
-    /// 하단 시트: 밤에는 [+] 서랍에 NightActionPanel을, 그 밖에는 VotePanel을 보여 준다(둘 다 Drawer 안에 나란히 둔다).
+    /// 하단 시트: 밤에는 [+] 서랍에 NightActionPanel을, 낮에는 DaySkipPanel을, 그 밖에는 VotePanel을 보여 준다(모두 Drawer 안에 나란히 둔다).
     /// 투표: VOTE 페이즈가 되면 부채꼴 카드패(VoteCardHandController)가 아래에서 올라온다. 카드를 뽑으면 투표한다.
     ///       기존 VotePanel 투표 처리는 [카드패 투표로 교체 - 주석 처리] 표시로 막아 두었다(패널은 보기 전용으로 남는다).
     // [공개 안내 수동 설정 - 주석 처리]
@@ -46,6 +46,7 @@ namespace WhoisntCitizen.Game
 
         [Header("G 부품")]
         [SerializeField] private NightActionPanel nightPanel;
+        [SerializeField] private DaySkipPanel dayPanel;
         [SerializeField] private RoleCardView roleCard;
         [SerializeField] private GameResultPanel resultPanel;
 
@@ -71,6 +72,7 @@ namespace WhoisntCitizen.Game
         private string announcedRole;
         private string announcedTeammates;
         private bool nightDrawerOpened;
+        private bool dayDrawerOpened;
         private int shownSeconds = -1;
         private bool shownWaiting;
         private bool deadVoteNoticeShown;
@@ -138,6 +140,11 @@ namespace WhoisntCitizen.Game
                 nightPanel.Confirmed += OnNightConfirmed;
                 nightPanel.Skipped += OnNightSkipped;
             }
+            if (dayPanel != null)
+            {
+                dayPanel.PortraitResolver = PortraitOf;
+                dayPanel.Skipped += OnDaySkipped;
+            }
             if (resultPanel != null)
             {
                 resultPanel.BackRequested += OnBackRequested;
@@ -168,6 +175,10 @@ namespace WhoisntCitizen.Game
             {
                 nightPanel.Confirmed -= OnNightConfirmed;
                 nightPanel.Skipped -= OnNightSkipped;
+            }
+            if (dayPanel != null)
+            {
+                dayPanel.Skipped -= OnDaySkipped;
             }
             if (resultPanel != null)
             {
@@ -234,6 +245,14 @@ namespace WhoisntCitizen.Game
                     nightDrawerOpened = false;
                     TryOpenNightDrawer();
                     break;
+                case GamePhases.Day:
+                    dayDrawerOpened = false;
+                    if (Session == null || !Session.CanSkipDay)
+                    {
+                        CloseDrawer(); // 사망자 등 넘길 수 없으면 예전처럼 서랍을 내린다
+                    }
+                    TryOpenDayDrawer();
+                    break;
                 case GamePhases.Vote:
                     // [카드패 투표로 교체 - 주석 처리] 기존: 투표 패널 초기화 후 하단 서랍을 연다
                     // if (votePanel != null)
@@ -284,6 +303,7 @@ namespace WhoisntCitizen.Game
             }
             RefreshPlayers(state);
             TryOpenNightDrawer();
+            TryOpenDayDrawer();
         }
 
         public void ShowNightResult(NightResultDto result)
@@ -335,6 +355,16 @@ namespace WhoisntCitizen.Game
             }
             AddSystem(GameScreenText.ActionAccepted(result, session.Me.actionCode, session.MyNightTarget, session.SkippedTonight, session.State));
             RefreshPanels();
+        }
+
+        public void ShowDaySkipAccepted(DaySkipResultDto result)
+        {
+            // 실제 서버는 방 채팅에 "OO님이 토론을 넘겼습니다. (3/5)"를 보내므로, 서버 안내가 이 채팅창에 없을 때만 남긴다
+            if (AnnouncePublic)
+            {
+                AddSystem(GameScreenText.DaySkipAccepted(result));
+            }
+            RefreshPanels(); // 넘긴 인원은 패널 안내에 항상 보인다
         }
 
         public void ShowVoteAccepted(VoteResultDto result)
@@ -410,6 +440,14 @@ namespace WhoisntCitizen.Game
             if (controller != null)
             {
                 controller.SkipNightAction();
+            }
+        }
+
+        private void OnDaySkipped()
+        {
+            if (controller != null)
+            {
+                controller.SkipDay();
             }
         }
 
@@ -584,6 +622,10 @@ namespace WhoisntCitizen.Game
             {
                 nightPanel.Refresh(session);
             }
+            if (dayPanel != null)
+            {
+                dayPanel.Refresh(session);
+            }
             if (roleCard != null && session.Me != null)
             {
                 roleCard.Show(session.Me, session.State);
@@ -599,6 +641,19 @@ namespace WhoisntCitizen.Game
                 return;
             }
             nightDrawerOpened = true;
+            OpenDrawer();
+            ApplyDrawerContent(BottomTabMode.Vote);
+        }
+
+        /// <summary>낮이 되면 살아 있는 사람에게 한 번 서랍을 열어 토론 넘기기 패널을 보여 준다. /me가 늦게 와도 받은 뒤에 연다.</summary>
+        private void TryOpenDayDrawer()
+        {
+            GameSession session = Session;
+            if (dayDrawerOpened || currentPhase != GamePhases.Day || session == null || !session.CanSkipDay)
+            {
+                return;
+            }
+            dayDrawerOpened = true;
             OpenDrawer();
             ApplyDrawerContent(BottomTabMode.Vote);
         }
@@ -625,7 +680,7 @@ namespace WhoisntCitizen.Game
         }
 
         /// <summary>
-        /// 서랍([+])이 열려 있으면 밤에는 NightActionPanel, 그 밖에는 VotePanel을 보여 준다.
+        /// 서랍([+])이 열려 있으면 밤에는 NightActionPanel, 낮에는 DaySkipPanel, 그 밖에는 VotePanel을 보여 준다.
         /// BottomTabController가 VotePanel을 켠 뒤(ModeChanged)에 불려서 밤이면 다시 바꿔 놓는다.
         /// </summary>
         private void ApplyDrawerContent(BottomTabMode mode)
@@ -635,13 +690,18 @@ namespace WhoisntCitizen.Game
                 return; // 내려가는 동안은 그대로 둔다. VotePanel은 다 내려간 뒤 BottomTabController가 끈다
             }
             bool night = mode == BottomTabMode.Vote && currentPhase == GamePhases.Night;
+            bool day = mode == BottomTabMode.Vote && currentPhase == GamePhases.Day && dayPanel != null;
             if (nightPanel != null)
             {
                 nightPanel.gameObject.SetActive(night);
             }
+            if (dayPanel != null)
+            {
+                dayPanel.gameObject.SetActive(day);
+            }
             if (votePanel != null && mode == BottomTabMode.Vote)
             {
-                votePanel.gameObject.SetActive(!night);
+                votePanel.gameObject.SetActive(!night && !day);
             }
         }
 
