@@ -190,14 +190,17 @@ public class GameService {
                 findGame(gameId).getPlayers().stream().map(DevRoleView::from).toList());
     }
 
-    /** 5. 낮 토론 넘기기. 살아 있는 전원이 넘기면 바로 투표로 넘어간다(응답의 phase가 VOTE). */
+    /**
+     * 5. 낮 토론 넘기기. 살아 있는 전원이 넘기면 바로 투표로 넘어간다(응답의 phase가 VOTE).
+     * 다른 게임 API·타이머와 같은 GameLock으로 잠근다. (synchronized(game)은 GameLock과 다른 잠금이라 서로 막지 못한다)
+     */
     public DaySkipResponse skipDay(String gameId, Long playerId) {
-        Game game = findGame(gameId);
-        synchronized (game) {
+        return gameLock.withLock(gameId, () -> {
+            Game game = findGame(gameId); // 잠금 안에서 불러온다 (GameLock 사용 규칙)
             gameFlowService.skipDay(game, playerId);
             return new DaySkipResponse(true, game.getPhase(), game.getPhaseVersion(),
                     game.daySkipCount(), game.aliveCount());
-        }
+        });
     }
 
     private Game findGame(String gameId) {

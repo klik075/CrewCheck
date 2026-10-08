@@ -164,7 +164,8 @@ public class GameFlowService implements GameTimeoutHandler {
      * 규칙 위반(낮이 아님, 사망자)은 GameRuleException으로 그대로 던진다. GameService가 호출한다.
      */
     public void skipDay(Game game, Long playerId) {
-        synchronized (game) {
+        // GameService가 잡은 잠금과 같으므로 재진입한다. 다른 경로에서 불러도 타이머·연결 끊김 검사와 겹치지 않게 직접 잠근다.
+        gameLock.runWithLock(game.getGameId(), () -> {
             if (!game.skipDay(playerId)) {
                 return; // 이미 넘겼다
             }
@@ -179,7 +180,7 @@ public class GameFlowService implements GameTimeoutHandler {
                     cancelAfterError(game, e);
                 }
             }
-        }
+        });
     }
 
     // ---------- 7. 처형 → 8. 승리 조건 검사 → 9. 반복/종료 ----------
