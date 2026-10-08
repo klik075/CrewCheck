@@ -142,6 +142,12 @@ namespace WhoisntCitizen.Game
             return Session != null && Session.Vote(targetId);
         }
 
+        /// <summary>투표. targetId 0 = 기권(표를 거둔다), confirm = 투표 완료(지금 상태로 고정). 보냈으면 true.</summary>
+        public bool Vote(long targetId, bool confirm)
+        {
+            return Session != null && Session.Vote(targetId, confirm);
+        }
+
         /// <summary>개발용: 가짜 서버의 남은 시간을 건너뛴다. 인스펙터 ⋮ 메뉴에서도 부를 수 있다.</summary>
         [ContextMenu("가짜 서버: 다음 페이즈로")]
         public void SkipFakePhase()
