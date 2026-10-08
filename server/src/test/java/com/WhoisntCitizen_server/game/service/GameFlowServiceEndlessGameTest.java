@@ -192,12 +192,12 @@ class GameFlowServiceEndlessGameTest {
 
     @Test
     void 함께_끊긴_생존자들이_서로_다른_검사에_걸려도_다음_검사_전에_모두_끊기면_아무도_죽이지_않고_취소한다() {
-        flow.begin(game);
+        flow.begin(game.getGameId());
         scheduler.advance(Duration.ofSeconds(3));
         touch(2L, 3L, 4L, 5L);
         scheduler.advance(Duration.ofSeconds(8));
 
-        flow.checkInactivePlayers(game);
+        flow.checkInactivePlayers(game.getGameId());
         scheduler.runDue();
 
         // 예전에는 해적만 먼저 사망 처리되어 끊긴 선원 팀이 승리했다
@@ -209,13 +209,13 @@ class GameFlowServiceEndlessGameTest {
 
     @Test
     void 먼저_끊긴_사람과_같은_시각에_끊긴_사람이_있어도_요청을_계속_보내는_생존자가_있으면_취소하지_않는다() {
-        flow.begin(game);
+        flow.begin(game.getGameId());
         scheduler.advance(Duration.ofSeconds(3));
         touch(2L, 3L, 4L, 5L);
         scheduler.advance(Duration.ofSeconds(8));
         touch(2L); // 선장은 계속 접속 중
 
-        flow.checkInactivePlayers(game);
+        flow.checkInactivePlayers(game.getGameId());
         scheduler.runDue();
 
         assertThat(game.getPlayer(1L).isDeparted()).isTrue();
@@ -226,12 +226,12 @@ class GameFlowServiceEndlessGameTest {
 
     @Test
     void 다음_검사_뒤에야_기준을_넘는_생존자가_있으면_취소하지_않고_먼저_끊긴_사람만_처리한다() {
-        flow.begin(game);
+        flow.begin(game.getGameId());
         scheduler.advance(Duration.ofSeconds(6));
         touch(2L, 3L, 4L, 5L); // 선원은 6초: 11초 검사의 다음 기준(6초)보다 오래되지 않았다
         scheduler.advance(Duration.ofSeconds(5));
 
-        flow.checkInactivePlayers(game);
+        flow.checkInactivePlayers(game.getGameId());
         scheduler.runDue();
 
         assertThat(game.getPlayer(1L).isDeparted()).isTrue();
@@ -240,7 +240,7 @@ class GameFlowServiceEndlessGameTest {
 
     @Test
     void 죽은_관전자가_접속_중이어도_생존자가_모두_다음_검사_전에_끊기면_취소한다() {
-        flow.begin(game);
+        flow.begin(game.getGameId());
         game.getPlayer(4L).kill();
         game.getPlayer(5L).kill();
         scheduler.advance(Duration.ofSeconds(3));
@@ -248,7 +248,7 @@ class GameFlowServiceEndlessGameTest {
         scheduler.advance(Duration.ofSeconds(8));
         touch(4L, 5L);
 
-        flow.checkInactivePlayers(game);
+        flow.checkInactivePlayers(game.getGameId());
         scheduler.runDue();
 
         assertThat(game.getEndReason()).isEqualTo(GameEndReason.CANCELLED_ALL_DISCONNECTED);
@@ -409,14 +409,14 @@ class GameFlowServiceEndlessGameTest {
         VoteResolver broken = mock(VoteResolver.class);
         when(broken.resolve(any())).thenThrow(new StackOverflowError("판정 버그"));
         GameFlowService brokenFlow = newFlow(broken);
-        brokenFlow.begin(game);
+        brokenFlow.begin(game.getGameId());
         scheduler.advance(Duration.ofSeconds(95));
 
         assertThatCode(() -> brokenFlow.resolveVote(game)).doesNotThrowAnyException();
         assertThat(game.getEndReason()).isEqualTo(GameEndReason.CANCELLED_ERROR);
 
         Game other = newGame();
-        brokenFlow.begin(other);
+        brokenFlow.begin(other.getGameId());
         assertThatCode(() -> scheduler.advance(Duration.ofSeconds(UNTIL_VOTE_ENDS))).doesNotThrowAnyException();
         assertThat(other.getEndReason()).isEqualTo(GameEndReason.CANCELLED_ERROR);
     }
