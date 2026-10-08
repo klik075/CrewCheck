@@ -32,14 +32,15 @@ public class Game {
     private Instant phaseEndsAt;
 
     private final Map<Long, NightAction> nightActions = new LinkedHashMap<>(); // actorId -> 최종 제출 행동
-    @Getter(AccessLevel.NONE)
+    // 아래 PACKAGE getter 4개는 저장(GameSnapshotMapper)용이다. 같은 패키지 밖(서비스 등)에서는 보이지 않는다.
+    @Getter(AccessLevel.PACKAGE)
     private final Set<Long> lockedActors = new HashSet<>(); // 이번 밤 행동이 확정되어 바꿀 수 없는 플레이어 (접선한 앵무새)
-    @Getter(AccessLevel.NONE)
+    @Getter(AccessLevel.PACKAGE)
     private final Set<Long> skippedActors = new HashSet<>(); // 이번 밤 능력을 쓰지 않고 넘긴 플레이어
     private final Map<Long, Long> votes = new LinkedHashMap<>();        // voterId -> targetId
-    @Getter(AccessLevel.NONE)
+    @Getter(AccessLevel.PACKAGE)
     private final Set<Long> confirmedVoters = new HashSet<>(); // 이번 투표에서 "투표 완료"를 누른 플레이어 (표가 없으면 기권)
-    @Getter(AccessLevel.NONE)
+    @Getter(AccessLevel.PACKAGE)
     private final Set<Long> voteBanned = new HashSet<>(); // 요리사 때문에 오늘 투표를 못 하는 플레이어. 밤 판정 때 정하고 다음 밤에 지운다
 
     // 마지막으로 누군가 죽은 날. 아무도 죽지 않은 날이 이어지는지(daysWithoutDeath) 셀 때 쓴다. 시작 전은 0
@@ -55,18 +56,59 @@ public class Game {
         this(roomId, players, false);
     }
 
+    /** 새 게임. id를 새로 만들고, 시작 전 상태(phase = null, day = 0)로 둔다. */
     public Game(String roomId, List<GamePlayer> players, boolean recordStats) {
-        this.gameId = UUID.randomUUID().toString();
+        this(UUID.randomUUID().toString(), roomId, recordStats, Instant.now(), players);
+    }
+
+    // ---------- 저장소에서 되살리기 (GameSnapshotMapper 전용) ----------
+
+    /**
+     * 저장된 게임을 되살릴 때만 쓴다. 저장돼 있던 id와 생성 시각을 그대로 쓴다.
+     * 같은 패키지(GameSnapshotMapper)에서만 부를 수 있다. 새 게임은 public 생성자로 만든다.
+     */
+    Game(String gameId, String roomId, boolean recordStats, Instant createdAt, List<GamePlayer> players) {
+        this.gameId = gameId;
         this.roomId = roomId;
         this.recordStats = recordStats;
+        this.createdAt = createdAt;
         this.players = new LinkedHashMap<>();
         for (GamePlayer p : players) {
             this.players.put(p.getPlayerId(), p);
         }
-        this.createdAt = Instant.now();
-        // start 전
-        this.phase = null;
-        this.day = 0;
+    }
+
+    /**
+     * 저장돼 있던 진행 상태를 그대로 채운다. 규칙 검사를 하지 않으므로 저장소 복원 외에는 쓰지 않는다.
+     * nightActions·votes는 넘긴 순서(제출 순서)를 유지한다.
+     */
+    void restoreState(GamePhase phase, int day, long phaseVersion, Instant phaseEndsAt,
+                      List<NightAction> nightActions, Collection<Long> lockedActors, Collection<Long> skippedActors,
+                      Map<Long, Long> votes, Collection<Long> confirmedVoters, Collection<Long> voteBanned,
+                      int lastDeathDay, NightResult lastNightResult, ExecutionResult lastExecutionResult,
+                      Winner winner, List<Long> winnerIds, GameEndReason endReason) {
+        this.phase = phase;
+        this.day = day;
+        this.phaseVersion = phaseVersion;
+        this.phaseEndsAt = phaseEndsAt;
+        this.nightActions.clear();
+        nightActions.forEach(a -> this.nightActions.put(a.actorId(), a));
+        this.lockedActors.clear();
+        this.lockedActors.addAll(lockedActors);
+        this.skippedActors.clear();
+        this.skippedActors.addAll(skippedActors);
+        this.votes.clear();
+        this.votes.putAll(votes);
+        this.confirmedVoters.clear();
+        this.confirmedVoters.addAll(confirmedVoters);
+        this.voteBanned.clear();
+        this.voteBanned.addAll(voteBanned);
+        this.lastDeathDay = lastDeathDay;
+        this.lastNightResult = lastNightResult;
+        this.lastExecutionResult = lastExecutionResult;
+        this.winner = winner;
+        this.winnerIds = List.copyOf(winnerIds);
+        this.endReason = endReason;
     }
 
     // ---------- 페이즈 전이 ----------

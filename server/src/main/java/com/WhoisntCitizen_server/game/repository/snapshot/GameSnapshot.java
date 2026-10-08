@@ -1,7 +1,9 @@
 package com.WhoisntCitizen_server.game.repository.snapshot;
 
+import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GameEndReason;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
+import com.WhoisntCitizen_server.game.entity.GameSnapshotMapper;
 import com.WhoisntCitizen_server.game.entity.Winner;
 import com.WhoisntCitizen_server.night.entity.NightAction;
 import com.WhoisntCitizen_server.night.entity.NightResult;
@@ -70,6 +72,16 @@ public record GameSnapshot(
 ) {
     /** 지금 코드가 쓰는 저장 형식 버전. 호환되지 않게 형식을 바꾸면 올린다. */
     public static final int CURRENT_SCHEMA_VERSION = 1;
+
+    /** 게임의 지금 상태를 저장 형식으로 바꾼다. (저장할 때) */
+    public static GameSnapshot from(Game game) {
+        return GameSnapshotMapper.toSnapshot(game);
+    }
+
+    /** 저장 형식에서 게임을 되살린다. 저장할 때와 같은 id·상태의 새 Game 객체를 만든다. (조회할 때) */
+    public Game toGame() {
+        return GameSnapshotMapper.toGame(this);
+    }
 
     /** 투표 한 건 (voterId → targetId). Map 대신 목록으로 두어 투표 순서를 그대로 남긴다. */
     public record VoteEntry(Long voterId, Long targetId) {
