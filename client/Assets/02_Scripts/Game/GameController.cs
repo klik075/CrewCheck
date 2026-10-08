@@ -20,6 +20,8 @@ namespace WhoisntCitizen.Game
         [SerializeField] private bool useFakeServer;
         [SerializeField] private string fakeMyRole = RoleCodes.CrewCaptain;
         [SerializeField] private bool fakeBotsAct = true;
+        [Tooltip("봇이 대상·투표를 고르는 난수 씨앗. 같은 값이면 매 판 같은 결과가 나온다. -1이면 판마다 바뀐다.")]
+        [SerializeField] private int fakeSeed = 42;
         [Tooltip("⋮ 메뉴 \"가짜 서버: 연결 끊김\"으로 내보낼 플레이어 (102 해적 ~ 108 선원)")]
         [SerializeField] private long fakeDisconnectPlayerId = 104;
 
@@ -101,7 +103,8 @@ namespace WhoisntCitizen.Game
         public void BeginFakeGame()
         {
             EndGame();
-            fakeApi = new FakeGameApi(new FakeGameOptions { MyRole = fakeMyRole, BotsAct = fakeBotsAct }, Clock);
+            int seed = fakeSeed >= 0 ? fakeSeed : Environment.TickCount & int.MaxValue;
+            fakeApi = new FakeGameApi(new FakeGameOptions { MyRole = fakeMyRole, BotsAct = fakeBotsAct, Seed = seed }, Clock);
             Session = new GameSession(fakeApi, FakeGameApi.FakeGameId, view, Clock, pollIntervalSeconds);
         }
 
