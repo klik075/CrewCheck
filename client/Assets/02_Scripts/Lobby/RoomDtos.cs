@@ -69,6 +69,16 @@ namespace WhoisntCitizen.Lobby
     }
 
     /// <summary>
+    /// PUT /api/v1/rooms/{roomId}/players/me/ready 요청 body. {"ready": true/false}
+    /// JsonUtility는 익명 객체를 직렬화하지 못하므로 클래스로 만든다.
+    /// </summary>
+    [Serializable]
+    public class SetReadyRequest
+    {
+        public bool ready;
+    }
+
+    /// <summary>
     /// 방 요약 정보 (서버 RoomResponseDto). 로비에서 방 한 줄을 그리는 데 필요한 값만 있다. (참가자 명단 없음)
     /// 사용처: GET /api/v1/rooms(목록의 각 항목), POST /api/v1/rooms(생성), POST /api/v1/rooms/{id}/players(입장)
     ///
@@ -104,7 +114,7 @@ namespace WhoisntCitizen.Lobby
     {
         public long userId;
         public string nickname;
-        public bool ready; // 준비 기능은 아직 서버에 없음 (항상 false)
+        public bool ready; // 준비 상태 (방장은 준비하지 않으므로 의미 없음)
     }
 
     /// <summary>
@@ -127,6 +137,22 @@ namespace WhoisntCitizen.Lobby
             foreach (RoomPlayerResponse p in players)
                 if (p.userId == userId) return true;
             return false;
+        }
+
+        /// <summary>해당 참가자가 준비했는지. 참가자가 아니면 false.</summary>
+        public bool IsReady(long userId)
+        {
+            if (players == null) return false;
+            foreach (RoomPlayerResponse p in players) if (p.userId == userId) return p.ready;
+            return false;
+        }
+
+        /// <summary>방장을 뺀 모든 참가자가 준비했는지 (서버 Room.allGuestsReady와 같은 규칙).</summary>
+        public bool AllGuestsReady()
+        {
+            if (players == null) return false;
+            foreach (RoomPlayerResponse p in players) if (p.userId != hostUserId && !p.ready) return false;
+            return true;
         }
     }
 

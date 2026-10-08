@@ -118,9 +118,19 @@ namespace WhoisntCitizen.Lobby
         }
 
         /// <summary>
+        /// 준비 / 준비 취소 (방장 제외). PUT /api/v1/rooms/{roomId}/players/me/ready  body {"ready": true/false}
+        /// 성공 시 204, 본문 없음. 이미 같은 상태여도 성공한다.
+        /// 실패: 409 게임 중 / 참가 중이 아님 / 방장, 400 방 없음
+        /// </summary>
+        public static void SetReady(long roomId, bool ready, Action<ApiResult> onDone)
+        {
+            ApiClient.Put($"{RoomsPath}/{roomId}/players/me/ready", new SetReadyRequest { ready = ready }, onDone);
+        }
+
+        /// <summary>
         /// 게임 시작 (방장만). POST /api/v1/rooms/{roomId}/games
         /// 성공하면 방이 IN_GAME이 되고 gameId를 돌려준다.
-        /// 실패: 409 방장 아님 / 이미 게임 중 / 4명 미만
+        /// 실패: 409 방장 아님 / 이미 게임 중 / 4명 미만 / 준비 안 된 참가자 있음
         /// </summary>
         public static void StartGame(long roomId, Action<ApiResult<StartGameResponse>> onDone)
         {

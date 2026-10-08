@@ -18,7 +18,8 @@ namespace WhoisntCitizen.Lobby
     ///   1) pollInterval초마다 GET /api/v1/rooms/{roomId} 로 방 상태를 받아
     ///      제목, 인원(현재 / 최대), 참가자 목록(RoomPlayer 프리팹)을 갱신한다.
     ///   2) Button_StartGame 은 방장에게만 보인다. (방장이 나가면 서버가 다음 사람에게 넘기므로 매번 다시 계산)
-    ///      minPlayersToStart명 미만이면 비활성화한다.
+    ///      minPlayersToStart명 미만이거나 방장을 뺀 참가자 중 준비 안 한 사람이 있으면 비활성화한다.
+    ///   2-1) Button_Ready 는 방장이 아닌 참가자에게만 보인다. 누르면 준비 ↔ 준비 취소.
     ///   3) 방장이 시작을 누르면 POST /api/v1/rooms/{roomId}/games 호출
     ///      → 성공 응답의 gameId를 RoomSession에 저장하고 GameScene으로 이동한다.
     ///   4) 방장이 아닌 참가자는 서버 푸시가 없으므로 polling 중에 status == IN_GAME 이 되면
@@ -42,6 +43,11 @@ namespace WhoisntCitizen.Lobby
         [Header("Buttons")]
         [SerializeField] private Button startGameButton; // Buttons/Button_StartGame (방장만 보임)
         [SerializeField] private Button exitRoomButton;  // Buttons/Button_ExitRoom
+        [SerializeField] private Button readyButton;     // Buttons/Button_Ready (방장이 아닌 참가자만 보임)
+        [Tooltip("준비 버튼 문구. 비워 두면 readyButton 자식의 첫 번째 TMP_Text를 사용한다.")]
+        [SerializeField] private TMP_Text readyButtonLabel;
+        [SerializeField] private string readyLabel = "준비";
+        [SerializeField] private string unreadyLabel = "준비 취소";
 
         [Header("Status (선택)")]
         [SerializeField] private StatusMessageView statusMessage;
@@ -62,10 +68,14 @@ namespace WhoisntCitizen.Lobby
         private string lastListSignature; // 참가자/방장이 바뀌었을 때만 목록을 다시 그리기 위한 값
         private int lastPlayerCount;
         private bool lastInGame;
+        private bool lastAllGuestsReady; // 방장을 뺀 모든 참가자가 준비했는지
+        private bool myReady;            // 내 준비 상태
+        private int readySeq;            // 준비 요청마다 증가. 요청 전에 보낸 방 조회 응답(이전 준비 상태)을 무시하기 위한 값
 
         private bool isFetching;      // GET /rooms/{id} 요청 중
         private bool isStarting;      // POST /rooms/{id}/games 요청 중
         private bool isLeaving;       // DELETE /rooms/{id}/players/me 요청 중
+        private bool isReadying;      // POST/DELETE /rooms/{id}/players/me/ready 요청 중
         private bool isTransitioning; // 다른 씬으로 이동 시작함 (이후 모든 요청/응답 무시)
         private Coroutine pollRoutine;
 
@@ -77,6 +87,8 @@ namespace WhoisntCitizen.Lobby
         {
             BindIfEmpty(startGameButton, OnStartGameClicked);
             BindIfEmpty(exitRoomButton, OnExitRoomClicked);
+            BindIfEmpty(readyButton, OnReadyClicked);
+            if (readyButtonLabel == null && readyButton != null) readyButtonLabel = readyButton.GetComponentInChildren<TMP_Text>(true);
         }
 
         private void Start()
@@ -102,6 +114,7 @@ namespace WhoisntCitizen.Lobby
             if (memberCountText != null) memberCountText.text = $"- / {RoomSession.MaxPlayers}";
             ClearPlayerList(); // Content에 놓여 있던 샘플 아이템 제거
             UpdateStartButton();
+            UpdateReadyButton();
             if (LoginExpiresSoon(out int minutesLeft))
             {
                 statusMessage?.ShowError($"로그인 유지 시간이 약 {minutesLeft}분 남았습니다. 게임 중 만료되면 연결이 끊겨 탈락하니, 로비에서 로그아웃 후 다시 로그인해 주세요.", keep: true);
@@ -122,6 +135,7 @@ namespace WhoisntCitizen.Lobby
         {
             if (startGameButton != null) startGameButton.onClick.RemoveListener(OnStartGameClicked);
             if (exitRoomButton != null) exitRoomButton.onClick.RemoveListener(OnExitRoomClicked);
+            if (readyButton != null) readyButton.onClick.RemoveListener(OnReadyClicked);
         }
 
         // ------------------------------------------------------------------
@@ -131,7 +145,7 @@ namespace WhoisntCitizen.Lobby
         /// <summary>Button_StartGame: 게임 시작 (방장만)</summary>
         public void OnStartGameClicked()
         {
-            if (isStarting || isLeaving || isTransitioning || SceneLoader.IsLoading) return;
+            if (isStarting || isLeaving || isReadying || isTransitioning || SceneLoader.IsLoading) return;
 
             if (!RoomSession.IsHost)
             {
@@ -142,6 +156,12 @@ namespace WhoisntCitizen.Lobby
             if (lastPlayerCount < minPlayersToStart)
             {
                 statusMessage?.ShowError($"게임을 시작하려면 최소 {minPlayersToStart}명이 필요합니다.");
+                return;
+            }
+
+            if (!lastAllGuestsReady)
+            {
+                statusMessage?.ShowError("모든 참가자가 준비해야 게임을 시작할 수 있습니다.");
                 return;
             }
 
@@ -168,7 +188,7 @@ namespace WhoisntCitizen.Lobby
                     return;
                 }
 
-                // 409: 방장 아님 / 이미 게임 중 / 4명 미만 / 직업 배정 실패, 400: 방 없음
+                // 409: 방장 아님 / 이미 게임 중 / 4명 미만 / 준비 안 된 참가자 있음 / 직업 배정 실패, 400: 방 없음
                 string message = result.success ? "게임 정보를 받지 못했습니다. 다시 시도해 주세요." : result.message;
                 Debug.LogWarning($"[Room] 게임 시작 실패 ({result.statusCode}): {message}");
                 statusMessage?.ShowError(message);
@@ -179,7 +199,7 @@ namespace WhoisntCitizen.Lobby
         /// <summary>Button_ExitRoom: 방 나가기 → Lobby</summary>
         public void OnExitRoomClicked()
         {
-            if (isStarting || isLeaving || isTransitioning || SceneLoader.IsLoading) return;
+            if (isStarting || isLeaving || isReadying || isTransitioning || SceneLoader.IsLoading) return;
 
             isLeaving = true;
             SetButtonsInteractable(false);
@@ -202,6 +222,36 @@ namespace WhoisntCitizen.Lobby
                 statusMessage?.ShowError(result.message);
                 SetButtonsInteractable(true);
                 UpdateStartButton();
+                UpdateReadyButton();
+            });
+        }
+
+        /// <summary>Button_Ready: 준비 ↔ 준비 취소 (방장 제외)</summary>
+        public void OnReadyClicked()
+        {
+            if (isStarting || isLeaving || isReadying || isTransitioning || SceneLoader.IsLoading) return;
+            if (RoomSession.IsHost || lastInGame) return;
+
+            bool nextReady = !myReady;
+            isReadying = true;
+            readySeq++;
+            UpdateReadyButton();
+
+            RoomApi.SetReady(RoomSession.RoomId, nextReady, result =>
+            {
+                if (this == null) return;
+                isReadying = false;
+                readySeq++; // 요청 중에 보낸 방 조회 응답도 이전 상태일 수 있으므로 무시한다.
+                if (isTransitioning) return;
+
+                if (result.success) myReady = nextReady; // 참가자 목록의 준비 표시는 다음 polling에서 갱신된다.
+                else if (!result.IsUnauthorized)
+                {
+                    // 409: 게임이 이미 시작됨 / 방장이 됨 / 참가 중이 아님 → 다음 polling이 상태를 맞춘다.
+                    Debug.LogWarning($"[Room] 준비 상태 변경 실패 ({result.statusCode}): {result.message}");
+                    statusMessage?.ShowError(result.message);
+                }
+                UpdateReadyButton();
             });
         }
 
@@ -224,6 +274,7 @@ namespace WhoisntCitizen.Lobby
         {
             isFetching = true;
             long roomId = RoomSession.RoomId;
+            int seqAtRequest = readySeq;
 
             RoomApi.GetRoom(roomId, result =>
             {
@@ -259,7 +310,10 @@ namespace WhoisntCitizen.Lobby
                 }
 
                 RoomSession.Set(room); // 방장 변경, gameId 반영
-                Render(room);
+
+                // 준비 요청을 보내기 전(또는 보내는 중)에 출발한 조회 응답은 이전 준비 상태라 화면에 반영하지 않는다.
+                bool staleReady = isReadying || seqAtRequest != readySeq;
+                if (!staleReady) Render(room);
 
                 // 방장이 게임을 시작했다 → 모두 GameScene으로
                 // (방금 끝내고 돌아온 게임은 서버가 아직 IN_GAME으로 보여 줄 수 있으므로 다시 들어가지 않는다)
@@ -277,6 +331,8 @@ namespace WhoisntCitizen.Lobby
             List<RoomPlayerResponse> players = room.players ?? new List<RoomPlayerResponse>();
             lastPlayerCount = players.Count;
             lastInGame = room.IsInGame;
+            lastAllGuestsReady = room.AllGuestsReady();
+            myReady = room.IsReady(AuthSession.UserId);
 
             if (titleText != null) titleText.text = room.title;
             if (memberCountText != null) memberCountText.text = $"{players.Count} / {room.maxPlayers}";
@@ -290,6 +346,7 @@ namespace WhoisntCitizen.Lobby
             }
 
             UpdateStartButton();
+            UpdateReadyButton();
         }
 
         private void RebuildPlayerList(long hostUserId, List<RoomPlayerResponse> players)
@@ -321,7 +378,7 @@ namespace WhoisntCitizen.Lobby
                 Destroy(playerListContent.GetChild(i).gameObject);
         }
 
-        /// <summary>시작 버튼: 방장에게만 보이고, 인원이 충분하고 다른 요청 중이 아닐 때만 누를 수 있다.</summary>
+        /// <summary>시작 버튼: 방장에게만 보이고, 인원이 충분하고 모두 준비했고 다른 요청 중이 아닐 때만 누를 수 있다.</summary>
         private void UpdateStartButton()
         {
             if (startGameButton == null) return;
@@ -330,21 +387,37 @@ namespace WhoisntCitizen.Lobby
             startGameButton.gameObject.SetActive(isHost);
             startGameButton.interactable = isHost
                                            && lastPlayerCount >= minPlayersToStart
+                                           && lastAllGuestsReady
                                            && !lastInGame
                                            && !isStarting && !isLeaving && !isTransitioning;
+        }
+
+        /// <summary>준비 버튼: 방장이 아닌 참가자에게만 보이고, 내 상태에 따라 "준비" / "준비 취소"를 표시한다.</summary>
+        private void UpdateReadyButton()
+        {
+            if (readyButton == null) return;
+
+            bool isGuest = !RoomSession.IsHost;
+            readyButton.gameObject.SetActive(isGuest);
+            readyButton.interactable = isGuest
+                                       && !lastInGame
+                                       && !isReadying && !isStarting && !isLeaving && !isTransitioning;
+            if (readyButtonLabel != null) readyButtonLabel.text = myReady ? unreadyLabel : readyLabel;
         }
 
         private void SetButtonsInteractable(bool value)
         {
             if (startGameButton != null) startGameButton.interactable = value;
             if (exitRoomButton != null) exitRoomButton.interactable = value;
+            if (readyButton != null) readyButton.interactable = value;
         }
 
         private static string BuildSignature(long hostUserId, List<RoomPlayerResponse> players)
         {
             var sb = new StringBuilder();
             sb.Append(hostUserId).Append('|');
-            foreach (RoomPlayerResponse p in players) sb.Append(p.userId).Append(':').Append(p.nickname).Append(',');
+            foreach (RoomPlayerResponse p in players)
+                sb.Append(p.userId).Append(':').Append(p.nickname).Append(':').Append(p.ready ? '1' : '0').Append(',');
             return sb.ToString();
         }
 
@@ -396,6 +469,7 @@ namespace WhoisntCitizen.Lobby
             isTransitioning = false;
             if (exitRoomButton != null) exitRoomButton.interactable = true;
             UpdateStartButton();
+            UpdateReadyButton();
             if (pollRoutine == null) pollRoutine = StartCoroutine(PollLoop());
         }
 
