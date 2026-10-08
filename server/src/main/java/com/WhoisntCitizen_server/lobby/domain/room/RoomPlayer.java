@@ -13,6 +13,11 @@ public class RoomPlayer {
     private String nickname;
     private boolean ready;
 
+    /** 준비 / 준비 취소. (인자가 있는 메서드라 Jackson이 JSON 속성으로 보지 않는다) */
+    public void changeReady(boolean ready) {
+        this.ready = ready;
+    }
+
     /** 게임이 끝나 방으로 돌아올 때 준비 상태를 해제한다. */
     public void resetReady() {
         this.ready = false;

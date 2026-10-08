@@ -6,6 +6,7 @@ import com.WhoisntCitizen_server.lobby.dto.JoinRoomRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
+import com.WhoisntCitizen_server.lobby.dto.SetReadyRequestDto;
 import com.WhoisntCitizen_server.lobby.service.RoomService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -77,6 +78,23 @@ public class RoomController {
             @AuthenticationPrincipal Jwt jwt
     ) {
         roomService.leaveRoom(roomId, memberId(jwt));
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 준비 / 준비 취소 (방장 제외). body: {"ready": true} 또는 {"ready": false}
+     * 상태를 "정하는" 요청이라 같은 요청을 여러 번 보내도 결과가 같다. 성공 시 204.
+     * 실패: 400 body 없음 / ready 누락 / 존재하지 않는 방, 409 게임 중 / 참가 중이 아님 / 방장
+     */
+    @PutMapping("/{roomId}/players/me/ready")
+    public ResponseEntity<Void> setReady(
+            @PathVariable Long roomId,
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody(required = false) SetReadyRequestDto request
+    ) {
+        if (request == null || request.getReady() == null) throw new IllegalArgumentException("ready 값(true/false)을 보내주세요.");
+
+        roomService.setReady(roomId, memberId(jwt), request.getReady());
         return ResponseEntity.noContent().build();
     }
 
