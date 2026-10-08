@@ -11,6 +11,7 @@ import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
 import com.WhoisntCitizen_server.game.entity.Team;
+import com.WhoisntCitizen_server.game.lock.GameLock;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.lobby.domain.room.Room;
 import com.WhoisntCitizen_server.lobby.domain.room.RoomPlayer;
@@ -72,15 +73,19 @@ public class ChatMessageService {
     private final LobbyRoomRepository roomRepository;
     private final UserRepository userRepository;
     private final GameRepository gameRepository;
+    // 게임 상태를 읽을 때 게임 진행 쪽과 같은 잠금을 쓴다. (진행 중에 바뀌는 사망·접선·페이즈를 일관되게 읽기 위해)
+    private final GameLock gameLock;
 
     public ChatMessageService(ChatMessageRepository repository,
                               LobbyRoomRepository roomRepository,
                               UserRepository userRepository,
-                              GameRepository gameRepository) {
+                              GameRepository gameRepository,
+                              GameLock gameLock) {
         this.repository = repository;
         this.roomRepository = roomRepository;
         this.userRepository = userRepository;
         this.gameRepository = gameRepository;
+        this.gameLock = gameLock;
     }
 
     /**
@@ -231,14 +236,14 @@ public class ChatMessageService {
             if (game == null) return;
             Long userId = userRepository.findByMemberId(memberId).map(User::getId).orElse(null);
             if (userId == null) return;
-            synchronized (game) {
+            gameLock.runWithLock(game.getGameId(), () -> {
                 GamePlayer me = findPlayer(game, userId);
                 if (me == null) return; // 게임 참가자가 아님 (관전자 등)
                 gameId = game.getGameId();
                 if (!me.isAlive()) diedAt = me.getDiedAt() != null ? me.getDiedAt() : Instant.EPOCH;
                 pirateSince = pirateChatSince(me);
                 sirenSince = sirenChatSince(me);
-            }
+            });
         }
     }
 
@@ -254,9 +259,7 @@ public class ChatMessageService {
         if (!room.isInGame() || room.getGameId() == null) return null;
         Game game = gameRepository.findById(room.getGameId()).orElse(null);
         if (game == null) return null;
-        synchronized (game) {
-            return game.isEnded() ? null : game;
-        }
+        return gameLock.withLock(game.getGameId(), () -> game.isEnded() ? null : game);
     }
 
     /**
@@ -265,8 +268,8 @@ public class ChatMessageService {
      *  - 밤: 해적 → NIGHT_PIRATE, 세이렌 → NIGHT_SIREN, 그 밖(유혹당한 팀원, 게임 참가자가 아닌 사람 포함) → NIGHT_BLOCKED
      *  - 그 밖 → PUBLIC
      */
-    private static Rule ruleOf(Game game, Long userId) {
-        synchronized (game) {
+    private Rule ruleOf(Game game, Long userId) {
+        return gameLock.withLock(game.getGameId(), () -> {
             GamePlayer p = findPlayer(game, userId);
             if (p != null && !p.isAlive()) return Rule.DEAD;
             if (game.getPhase() == GamePhase.NIGHT) {
@@ -275,7 +278,7 @@ public class ChatMessageService {
                 return Rule.NIGHT_BLOCKED;
             }
             return Rule.PUBLIC;
-        }
+        });
     }
 
     /**
@@ -296,7 +299,7 @@ public class ChatMessageService {
         return p.isParrot() ? p.getContactedAt() : Instant.EPOCH;
     }
 
-    /** 게임 참가자. 없으면 null (호출하는 쪽에서 game을 잠근 상태) */
+    /** 게임 참가자. 없으면 null (호출하는 쪽에서 게임 잠금(GameLock)을 잡은 상태) */
     private static GamePlayer findPlayer(Game game, Long userId) {
         for (GamePlayer p : game.getPlayers()) {
             if (p.getPlayerId().equals(userId)) return p;

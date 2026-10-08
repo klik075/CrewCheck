@@ -4,6 +4,7 @@ import com.WhoisntCitizen_server.common.exception.GameNotFoundException;
 import com.WhoisntCitizen_server.common.exception.GameRuleException;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
+import com.WhoisntCitizen_server.game.lock.GameLock;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
 import com.WhoisntCitizen_server.jobs.domain.ActionCode;
@@ -21,11 +22,13 @@ public class NightService {
 
     private final GameRepository gameRepository;
     private final GameFlowService gameFlowService;
+    private final GameLock gameLock;
     private final Clock clock;
 
-    public NightService(GameRepository gameRepository, GameFlowService gameFlowService, Clock clock) {
+    public NightService(GameRepository gameRepository, GameFlowService gameFlowService, GameLock gameLock, Clock clock) {
         this.gameRepository = gameRepository;
         this.gameFlowService = gameFlowService;
+        this.gameLock = gameLock;
         this.clock = clock;
     }
 
@@ -39,8 +42,8 @@ public class NightService {
      * actionCode가 null이면 직업의 기본 능력. 크라켄은 KRAKEN_STRIKE(대상 없음)를 고를 수 있다.
      */
     public NightActionResponse submitAction(String gameId, Long actorId, ActionCode actionCode, Long targetId) {
-        Game game = findGame(gameId);
-        synchronized (game) {
+        return gameLock.withLock(gameId, () -> {
+            Game game = findGame(gameId);
             boolean contacted = game.recordNightAction(actorId, actionCode, targetId, clock.instant());
             gameRepository.save(game);
             announceToPirates(game, actorId, targetId, contacted);
@@ -53,13 +56,13 @@ public class NightService {
                     ? game.knownPirateAllies(game.getPlayer(actorId)).stream().map(GamePlayer::getPlayerId).toList()
                     : List.of();
             return new NightActionResponse(true, game.getPhase(), game.getPhaseVersion(), contactedPirateIds);
-        }
+        });
     }
 
     /** 3. 이번 밤 능력을 쓰지 않고 넘기기. 마지막으로 남은 사람이 넘기면 바로 결과 공개. */
     public NightActionResponse skipAction(String gameId, Long actorId) {
-        Game game = findGame(gameId);
-        synchronized (game) {
+        return gameLock.withLock(gameId, () -> {
+            Game game = findGame(gameId);
             game.skipNightAction(actorId);
             gameRepository.save(game);
             GamePlayer actor = game.getPlayer(actorId);
@@ -70,13 +73,13 @@ public class NightService {
                 gameFlowService.resolveNight(game);
             }
             return new NightActionResponse(true, game.getPhase(), game.getPhaseVersion(), List.of());
-        }
+        });
     }
 
     /** 4. 가장 최근 밤 결과. 개인 결과(reports)는 요청자 본인 것만 포함한다. */
     public NightResultResponse getNightResult(String gameId, Long requesterId) {
-        Game game = findGame(gameId);
-        synchronized (game) {
+        return gameLock.withLock(gameId, () -> {
+            Game game = findGame(gameId);
             GamePlayer requester = game.getPlayer(requesterId);
             NightResult nightResult = game.getLastNightResult();
             if (nightResult == null) {
@@ -90,7 +93,7 @@ public class NightService {
                     .toList();
             return new NightResultResponse(nightResult.day(), nightResult.killedPlayerId(),
                     nicknameOf(game, nightResult.killedPlayerId()), nightResult.protectedByDoctor(), myReports, deaths);
-        }
+        });
     }
 
     /**

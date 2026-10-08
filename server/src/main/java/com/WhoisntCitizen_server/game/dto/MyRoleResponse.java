@@ -16,7 +16,7 @@ import java.util.List;
  * remainingUses: 능력의 남은 사용 횟수. 무제한이거나 능력이 없으면 -1.
  * mafiaTeammateIds: 해적끼리는 처음부터 서로 보이고, 앵무새는 접선한 뒤에만 해적과 서로 보인다.
  * contacted: 앵무새가 해적과 접선했는지. 앵무새가 아니면 false.
- * team: 지금 속한 팀. 세이렌에게 유혹당하면 직업은 그대로이고 SIREN이 된다.
+ * team: 지금 속한 팀. 세이렌에게 유혹당하면 직업은 그대로이고 SIREN이 된다. 원숭이는 위장 직업 기준이다(GamePlayer.getShownTeam).
  * sirenTeamIds: 세이렌 팀이면 다른 세이렌 팀원(사망자 포함). 아니면 빈 목록.
  * krakenMarkIds: 크라켄이면 표식을 남긴 생존자. 아니면 빈 목록.
  * abilityAvailable: 이번 밤(밤이 아니면 다음 밤)에 능력을 쓸 수 있는지. 세이렌은 유혹에 성공한 다음 밤에 false.
@@ -46,7 +46,7 @@ public record MyRoleResponse(
         List<Long> krakenMarkIds = me.isKraken() ? game.aliveKrakenMarks(me) : List.of();
         return new MyRoleResponse(me.getPlayerId(), shown.code(), shown.name(),
                 shown.faction(), code, remainingUses, me.isAlive(), mafiaTeammateIds, me.isContacted(),
-                me.getTeam(), sirenTeamIds, krakenMarkIds, game.canUseAbilityTonight(me));
+                me.getShownTeam(), sirenTeamIds, krakenMarkIds, game.canUseAbilityTonight(me));
     }
 
     private static List<Long> ids(List<GamePlayer> players) {

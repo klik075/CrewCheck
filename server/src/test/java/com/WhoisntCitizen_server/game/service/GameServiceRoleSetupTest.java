@@ -6,6 +6,8 @@ import com.WhoisntCitizen_server.game.dto.RoleComposition;
 import com.WhoisntCitizen_server.game.dto.RoleSetup;
 import com.WhoisntCitizen_server.game.dto.RoleSetupMode;
 import com.WhoisntCitizen_server.game.dto.StartGameRequest;
+import com.WhoisntCitizen_server.game.activity.LocalPlayerActivityTracker;
+import com.WhoisntCitizen_server.game.lock.LocalGameLock;
 import com.WhoisntCitizen_server.game.repository.InMemoryGameRepository;
 import com.WhoisntCitizen_server.support.TestRoles;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +32,8 @@ class GameServiceRoleSetupTest {
     @BeforeEach
     void setUp() {
         repository = new InMemoryGameRepository();
-        gameService = new GameService(repository, TestRoles.assigner(7), mock(GameFlowService.class), Clock.systemUTC());
+        gameService = new GameService(repository, TestRoles.assigner(7), mock(GameFlowService.class),
+                new LocalGameLock(), new LocalPlayerActivityTracker(), Clock.systemUTC());
     }
 
     private static List<GameParticipant> participants(int count) {
@@ -50,6 +53,17 @@ class GameServiceRoleSetupTest {
         String gameId = gameService.startGame("1", participants(4)).gameId();
 
         assertThat(sortedRoles(gameId)).containsExactly("CREW_CAPTAIN", "CREW_DOCTOR", "CREW_SAILOR", "PIRATE_RAIDER");
+    }
+
+    @Test
+    void 원숭이의_위장_직업은_이번_게임에_배정된_직업_중_하나다() {
+        for (int i = 0; i < 30; i++) {
+            List<DevRoleView> views = gameService.getDevRoles(gameService.startGame("1", participants(7)).gameId());
+
+            List<String> roles = views.stream().map(DevRoleView::role).toList();
+            DevRoleView monkey = views.stream().filter(v -> v.role().equals("CREW_MONKEY")).findFirst().orElseThrow();
+            assertThat(monkey.shownRole()).isNotEqualTo("CREW_MONKEY").isIn(roles);
+        }
     }
 
     @Test

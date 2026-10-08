@@ -22,6 +22,17 @@ public class KakaoAuthService {
 	}
 
 	public OAuthUserInfo verifyToken(String kakaoAccessToken) {
+		// 테스트용 가짜 토큰
+		if (kakaoAccessToken != null && kakaoAccessToken.startsWith("mock_")) {
+			log.warn("[Kakao Mock 토큰 감지] 에디터 테스트용 검증 우회: {}", kakaoAccessToken);
+			return OAuthUserInfo.builder()
+					.providerId("kakao_mock_" + kakaoAccessToken.hashCode()) // 카카오용 mock 식별자
+					.provider(AuthProvider.KAKAO)                           // KAKAO로 지정
+					.email("mock_kakao@test.com")
+					.nickname("카카오테스터")
+					.build();
+		}
+
 		try {
 			KakaoUserResponse response = restClient.get()
 					.uri(userInfoUri)

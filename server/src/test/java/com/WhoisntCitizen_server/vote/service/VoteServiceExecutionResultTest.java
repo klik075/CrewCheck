@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.vote.service;
 
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
+import com.WhoisntCitizen_server.game.lock.LocalGameLock;
 import com.WhoisntCitizen_server.game.repository.InMemoryGameRepository;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
 import com.WhoisntCitizen_server.jobs.domain.ActionCode;
@@ -34,7 +35,7 @@ class VoteServiceExecutionResultTest {
     @BeforeEach
     void setUp() {
         repository = new InMemoryGameRepository();
-        voteService = new VoteService(repository, mock(GameFlowService.class));
+        voteService = new VoteService(repository, mock(GameFlowService.class), new LocalGameLock());
         game = new Game("room-1", List.of(
                 new GamePlayer(1L, "p1", RAIDER),
                 new GamePlayer(2L, "p2", SAILOR),

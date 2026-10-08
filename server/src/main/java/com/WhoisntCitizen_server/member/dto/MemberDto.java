@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.member.dto;
 
+import com.WhoisntCitizen_server.member.entity.AuthProvider;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -42,6 +43,34 @@ public class MemberDto {
 
 		@NotBlank(message = "비밀번호를 입력해주세요.")
 		private String password;
+	}
+
+	@Getter
+	@NoArgsConstructor
+	@AllArgsConstructor
+	@Builder
+	public static class GuestLoginRequest {
+		@NotBlank(message = "게스트 식별자(UUID)는 필수 입력값입니다.")
+		private String guestUuid;
+	}
+
+	@Getter
+	@NoArgsConstructor
+	@AllArgsConstructor
+	@Builder
+	public static class LinkSocialRequest {
+		@NotBlank(message = "소셜 토큰은 필수입니다.")
+		private String token;
+	}
+
+	@Getter
+	@NoArgsConstructor
+	@AllArgsConstructor
+	@Builder
+	public static class LinkResult {
+		private Long memberId;
+		private AuthProvider linkedProvider;
+		private String message;
 	}
 
 	@Getter

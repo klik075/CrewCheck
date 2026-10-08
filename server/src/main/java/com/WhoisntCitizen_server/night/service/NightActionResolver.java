@@ -241,14 +241,19 @@ public class NightActionResolver {
     /**
      * 원숭이가 위장 직업에 맞춰 받는 무작위 결과. 형식은 진짜 결과와 똑같아서 받는 쪽에서는 구분할 수 없다.
      * 선의 위장은 진짜도 결과가 없으므로 null. 갑판장 위장은 진짜와 같은 차단 결과를 받는다(효과는 없다).
+     * 진영 조사와 시체 확인은 진짜라면 같은 대상에 늘 같은 결과가 나오므로, 처음 정한 결과를 원숭이에게 기록해 두고 다시 쓴다.
+     * 방문자는 진짜도 밤마다 달라지므로 매번 새로 뽑는다.
      */
     private PrivateReport fakeReportOf(Game game, NightAction action, List<Long> aliveAtNightStart) {
+        GamePlayer monkey = game.getPlayer(action.actorId());
         Long targetId = action.targetId();
         return switch (action.code()) {
-            case INVESTIGATE_FACTION -> PrivateReport.faction(targetId, random.nextBoolean() ? Faction.CREW : Faction.PIRATE);
+            case INVESTIGATE_FACTION -> PrivateReport.faction(targetId,
+                    monkey.fakeFactionOf(targetId, () -> random.nextBoolean() ? Faction.CREW : Faction.PIRATE));
             case WATCH_VISITORS -> PrivateReport.visitors(targetId,
                     randomVisitors(aliveAtNightStart, action.actorId(), targetId));
-            case READ_CORPSE_ROLE -> PrivateReport.corpseRole(targetId, randomAssignedRole(game));
+            case READ_CORPSE_ROLE -> PrivateReport.corpseRole(targetId,
+                    monkey.fakeCorpseRoleOf(targetId, () -> randomAssignedRole(game)));
             case BLOCK -> PrivateReport.block(targetId);
             default -> null;
         };

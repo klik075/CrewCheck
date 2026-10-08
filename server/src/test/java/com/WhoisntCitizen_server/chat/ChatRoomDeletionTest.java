@@ -3,6 +3,7 @@ package com.WhoisntCitizen_server.chat;
 import com.WhoisntCitizen_server.chat.entity.MessageType;
 import com.WhoisntCitizen_server.chat.service.ChatLobbyEventListener;
 import com.WhoisntCitizen_server.chat.service.ChatMessageService;
+import com.WhoisntCitizen_server.game.lock.LocalGameLock;
 import com.WhoisntCitizen_server.game.repository.InMemoryGameRepository;
 import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
 import com.WhoisntCitizen_server.user.repository.UserRepository;
@@ -18,7 +19,7 @@ class ChatRoomDeletionTest {
     void 방이_삭제되면_그_방의_메시지만_지운다() {
         InMemoryChatMessageRepository messages = new InMemoryChatMessageRepository();
         ChatMessageService service = new ChatMessageService(messages, new InMemoryLobbyRoomRepository(),
-                mock(UserRepository.class), new InMemoryGameRepository());
+                mock(UserRepository.class), new InMemoryGameRepository(), new LocalGameLock());
         ChatLobbyEventListener listener = new ChatLobbyEventListener(service);
         messages.save(1L, MessageType.SYSTEM, 0L, "시스템", "방 1 안내");
         messages.save(2L, MessageType.SYSTEM, 0L, "시스템", "방 2 안내");

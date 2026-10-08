@@ -15,6 +15,7 @@ import com.WhoisntCitizen_server.jobs.domain.RoleDefinition;
 import com.WhoisntCitizen_server.night.entity.NightResult;
 import com.WhoisntCitizen_server.night.service.NightActionResolver;
 import com.WhoisntCitizen_server.support.ManualTaskScheduler;
+import com.WhoisntCitizen_server.support.TestGameFlows;
 import com.WhoisntCitizen_server.support.MutableClock;
 import com.WhoisntCitizen_server.vote.service.VoteResolver;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,7 +58,7 @@ class GameFlowServiceNeutralTest {
         clock = new MutableClock(NOW);
         scheduler = new ManualTaskScheduler(clock);
         repository = new InMemoryGameRepository();
-        flow = new GameFlowService(repository, new NightActionResolver(new Random(0)), new VoteResolver(),
+        flow = TestGameFlows.create(repository, new NightActionResolver(new Random(0)), new VoteResolver(),
                 new WinConditionChecker(), scheduler, PROPS, clock, events::add);
     }
 
@@ -69,7 +70,7 @@ class GameFlowServiceNeutralTest {
         }
         Game game = new Game("1", players, true);
         repository.save(game);
-        flow.begin(game);
+        flow.begin(game.getGameId());
         return game;
     }
 
