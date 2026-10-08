@@ -10,9 +10,10 @@ namespace WhoisntCitizen.Game
     /// GameTest 씬 전용: 서버 없이 [게임 시작] 버튼으로 가짜 서버(FakeGameApi) 게임을 시작하고,
     /// 밤 → 밤 결과 → 낮 → 투표 → 처형 → 다음 밤까지 한 바퀴를 자동으로 진행한다.
     /// - 데이터는 모두 FakeGameApi가 만든다(나 + 봇 7명, 직업은 GameController의 fakeMyRole).
-    /// - 각 페이즈에서 "나"의 입력을 대신 한다: 밤 능력(무작위 대상) → 낮 토론 넘기기 → 무작위 투표.
-    ///   입력은 화면 버튼과 같은 경로(GameController)로 보내므로 패널·카드패·채팅 안내가 실제처럼 바뀐다.
-    /// - 페이즈가 스스로 넘어가지 않으면(봇이 아직 내지 않음) 가짜 서버의 남은 시간을 건너뛴다(SkipFakePhase).
+    /// - 각 페이즈에서 "나"의 입력을 대신 한다: 밤 능력(무작위 대상) → 낮 토론 넘기기.
+    ///   입력은 화면 버튼과 같은 경로(GameController)로 보내므로 패널·채팅 안내가 실제처럼 바뀐다.
+    /// - 투표는 대신 하지 않는다. 카드패에서 직접 카드를 뽑고 [투표 완료]를 누르거나(기권 포함), 투표 시간이 끝날 때까지 기다린다.
+    /// - 투표 외의 페이즈가 스스로 넘어가지 않으면(봇이 아직 내지 않음) 가짜 서버의 남은 시간을 건너뛴다(SkipFakePhase).
     /// - autoPlayOneCycle을 끄면 게임만 시작하고 직접 조작해 볼 수 있다.
     /// </summary>
     public sealed class GameTestRunner : MonoBehaviour
@@ -28,6 +29,8 @@ namespace WhoisntCitizen.Game
         [Header("자동 진행")]
         [Tooltip("켜 두면 시작 후 한 바퀴(다음 밤까지)를 자동으로 진행한다. 끄면 게임만 시작한다.")]
         [SerializeField] private bool autoPlayOneCycle = true;
+        [Tooltip("켜 두면 한 바퀴에서 멈추지 않고 게임이 끝날 때까지 자동으로 진행한다.")]
+        [SerializeField] private bool runUntilGameEnd;
         [Tooltip("각 페이즈를 화면에서 보여 주는 시간(초)")]
         [SerializeField] private float stepSeconds = 2f;
         [Tooltip("폴링(1초)을 기다리는 최대 시간(초)")]
@@ -104,7 +107,8 @@ namespace WhoisntCitizen.Game
 
             int startDay = Session.State.day;
             int guard = 0;
-            while (guard++ < 20)
+            int maxSteps = runUntilGameEnd ? 200 : 20;
+            while (guard++ < maxSteps)
             {
                 GameSession session = Session;
                 if (session == null || session.State == null)
@@ -115,10 +119,11 @@ namespace WhoisntCitizen.Game
                 GameStateDto state = session.State;
                 if (state.phase == GamePhases.Ended)
                 {
-                    Finish("게임 종료 (" + (state.winner ?? state.endReason) + ") - 한 바퀴 테스트 끝");
+                    string why = !string.IsNullOrEmpty(state.winner) ? state.winner : state.endReason; // JsonUtility는 null을 ""로 읽을 수 있다
+                    Finish(state.day + "일차 게임 종료 (" + why + ")");
                     yield break;
                 }
-                if (state.phase == GamePhases.Night && state.day > startDay)
+                if (!runUntilGameEnd && state.phase == GamePhases.Night && state.day > startDay)
                 {
                     Finish(state.day + "일차 밤까지 한 바퀴를 돌았습니다.");
                     yield break;
@@ -129,6 +134,17 @@ namespace WhoisntCitizen.Game
                 yield return new WaitForSeconds(stepSeconds); // 화면을 볼 시간
 
                 long version = Session.State.phaseVersion;
+                if (Session.State.phase == GamePhases.Vote)
+                {
+                    // 자동 투표 없음: 직접 투표(카드 → [투표 완료])하거나 시간이 끝나 서버가 집계할 때까지 기다린다
+                    string voteMessage = Session.CanVote
+                        ? phaseName + ": 카드를 뽑고 [투표 완료]를 누르세요 (시간이 끝나면 지금 상태로 집계)"
+                        : phaseName + ": 사망해서 투표할 수 없습니다. 투표가 끝나기를 기다립니다.";
+                    Log(voteMessage);
+                    SetStatus(voteMessage);
+                    yield return WaitForVersionChange(version, Session.RemainingWholeSeconds + waitTimeoutSeconds);
+                    continue;
+                }
                 string action = ActFor(Session);
                 Log(phaseName + ": " + action);
 
@@ -168,18 +184,6 @@ namespace WhoisntCitizen.Game
                     }
                     controller.SkipDay();
                     return "토론 넘기기";
-                case GamePhases.Vote:
-                    if (!session.CanVote)
-                    {
-                        return "투표 불가 (사망)";
-                    }
-                    PlayerViewDto voteTarget = Pick(session.VoteTargets, session.Me.playerId);
-                    if (voteTarget == null)
-                    {
-                        return "투표할 대상 없음";
-                    }
-                    controller.Vote(voteTarget.playerId);
-                    return "투표 → " + voteTarget.nickname;
                 default:
                     return "결과 확인";
             }
