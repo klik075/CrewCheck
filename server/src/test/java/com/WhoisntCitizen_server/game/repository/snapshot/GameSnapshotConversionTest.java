@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 1-2: Game → GameSnapshot → (JSON) → Game 변환 기본 확인.
- * 1-3에서 모든 필드를 채운 게임으로 "빠진 필드 감지" 테스트를 더한다.
+ * 모든 필드를 채운 게임으로 빠진 필드를 잡는 테스트는 game.entity.GameSnapshotFullRoundTripTest(1-3)에 있다.
  */
 class GameSnapshotConversionTest {
 
