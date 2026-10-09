@@ -31,27 +31,28 @@ public class GamePlayer {
     // 사망 원인. 살아 있거나 원인을 모르면 null. 인어의 처형 승리 판정에 쓴다.
     private DeathCause deathCause;
 
+    // 아래 PACKAGE getter들은 저장(GameSnapshotMapper)용이다. 같은 패키지 밖(서비스 등)에서는 보이지 않는다.
     // 능력별 사용 횟수. 밤 판정 시점에 기록한다(제출할 때는 검사만 한다). 차단당한 행동은 세지 않는다.
-    @Getter(AccessLevel.NONE)
+    @Getter(AccessLevel.PACKAGE)
     private final Map<ActionCode, Integer> usedCounts = new EnumMap<>(ActionCode.class);
     // 마지막으로 자기 자신을 보호한 날. 이틀 연속 자기 보호 금지 판정용
-    @Getter(AccessLevel.NONE)
+    @Getter(AccessLevel.PACKAGE)
     private Integer lastSelfProtectDay;
     // 요리사가 마지막으로 투표 금지를 적용한 날과 대상. 같은 대상 연속 금지 판정용 (차단당한 밤은 기록하지 않는다)
-    @Getter(AccessLevel.NONE)
+    @Getter(AccessLevel.PACKAGE)
     private Integer lastVoteBanDay;
-    @Getter(AccessLevel.NONE)
+    @Getter(AccessLevel.PACKAGE)
     private Long lastVoteBanTargetId;
     // 세이렌이 마지막으로 유혹에 성공한 날. 성공한 다음 밤은 쉰다 (실패·차단·넘기기는 기록하지 않는다)
-    @Getter(AccessLevel.NONE)
+    @Getter(AccessLevel.PACKAGE)
     private Integer lastSeduceSuccessDay;
     // 크라켄이 표식을 남긴 플레이어. 발동하면 모두 처치하고 비운다.
     @Getter(AccessLevel.NONE)
     private final Set<Long> krakenMarks = new LinkedHashSet<>();
     // 원숭이가 받은 가짜 결과(대상 → 결과). 진짜는 같은 대상을 다시 봐도 결과가 같으므로 처음 정한 값을 게임 끝까지 쓴다.
-    @Getter(AccessLevel.NONE)
+    @Getter(AccessLevel.PACKAGE)
     private final Map<Long, Faction> fakeFactions = new HashMap<>();
-    @Getter(AccessLevel.NONE)
+    @Getter(AccessLevel.PACKAGE)
     private final Map<Long, RoleDefinition> fakeCorpseRoles = new HashMap<>();
     // 앵무새가 해적과 접선한 시각. null이면 접선 전. 해적 채팅 기록을 거를 때(7단계) 밤 도중 시각이 필요해 Instant로 둔다.
     private Instant contactedAt;
@@ -71,6 +72,37 @@ public class GamePlayer {
         this.role = role;
         this.shownRole = shownRole;
         this.team = initialTeam(role);
+    }
+
+    /**
+     * 저장돼 있던 상태를 그대로 채운다. 저장소 복원(GameSnapshotMapper) 전용이며 규칙 검사를 하지 않는다.
+     * (직업은 생성자로 넘기고, 생성자가 정한 처음 팀은 여기서 저장된 팀으로 덮어쓴다)
+     */
+    void restoreState(Team team, boolean alive, Instant diedAt, DeathCause deathCause,
+                      Map<ActionCode, Integer> usedCounts, Integer lastSelfProtectDay,
+                      Integer lastVoteBanDay, Long lastVoteBanTargetId, Integer lastSeduceSuccessDay,
+                      List<Long> krakenMarks, Map<Long, Faction> fakeFactions,
+                      Map<Long, RoleDefinition> fakeCorpseRoles,
+                      Instant contactedAt, Instant seducedAt, boolean departed) {
+        this.team = team;
+        this.alive = alive;
+        this.diedAt = diedAt;
+        this.deathCause = deathCause;
+        this.usedCounts.clear();
+        this.usedCounts.putAll(usedCounts);
+        this.lastSelfProtectDay = lastSelfProtectDay;
+        this.lastVoteBanDay = lastVoteBanDay;
+        this.lastVoteBanTargetId = lastVoteBanTargetId;
+        this.lastSeduceSuccessDay = lastSeduceSuccessDay;
+        this.krakenMarks.clear();
+        this.krakenMarks.addAll(krakenMarks);
+        this.fakeFactions.clear();
+        this.fakeFactions.putAll(fakeFactions);
+        this.fakeCorpseRoles.clear();
+        this.fakeCorpseRoles.putAll(fakeCorpseRoles);
+        this.contactedAt = contactedAt;
+        this.seducedAt = seducedAt;
+        this.departed = departed;
     }
 
     private static Team initialTeam(RoleDefinition role) {

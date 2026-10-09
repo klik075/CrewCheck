@@ -1,7 +1,6 @@
 package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.config.GamePhaseProperties;
-import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +13,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 
 /**
- * 연결 끊김 검사. inactiveCheckSeconds마다 진행 중인 모든 게임을 확인해
+ * 연결 끊김 검사. inactiveCheckSeconds마다 진행 중인 모든 게임(GameRepository.findActiveIds)을 확인해
  * 마지막 요청 후 inactiveTimeoutSeconds가 지난 플레이어를 GameFlowService.checkInactivePlayers로 처리한다.
  * 클라이언트는 게임 화면에서 1초마다 상태를 조회하므로, 상태 조회가 끊기면 연결이 끊긴 것으로 본다.
  */
@@ -51,11 +50,12 @@ public class InactivePlayerMonitor {
 
     /** 반복 작업에서 예외가 밖으로 나가면 이후 검사가 멈추므로 게임마다 예외를 잡는다. */
     void checkAll() {
-        for (Game game : gameRepository.findAll()) {
+        // id만 받고, 게임은 checkInactivePlayers가 게임 잠금 안에서 다시 읽는다 (그 사이 끝났거나 삭제됐으면 건너뜀)
+        for (String gameId : gameRepository.findActiveIds()) {
             try {
-                gameFlowService.checkInactivePlayers(game.getGameId());
+                gameFlowService.checkInactivePlayers(gameId);
             } catch (RuntimeException e) {
-                log.error("[{}] 연결 끊김 검사 실패", game.getGameId(), e);
+                log.error("[{}] 연결 끊김 검사 실패", gameId, e);
             }
         }
     }

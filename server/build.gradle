@@ -26,6 +26,9 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testCompileOnly 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // Redis 통합 테스트(RedisGameRepositoryTest): 테스트 중에 Docker로 Redis를 띄운다. Docker가 없으면 그 테스트만 건너뜀
+    // 버전은 Spring Boot가 관리한다
+    testImplementation 'org.testcontainers:testcontainers'
     testAnnotationProcessor 'org.projectlombok:lombok'
     // JWT 설정
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'

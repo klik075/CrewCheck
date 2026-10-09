@@ -192,6 +192,39 @@ class GameSaveDisciplineTest {
                 .isInstanceOf(GameRuleException.class);
     }
 
+    // ---------- 낮 토론 넘기기 (GameFlowService.skipDay) ----------
+
+    @Test
+    void 낮_토론_넘기기가_저장된다() {
+        flow.begin(gameId);
+        advance(35);                                        // 밤 30 + 결과 5 → 낮
+        assertThat(stored().getPhase()).isEqualTo(GamePhase.DAY);
+
+        flow.skipDay(stored(), 3L);
+
+        assertThat(stored().hasSkippedDay(3L)).isTrue();
+        assertThat(stored().daySkipCount()).isEqualTo(1);
+    }
+
+    @Test
+    void 전원이_낮_토론을_넘겨_들어간_투표가_저장된다() {
+        flow.begin(gameId);
+        advance(35);
+        long alive = stored().aliveCount();
+
+        // 매번 저장소에서 다시 꺼낸 Game으로 넘긴다. 앞사람의 넘기기가 저장되지 않았으면 전원이 모이지 않는다
+        for (long id = 1; id <= 5; id++) {
+            if (stored().getPlayer(id).isAlive()) {
+                flow.skipDay(stored(), id);
+            }
+        }
+
+        Game game = stored();
+        assertThat(alive).isPositive();
+        assertThat(game.getPhase()).isEqualTo(GamePhase.VOTE);
+        assertThat(game.getPhaseEndsAt()).isEqualTo(NOW.plusSeconds(35 + 30));
+    }
+
     // ---------- 투표 → 처형 → 승리 검사 (VoteService) ----------
 
     @Test

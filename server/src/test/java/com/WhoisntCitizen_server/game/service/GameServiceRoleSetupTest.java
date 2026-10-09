@@ -94,6 +94,6 @@ class GameServiceRoleSetupTest {
         assertThatThrownBy(() -> gameService.startGame(new StartGameRequest("dev", entries(4), invalid)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("해적 진영");
-        assertThat(repository.findAll()).isEmpty();
+        assertThat(repository.findActiveIds()).isEmpty();
     }
 }
