@@ -86,7 +86,8 @@ public class Game {
      */
     void restoreState(GamePhase phase, int day, long phaseVersion, Instant phaseEndsAt,
                       List<NightAction> nightActions, Collection<Long> lockedActors, Collection<Long> skippedActors,
-                      Map<Long, Long> votes, Collection<Long> confirmedVoters, Collection<Long> voteBanned,
+                      Map<Long, Long> votes, Collection<Long> confirmedVoters, Collection<Long> daySkippers,
+                      Collection<Long> voteBanned,
                       int lastDeathDay, NightResult lastNightResult, ExecutionResult lastExecutionResult,
                       Winner winner, List<Long> winnerIds, GameEndReason endReason) {
         this.phase = phase;
@@ -103,6 +104,8 @@ public class Game {
         this.votes.putAll(votes);
         this.confirmedVoters.clear();
         this.confirmedVoters.addAll(confirmedVoters);
+        this.daySkippers.clear();
+        this.daySkippers.addAll(daySkippers);
         this.voteBanned.clear();
         this.voteBanned.addAll(voteBanned);
         this.lastDeathDay = lastDeathDay;

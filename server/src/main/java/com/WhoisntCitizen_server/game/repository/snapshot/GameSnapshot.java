@@ -18,7 +18,7 @@ import java.util.List;
  *
  * Game을 그대로 JSON으로 만들지 않는 이유
  *  - Game의 생성자는 새 게임용이라 gameId를 새로 만들고 createdAt을 지금 시각으로 넣는다. 저장된 게임을 되살릴 수 없다.
- *  - getter가 없는 내부 상태(lockedActors, skippedActors, confirmedVoters, voteBanned 등)가 있어 그대로는 저장되지 않는다.
+ *  - getter가 없는 내부 상태(lockedActors, skippedActors, confirmedVoters, daySkippers, voteBanned 등)가 있어 그대로는 저장되지 않는다.
  *  - 저장 형식이 도메인 코드에 묶이면, 필드 이름만 바꿔도 이미 저장된 게임을 읽지 못하게 된다.
  *  그래서 "무엇을 저장하는가"를 이 record로 따로 정하고, Game ↔ GameSnapshot 변환(1-2)으로 잇는다.
  *
@@ -58,6 +58,7 @@ public record GameSnapshot(
         // 투표 (이번 투표 기준)
         List<VoteEntry> votes,           // 투표 순서
         List<Long> confirmedVoters,      // "투표 완료"를 누른 플레이어
+        List<Long> daySkippers,          // 이번 낮 토론을 넘긴 플레이어 (낮에 들어가면 비워짐)
         List<Long> voteBanned,           // 요리사 때문에 오늘 투표를 못 하는 플레이어
 
         // 사망자 없는 날 세기
@@ -94,6 +95,7 @@ public record GameSnapshot(
         skippedActors = sortedCopy(skippedActors);
         votes = copy(votes);
         confirmedVoters = sortedCopy(confirmedVoters);
+        daySkippers = sortedCopy(daySkippers);
         voteBanned = sortedCopy(voteBanned);
         winnerIds = copy(winnerIds);
     }

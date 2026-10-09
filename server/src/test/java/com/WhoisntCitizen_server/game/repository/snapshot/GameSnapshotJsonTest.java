@@ -76,7 +76,7 @@ class GameSnapshotJsonTest {
                         new NightAction(9L, ActionCode.KRAKEN_STRIKE, null)),
                 List.of(2L), List.of(5L, 1L),
                 List.of(new GameSnapshot.VoteEntry(2L, 1L), new GameSnapshot.VoteEntry(1L, 5L)),
-                List.of(2L), List.of(5L),
+                List.of(2L), List.of(), List.of(5L),
                 2,
                 nightResult, executionResult,
                 null, List.of(), null);
@@ -99,7 +99,7 @@ class GameSnapshotJsonTest {
     void 끝난_게임도_왕복된다() {
         GameSnapshot ended = new GameSnapshot(GameSnapshot.CURRENT_SCHEMA_VERSION,
                 "game-2", "7", false, NOW, GamePhase.ENDED, 3, 12L, null,
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
                 3, null, null, Winner.CREW, List.of(2L, 3L), GameEndReason.WIN);
 
         String json = jsonMapper.writeValueAsString(ended);
@@ -120,11 +120,12 @@ class GameSnapshotJsonTest {
     void 집합은_정렬되고_null_목록은_빈_목록이_된다() {
         GameSnapshot snapshot = new GameSnapshot(GameSnapshot.CURRENT_SCHEMA_VERSION,
                 "game-3", "7", true, NOW, GamePhase.NIGHT, 1, 1L, NOW,
-                null, null, List.of(3L, 1L, 2L), null, null, List.of(9L, 4L), null,
+                null, null, List.of(3L, 1L, 2L), null, null, List.of(9L, 4L), List.of(7L, 2L), null,
                 0, null, null, null, null, null);
 
         assertThat(snapshot.lockedActors()).containsExactly(1L, 2L, 3L);
         assertThat(snapshot.confirmedVoters()).containsExactly(4L, 9L);
+        assertThat(snapshot.daySkippers()).containsExactly(2L, 7L);
         assertThat(snapshot.players()).isEmpty();
         assertThat(snapshot.votes()).isEmpty();
         assertThat(snapshot.winnerIds()).isEmpty();

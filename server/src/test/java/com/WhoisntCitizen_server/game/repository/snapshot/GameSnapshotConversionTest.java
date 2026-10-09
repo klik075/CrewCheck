@@ -95,6 +95,28 @@ class GameSnapshotConversionTest {
     }
 
     @Test
+    void 낮_토론_넘기기가_되살아난다() {
+        Game original = newGame();
+        original.changePhase(GamePhase.NIGHT, NOW.plusSeconds(30));
+        original.changePhase(GamePhase.DAY, NOW.plusSeconds(60));
+        original.skipDay(4L);                               // 낮 토론 넘기기(daySkippers)
+        original.skipDay(2L);
+
+        Game restored = roundTrip(original);
+
+        assertThat(restored).usingRecursiveComparison().isEqualTo(original);
+        assertThat(restored.hasSkippedDay(4L)).isTrue();
+        assertThat(restored.hasSkippedDay(1L)).isFalse();
+        assertThat(restored.daySkipCount()).isEqualTo(2);
+        // 이미 넘긴 사람이 다시 넘기면 false (중복으로 세지 않음)
+        assertThat(restored.skipDay(4L)).isFalse();
+        restored.skipDay(1L);
+        restored.skipDay(3L);
+        restored.skipDay(5L);
+        assertThat(restored.allDaySkipped()).isTrue();
+    }
+
+    @Test
     void 플레이어의_숨은_기록도_되살아난다() {
         Game original = newGame();
         original.changePhase(GamePhase.NIGHT, NOW.plusSeconds(30));
@@ -142,7 +164,7 @@ class GameSnapshotConversionTest {
                 snapshot.gameId(), snapshot.roomId(), snapshot.recordStats(), snapshot.createdAt(),
                 snapshot.phase(), snapshot.day(), snapshot.phaseVersion(), snapshot.phaseEndsAt(),
                 snapshot.players(), snapshot.nightActions(), snapshot.lockedActors(), snapshot.skippedActors(),
-                snapshot.votes(), snapshot.confirmedVoters(), snapshot.voteBanned(), snapshot.lastDeathDay(),
+                snapshot.votes(), snapshot.confirmedVoters(), snapshot.daySkippers(), snapshot.voteBanned(), snapshot.lastDeathDay(),
                 snapshot.lastNightResult(), snapshot.lastExecutionResult(), snapshot.winner(), snapshot.winnerIds(),
                 snapshot.endReason());
 

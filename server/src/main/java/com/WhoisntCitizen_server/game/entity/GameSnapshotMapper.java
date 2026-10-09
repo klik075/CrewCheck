@@ -46,6 +46,7 @@ public final class GameSnapshotMapper {
                 List.copyOf(game.getSkippedActors()),
                 votes,
                 List.copyOf(game.getConfirmedVoters()),
+                List.copyOf(game.getDaySkippers()),
                 List.copyOf(game.getVoteBanned()),
                 game.getLastDeathDay(),
                 game.getLastNightResult(),
@@ -95,7 +96,7 @@ public final class GameSnapshotMapper {
 
         game.restoreState(s.phase(), s.day(), s.phaseVersion(), s.phaseEndsAt(),
                 s.nightActions(), s.lockedActors(), s.skippedActors(),
-                votes, s.confirmedVoters(), s.voteBanned(),
+                votes, s.confirmedVoters(), s.daySkippers(), s.voteBanned(),
                 s.lastDeathDay(), s.lastNightResult(), s.lastExecutionResult(),
                 s.winner(), s.winnerIds(), s.endReason());
         return game;
