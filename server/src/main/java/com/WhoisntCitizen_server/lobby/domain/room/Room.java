@@ -40,6 +40,14 @@ public class Room {
      */
     private String password;
 
+    // ---------- 추방 ----------
+
+    /**
+     * 방장에게 추방된 userId 목록. 방이 사라질 때까지 이 방에 다시 들어올 수 없다.
+     * 필드 기본값이 있어서 이 필드가 없던 예전 Redis 데이터를 읽어도 빈 목록이 된다.
+     */
+    private List<Long> kickedUserIds = new ArrayList<>();
+
     /** 공개방 생성 */
     public Room(Long id, String title, Long hostUserId, int maxPlayers) {
         this(id, title, hostUserId, maxPlayers, false, null);
@@ -59,6 +67,7 @@ public class Room {
         this.status = RoomStatus.WAITING;
         this.privateRoom = privateRoom;
         this.password = privateRoom ? password : null;
+        this.kickedUserIds = new ArrayList<>();
     }
 
     public void addPlayer(RoomPlayer player) {
@@ -96,6 +105,41 @@ public class Room {
     public boolean matchesPassword(String input) {
         if (!privateRoom) return true;
         return input != null && input.equals(password);
+    }
+
+    // ---------- 방장 위임 / 추방 ----------
+
+    /**
+     * 방장을 다른 참가자에게 넘긴다. 권한·게임 중 여부 검사는 RoomService에서 끝낸 뒤 호출한다.
+     * 이전 방장은 준비하지 않은 일반 참가자가 된다. (방장일 때 ready는 항상 false)
+     */
+    public void changeHost(Long newHostUserId) {
+        RoomPlayer target = findPlayer(newHostUserId);
+        if (target == null) throw new IllegalStateException("해당 플레이어가 방에 없습니다.");
+        target.resetReady(); // 새 방장의 준비 상태는 해제한다. (방장은 준비하지 않으므로, 나중에 다시 일반 참가자가 됐을 때 준비된 채로 남지 않게)
+        this.hostUserId = newHostUserId;
+    }
+
+    /**
+     * 참가자를 추방한다: 방에서 빼고 추방 목록에 남긴다. (같은 방에 다시 들어올 수 없음)
+     * 방장 본인은 추방할 수 없으므로(RoomService에서 막음) 방장 자동 위임은 일어나지 않는다.
+     */
+    public void kick(Long userId) {
+        if (!containsPlayer(userId)) throw new IllegalStateException("해당 플레이어가 방에 없습니다.");
+        removePlayer(userId);
+        if (kickedUserIds == null) kickedUserIds = new ArrayList<>();
+        if (!kickedUserIds.contains(userId)) kickedUserIds.add(userId);
+    }
+
+    /** 이 방에서 추방된 사람인지. (인자가 있는 메서드라 Jackson이 JSON 속성으로 보지 않는다) */
+    public boolean isKicked(Long userId) {
+        return kickedUserIds != null && kickedUserIds.contains(userId);
+    }
+
+    /** 참가자 찾기. 없으면 null. */
+    public RoomPlayer findPlayer(Long userId) {
+        for (RoomPlayer player : players) if (player.getUserId().equals(userId)) return player;
+        return null;
     }
 
     // ---------- 준비 상태 ----------

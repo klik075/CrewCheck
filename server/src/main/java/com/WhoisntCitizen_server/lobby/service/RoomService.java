@@ -1,6 +1,8 @@
 package com.WhoisntCitizen_server.lobby.service;
 
 import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
+import com.WhoisntCitizen_server.common.exception.ForbiddenException;
+import com.WhoisntCitizen_server.common.exception.RoomKickedException;
 import com.WhoisntCitizen_server.common.exception.RoomPasswordException;
 import com.WhoisntCitizen_server.game.dto.GameParticipant;
 import com.WhoisntCitizen_server.game.dto.StartGameResponse;
@@ -13,6 +15,8 @@ import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
 import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomHostChangedEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomPlayerKickedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerJoinedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerLeftEvent;
 import com.WhoisntCitizen_server.lobby.lock.RoomLock;
@@ -105,6 +109,7 @@ public class RoomService {
      * 검사 순서 (방 잠금 안에서)
      *   1. 게임 중         → 409
      *   2. 이미 참가 중     → 409  (비밀번호보다 먼저 검사: 이미 들어와 있는 사람은 비밀번호 없이도 "이미 참가 중"을 받아야 Unity의 CheckAlreadyJoined가 대기실로 돌려보낼 수 있다)
+     *   2-1. 추방된 사람    → 403 KICKED_FROM_ROOM  (비밀번호보다 먼저: 추방된 사람에게 비밀번호를 다시 묻지 않는다)
      *   3. 비밀번호 불일치   → 403 WRONG_ROOM_PASSWORD  (공개방은 matchesPassword가 항상 true라 통과)
      *   4. 정원 초과       → 409  (비밀번호보다 뒤: 비밀번호를 모르는 사람에게 방 인원 상태를 먼저 알려주지 않는다)
      *
@@ -124,6 +129,7 @@ public class RoomService {
             // 게임은 시작할 때 참가자 명단을 고정하므로, 진행 중인 방에는 새로 들어올 수 없다.
             if (room.isInGame()) throw new IllegalStateException("게임이 진행 중인 방입니다.");
             if (room.containsPlayer(user.getId())) throw new IllegalStateException("이미 참가 중입니다.");
+            if (room.isKicked(user.getId())) throw new RoomKickedException(); // 추방된 사람
             if (!room.matchesPassword(password)) throw new RoomPasswordException();
             if (room.isFull()) throw new IllegalStateException("방이 가득 찼습니다.");
 
@@ -171,6 +177,66 @@ public class RoomService {
         } else {
             eventPublisher.publishEvent(new RoomDeletedEvent(roomId));
         }
+    }
+
+    /**
+     * 방장 위임 (방장만). PUT /api/v1/rooms/{roomId}/host  body {"userId": 5}
+     * 새 방장의 준비 상태는 해제되고, 이전 방장은 준비 안 한 일반 참가자가 된다.
+     */
+    public void transferHost(Long roomId, Long memberId, Long targetUserId) {
+        Long userId = findUser(memberId).getId();
+
+        String newHostNickname = roomLock.withLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            checkHostAction(room, userId, targetUserId);
+
+            room.changeHost(targetUserId);
+            roomRepository.save(room);
+            return room.findPlayer(targetUserId).getNickname();
+        });
+
+        // 시스템 메세지
+        eventPublisher.publishEvent(new RoomHostChangedEvent(roomId, targetUserId, newHostNickname));
+    }
+
+    /**
+     * 플레이어 추방 (방장만). DELETE /api/v1/rooms/{roomId}/players/{userId}
+     * 추방된 사람은 방이 사라질 때까지 이 방에 다시 들어올 수 없다. (joinRoom에서 403 KICKED_FROM_ROOM)
+     *
+     * 검사 순서는 transferHost와 같다. (방장 아님 403 → 게임 중 409 → 본인 400 → 방에 없음 409)
+     * 게임 중에는 추방할 수 없다: 게임 참가자 명단은 시작할 때 고정되기 때문 (leaveRoom과 같은 이유)
+     */
+    public void kickPlayer(Long roomId, Long memberId, Long targetUserId) {
+        Long userId = findUser(memberId).getId();
+
+        String kickedNickname = roomLock.withLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            checkHostAction(room, userId, targetUserId);
+
+            String nickname = room.findPlayer(targetUserId).getNickname(); // 아직 방에 있을때 닉네임 저장
+            room.kick(targetUserId); // 방에서 추방
+            roomRepository.save(room); // 방장은 남아 있으므로 방이 비는 일은 없다
+            return nickname;
+        });
+
+        eventPublisher.publishEvent(new RoomPlayerKickedEvent(roomId, targetUserId, kickedNickname));
+    }
+
+    /** 방장 전용 기능(위임·추방) 공통 검사. 반드시 방 잠금 안에서 호출한다.
+     *  1. 방장이 아님        → 403 FORBIDDEN
+     *  2. 게임 중            → 409
+     *  3. 대상이 본인         → 400
+     *  4. 대상이 방에 없음     → 409  (그사이 나갔거나 추방됨)
+     */
+    private static void checkHostAction(Room room, Long userId, Long targetUserId) {
+        if (!userId.equals(room.getHostUserId())) throw new ForbiddenException("방장만 플레이어를 추방할 수 있습니다.");
+        if (room.isInGame()) throw new IllegalStateException("게임 중에는 할 수 없습니다.");
+        if (userId.equals(targetUserId)) throw new IllegalArgumentException("자기 자신은 추방할 수 없습니다.");
+        if (!room.containsPlayer(targetUserId)) throw new IllegalStateException("해당 플레이어가 방에 없습니다.");
     }
 
     /**
@@ -248,7 +314,7 @@ public class RoomService {
             Room room = findRoom(roomId);
             recoverIfOrphaned(room);
 
-            if (!userId.equals(room.getHostUserId())) throw new IllegalStateException("방장만 게임을 시작할 수 있습니다.");
+            if (!userId.equals(room.getHostUserId())) throw new ForbiddenException("방장만 게임을 시작할 수 있습니다.");
             if (room.isInGame()) throw new IllegalStateException("이미 게임이 진행 중인 방입니다.");
             // 사용자에게 빠르게 알려주기 위한 검사. 최종 인원 검사는 게임 쪽(RoleAssigner)이 한 번 더 한다.
             if (room.getPlayers().size() < MIN_PLAYERS) throw new IllegalStateException("게임을 시작하려면 최소 " + MIN_PLAYERS + "명이 필요합니다.");

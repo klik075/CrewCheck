@@ -53,6 +53,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ErrorResponse(RoomPasswordException.CODE, e.getMessage()));
     }
 
+    /** 추방된 방에 다시 입장하려 함: 403. 비밀번호 틀림과 구분하도록 code를 따로 쓴다 */
+    @ExceptionHandler(RoomKickedException.class)
+    public ResponseEntity<ErrorResponse> handleRoomKicked(RoomKickedException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ErrorResponse(RoomKickedException.CODE, e.getMessage()));
+    }
+
     // ---------- 채팅 ----------
 
     /** 채팅 대상 방 없음: 404 */
@@ -61,7 +67,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse("NOT_FOUND", e.getMessage()));
     }
 
-    /** 채팅할 수 없는 플레이어, 공지 권한 없음: 403 */
+    /** 권한 없음: 403 (채팅할 수 없는 플레이어, 공지 권한 없음, 방장 전용 기능을 방장이 아닌 사람이 요청) */
     @ExceptionHandler(ForbiddenException.class)
     public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ErrorResponse("FORBIDDEN", e.getMessage()));
