@@ -7,6 +7,7 @@ import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.SetReadyRequestDto;
+import com.WhoisntCitizen_server.lobby.dto.TransferHostRequestDto;
 import com.WhoisntCitizen_server.lobby.service.RoomService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -99,8 +100,40 @@ public class RoomController {
     }
 
     /**
+     * 방장 위임 (방장만). body: {"userId": 5}  성공 시 204.
+     * 실패: 403 방장 아님, 409 게임 중 / 대상이 방에 없음, 400 body·userId 없음 / 자기 자신 / 존재하지 않는 방
+     */
+    @PutMapping("/{roomId}/host")
+    public ResponseEntity<Void> transferHost(
+            @PathVariable Long roomId,
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody(required = false) TransferHostRequestDto request
+    ) {
+        if (request == null || request.getUserId() == null) throw new IllegalArgumentException("위임할 플레이어(userId)를 보내주세요.");
+
+        roomService.transferHost(roomId, memberId(jwt), request.getUserId());
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 플레이어 추방 (방장만). 성공 시 204. 추방된 사람은 이 방에 다시 들어올 수 없다.
+     * 실패: 403 방장 아님, 409 게임 중 / 대상이 방에 없음, 400 자기 자신 / 존재하지 않는 방
+     * (본인 나가기는 DELETE /players/me. Spring은 고정 경로 "me"를 {userId}보다 먼저 고른다)
+     */
+    @DeleteMapping("/{roomId}/players/{userId}")
+    public ResponseEntity<Void> kickPlayer(
+            @PathVariable Long roomId,
+            @PathVariable Long userId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        roomService.kickPlayer(roomId, memberId(jwt), userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * 게임 시작 (방장만): 이 방에 게임을 생성한다. 성공하면 방이 IN_GAME이 되고 gameId를 돌려준다.
      * 다른 참가자는 방 조회(GET /api/v1/rooms)의 gameId로 게임 API(/api/v1/games/{gameId})에 접근한다.
+     * 실패: 403 방장 아님, 409 이미 게임 중 / 인원 부족 / 준비 안 된 참가자 있음
      */
     @PostMapping("/{roomId}/games")
     public ResponseEntity<StartGameResponse> startGame(
