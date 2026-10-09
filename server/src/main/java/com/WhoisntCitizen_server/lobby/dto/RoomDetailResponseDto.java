@@ -21,12 +21,15 @@ import java.util.List;
  *
  * JSON 예시 (부모 필드가 먼저, players가 마지막에 붙은 평평한 구조)
  *   {"id":1,"title":"초보만","hostUserId":3,"maxPlayers":8,"currentPlayers":2,"status":"WAITING","gameId":null,"privateRoom":false,
- *    "players":[{"userId":3,"nickname":"유진","ready":false}, ...]}
+ *    "players":[{"userId":3,"nickname":"유진","ready":false}, ...], "kickedUserIds":[7]}
  */
 @Getter
 public class RoomDetailResponseDto extends RoomResponseDto {
 
     private final List<RoomPlayerResponseDto> players; // 입장 순서대로. 첫 번째 사람이 다음 방장 후보
+
+    // 방장에게 추방된 userId 목록.
+    private final List<Long> kickedUserIds;
 
     /** 공통 필드는 super(room)이 채우고, 여기서는 참가자 명단만 변환한다. 외부에서는 from()을 사용한다. */
     private RoomDetailResponseDto(Room room) {
@@ -34,6 +37,7 @@ public class RoomDetailResponseDto extends RoomResponseDto {
         this.players = room.getPlayers().stream()
                 .map(RoomPlayerResponseDto::from)
                 .toList();
+        this.kickedUserIds = room.getKickedUserIds() == null ? List.of() : List.copyOf(room.getKickedUserIds());
     }
 
     /**
