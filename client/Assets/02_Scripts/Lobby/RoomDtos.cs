@@ -21,6 +21,9 @@ namespace WhoisntCitizen.Lobby
     {
         /// <summary>비밀방 입장 시 비밀번호 없음/불일치 (403). 비밀번호 팝업을 닫지 않고 다시 입력받는다.</summary>
         public const string WrongRoomPassword = "WRONG_ROOM_PASSWORD";
+
+        /// <summary>방장에게 추방된 방에 다시 입장하려 함 (403). 방이 사라질 때까지 다시 들어갈 수 없다.</summary>
+        public const string KickedFromRoom = "KICKED_FROM_ROOM";
     }
 
     /// <summary>
@@ -78,6 +81,13 @@ namespace WhoisntCitizen.Lobby
         public bool ready;
     }
 
+    /// <summary>PUT /api/v1/rooms/{roomId}/host 요청 body. {"userId": 5} (새 방장이 될 참가자)</summary>
+    [Serializable]
+    public class TransferHostRequest
+    {
+        public long userId;
+    }
+
     /// <summary>
     /// 방 요약 정보 (서버 RoomResponseDto). 로비에서 방 한 줄을 그리는 데 필요한 값만 있다. (참가자 명단 없음)
     /// 사용처: GET /api/v1/rooms(목록의 각 항목), POST /api/v1/rooms(생성), POST /api/v1/rooms/{id}/players(입장)
@@ -129,6 +139,13 @@ namespace WhoisntCitizen.Lobby
     public class RoomDetailResponse : RoomResponse
     {
         public List<RoomPlayerResponse> players = new List<RoomPlayerResponse>(); // 입장 순서대로
+        public List<long> kickedUserIds = new List<long>(); // 방장에게 추방된 userId (이 방에 다시 들어올 수 없음)
+
+        /// <summary>해당 userId가 이 방에서 추방됐는지. (참가자 목록에서 빠진 이유 구분용)</summary>
+        public bool IsKicked(long userId)
+        {
+            return kickedUserIds != null && kickedUserIds.Contains(userId);
+        }
 
         /// <summary>해당 userId가 이 방의 참가자인지 확인한다.</summary>
         public bool HasPlayer(long userId)

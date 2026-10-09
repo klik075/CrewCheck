@@ -25,6 +25,10 @@ namespace WhoisntCitizen.Lobby
     ///   4) 방장이 아닌 참가자는 서버 푸시가 없으므로 polling 중에 status == IN_GAME 이 되면
     ///      gameId를 저장하고 GameScene으로 이동한다. (서버는 게임 생성에 성공했을 때만 IN_GAME으로 바꾼다)
     ///   5) Button_ExitRoom: DELETE /api/v1/rooms/{roomId}/players/me → 세션 비우고 Lobby로 이동
+    ///   6) 방장은 다른 참가자 줄의 [관리] 버튼 → 플레이어 관리 메뉴에서 [방장 위임] / [추방] → 확인 팝업 [예] 순서로
+    ///      방장을 넘기거나 내보낼 수 있다.
+    ///      위임받은 사람은 다음 polling에서 방장이 되어 시작 버튼이 보이고, 이전 방장에게는 준비 버튼이 보인다.
+    ///      추방된 사람은 다음 polling에서 목록에 자신이 없음을 보고 로비로 돌아간다. (그 방에는 다시 들어갈 수 없음)
     ///
     /// 진입 조건
     ///   로그인 안 됨 → Title, 방 정보 없음 → Lobby
@@ -49,6 +53,12 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private string readyLabel = "준비";
         [SerializeField] private string unreadyLabel = "준비 취소";
 
+        [Header("Popup (선택)")]
+        [Tooltip("플레이어 관리 메뉴(Popup_PlayerManage). 참가자 줄의 [관리] 버튼으로 연다. 비워 두면 위임/추방 기능이 꺼진다.")]
+        [SerializeField] private PlayerManageMenu playerManageMenu;
+        [Tooltip("위임/추방 확인 팝업(Popup_Confirm). 비워 두면 묻지 않고 바로 요청한다.")]
+        [SerializeField] private RoomConfirmPopup confirmPopup;
+
         [Header("Status (선택)")]
         [SerializeField] private StatusMessageView statusMessage;
 
@@ -62,6 +72,7 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private int minLoginMinutesForGame = 20;
 
         private const string RoomGoneNotice = "방이 사라져 로비로 돌아왔습니다.";
+        private const string KickedNotice = "방장에 의해 추방되어 로비로 돌아왔습니다.";
         private const string RemovedFromRoomNotice = "방에서 제외되어 로비로 돌아왔습니다. (게임 중 연결이 60초 넘게 끊기면 탈락하고 방에서도 빠집니다)";
 
         private readonly List<RoomPlayerView> spawnedPlayers = new List<RoomPlayerView>();
@@ -76,6 +87,7 @@ namespace WhoisntCitizen.Lobby
         private bool isStarting;      // POST /rooms/{id}/games 요청 중
         private bool isLeaving;       // DELETE /rooms/{id}/players/me 요청 중
         private bool isReadying;      // POST/DELETE /rooms/{id}/players/me/ready 요청 중
+        private bool isManaging;      // 방장 위임 / 추방 요청 중
         private bool isTransitioning; // 다른 씬으로 이동 시작함 (이후 모든 요청/응답 무시)
         private Coroutine pollRoutine;
 
@@ -145,7 +157,7 @@ namespace WhoisntCitizen.Lobby
         /// <summary>Button_StartGame: 게임 시작 (방장만)</summary>
         public void OnStartGameClicked()
         {
-            if (isStarting || isLeaving || isReadying || isTransitioning || SceneLoader.IsLoading) return;
+            if (isStarting || isLeaving || isReadying || isManaging || isTransitioning || SceneLoader.IsLoading) return;
 
             if (!RoomSession.IsHost)
             {
@@ -188,7 +200,7 @@ namespace WhoisntCitizen.Lobby
                     return;
                 }
 
-                // 409: 방장 아님 / 이미 게임 중 / 4명 미만 / 준비 안 된 참가자 있음 / 직업 배정 실패, 400: 방 없음
+                // 403: 방장 아님, 409: 이미 게임 중 / 4명 미만 / 준비 안 된 참가자 있음 / 직업 배정 실패, 400: 방 없음
                 string message = result.success ? "게임 정보를 받지 못했습니다. 다시 시도해 주세요." : result.message;
                 Debug.LogWarning($"[Room] 게임 시작 실패 ({result.statusCode}): {message}");
                 statusMessage?.ShowError(message);
@@ -199,7 +211,7 @@ namespace WhoisntCitizen.Lobby
         /// <summary>Button_ExitRoom: 방 나가기 → Lobby</summary>
         public void OnExitRoomClicked()
         {
-            if (isStarting || isLeaving || isReadying || isTransitioning || SceneLoader.IsLoading) return;
+            if (isStarting || isLeaving || isReadying || isManaging || isTransitioning || SceneLoader.IsLoading) return;
 
             isLeaving = true;
             SetButtonsInteractable(false);
@@ -229,7 +241,7 @@ namespace WhoisntCitizen.Lobby
         /// <summary>Button_Ready: 준비 ↔ 준비 취소 (방장 제외)</summary>
         public void OnReadyClicked()
         {
-            if (isStarting || isLeaving || isReadying || isTransitioning || SceneLoader.IsLoading) return;
+            if (isStarting || isLeaving || isReadying || isManaging || isTransitioning || SceneLoader.IsLoading) return;
             if (RoomSession.IsHost || lastInGame) return;
 
             bool nextReady = !myReady;
@@ -253,6 +265,129 @@ namespace WhoisntCitizen.Lobby
                 }
                 UpdateReadyButton();
             });
+        }
+
+        /// <summary>참가자 줄의 [관리] 버튼 (방장에게만, 내 줄 제외) → 플레이어 관리 메뉴를 연다.</summary>
+        private void OnManageClicked(RoomPlayerView target)
+        {
+            if (target == null) return;
+            if (isStarting || isLeaving || isReadying || isManaging || isTransitioning || SceneLoader.IsLoading) return;
+            if (!RoomSession.IsHost || lastInGame) return;
+
+            if (playerManageMenu == null)
+            {
+                Debug.LogWarning("[Room] playerManageMenu가 연결되지 않아 플레이어 관리 메뉴를 열 수 없습니다.");
+                return;
+            }
+
+            // 줄(target)은 polling으로 다시 만들어질 수 있으므로 값만 꺼내 둔다.
+            long targetUserId = target.UserId;
+            string nickname = target.Nickname;
+            playerManageMenu.Open(targetUserId, nickname,
+                () => OnTransferHostChosen(targetUserId, nickname),
+                () => OnKickChosen(targetUserId, nickname));
+        }
+
+        /// <summary>관리 메뉴에서 [방장 위임] 선택 → 확인 → 요청</summary>
+        private void OnTransferHostChosen(long targetUserId, string nickname)
+        {
+            ConfirmThen($"{nickname}님에게 방장을 넘길까요?", targetUserId, () =>
+                RequestHostAction(
+                    $"{nickname}님에게 방장을 넘기는 중...",
+                    $"{nickname}님이 방장이 되었습니다.",
+                    "방장 위임",
+                    done => RoomApi.TransferHost(RoomSession.RoomId, targetUserId, done)));
+        }
+
+        /// <summary>관리 메뉴에서 [추방] 선택 → 확인 → 요청</summary>
+        private void OnKickChosen(long targetUserId, string nickname)
+        {
+            ConfirmThen($"{nickname}님을 추방할까요?\n추방된 사람은 이 방에 다시 들어올 수 없습니다.", targetUserId, () =>
+                RequestHostAction(
+                    $"{nickname}님을 추방하는 중...",
+                    $"{nickname}님을 추방했습니다.",
+                    "추방",
+                    done => RoomApi.KickPlayer(RoomSession.RoomId, targetUserId, done)));
+        }
+
+        /// <summary>확인 팝업이 연결돼 있으면 물어본 뒤, 없으면 바로 실행한다.</summary>
+        private void ConfirmThen(string message, long targetUserId, System.Action action)
+        {
+            if (isStarting || isLeaving || isReadying || isManaging || isTransitioning || SceneLoader.IsLoading) return;
+            if (!RoomSession.IsHost || lastInGame) return;
+
+            if (confirmPopup != null) confirmPopup.Open(message, targetUserId, action);
+            else action();
+        }
+
+        /// <summary>
+        /// 관리 메뉴나 확인 팝업이 열려 있는 동안 상태가 바뀌면 닫는다.
+        /// (내가 방장이 아니게 됨, 게임 시작, 대상이 나감·추방됨) 그래도 요청이 나가면 서버가 403/409로 막는다.
+        /// </summary>
+        private void CloseStaleManagePopups(RoomDetailResponse room)
+        {
+            bool canManage = RoomSession.IsHost && !room.IsInGame;
+
+            if (playerManageMenu != null && playerManageMenu.IsOpen
+                && (!canManage || !room.HasPlayer(playerManageMenu.TargetUserId)))
+                playerManageMenu.Close();
+
+            if (confirmPopup != null && confirmPopup.IsOpen && confirmPopup.TargetUserId != 0
+                && (!canManage || !room.HasPlayer(confirmPopup.TargetUserId)))
+            {
+                confirmPopup.Close();
+                statusMessage?.ShowInfo("방 상태가 바뀌어 요청을 취소했습니다.");
+            }
+        }
+
+        /// <summary>씬을 떠날 때 열려 있는 관리 메뉴·확인 팝업을 닫는다.</summary>
+        private void CloseManagePopups()
+        {
+            if (playerManageMenu != null && playerManageMenu.IsOpen) playerManageMenu.Close();
+            if (confirmPopup != null && confirmPopup.IsOpen) confirmPopup.Close();
+        }
+
+        /// <summary>
+        /// 방장 위임 / 추방 요청 공통 처리.
+        /// 성공하면 다음 polling을 기다리지 않고 바로 방을 다시 조회해 목록과 버튼을 갱신한다.
+        /// 실패: 403 방장이 아님(그사이 방장이 바뀜), 409 게임 시작됨 / 대상이 이미 나감 → 메시지만 보여 주고 polling이 상태를 맞춘다.
+        /// </summary>
+        private void RequestHostAction(string progressMessage, string successMessage, string actionName,
+            System.Action<System.Action<WhoisntCitizen.Network.ApiResult>> send)
+        {
+            // 팝업이 열려 있는 동안 상태가 바뀌었을 수 있으므로 한 번 더 확인한다.
+            if (isStarting || isLeaving || isReadying || isManaging || isTransitioning || SceneLoader.IsLoading) return;
+            if (!RoomSession.IsHost || lastInGame) return;
+
+            SetManaging(true);
+            statusMessage?.ShowInfo(progressMessage, keep: true);
+
+            send(result =>
+            {
+                if (this == null) return;
+                SetManaging(false);
+                if (isTransitioning) return;
+
+                if (result.success)
+                {
+                    statusMessage?.ShowSuccess(successMessage);
+                    if (!isFetching) FetchRoom();
+                    return;
+                }
+                if (result.IsUnauthorized) return; // ApiClient가 세션을 비우고 Title로 보낸다.
+
+                Debug.LogWarning($"[Room] {actionName} 실패 ({result.statusCode}): {result.message}");
+                statusMessage?.ShowError(result.message);
+            });
+        }
+
+        private void SetManaging(bool value)
+        {
+            isManaging = value;
+            foreach (RoomPlayerView view in spawnedPlayers)
+                if (view != null) view.SetManageInteractable(!value);
+            UpdateStartButton();
+            UpdateReadyButton();
         }
 
         // ------------------------------------------------------------------
@@ -301,11 +436,12 @@ namespace WhoisntCitizen.Lobby
                 RoomDetailResponse room = result.data;
                 if (room == null) return;
 
-                // 내가 참가자 목록에 없으면 (게임 중 연결이 끊겨 제외됨, 다른 기기에서 나감, 서버 초기화 등) 로비로 돌아간다.
+                // 내가 참가자 목록에 없으면 (방장이 추방함, 게임 중 연결이 끊겨 제외됨, 다른 기기에서 나감, 서버 초기화 등) 로비로 돌아간다.
                 if (!room.HasPlayer(AuthSession.UserId))
                 {
-                    Debug.LogWarning($"[Room] 방 #{roomId} 참가자 목록에 내가 없어 로비로 이동합니다.");
-                    ReturnToLobby(RemovedFromRoomNotice);
+                    bool kicked = room.IsKicked(AuthSession.UserId);
+                    Debug.LogWarning($"[Room] 방 #{roomId} 참가자 목록에 내가 없어 로비로 이동합니다. (추방: {kicked})");
+                    ReturnToLobby(kicked ? KickedNotice : RemovedFromRoomNotice);
                     return;
                 }
 
@@ -345,6 +481,7 @@ namespace WhoisntCitizen.Lobby
                 RebuildPlayerList(room.hostUserId, players);
             }
 
+            CloseStaleManagePopups(room);
             UpdateStartButton();
             UpdateReadyButton();
         }
@@ -359,13 +496,15 @@ namespace WhoisntCitizen.Lobby
             }
 
             long myUserId = AuthSession.UserId;
+            bool canManage = hostUserId == myUserId; // 내가 방장이면 다른 사람 줄에 관리 버튼
             foreach (RoomPlayerResponse p in players)
             {
                 GameObject go = Instantiate(roomPlayerPrefab, playerListContent);
                 go.name = $"RoomPlayer_{p.userId}";
                 RoomPlayerView view = go.GetComponent<RoomPlayerView>();
                 if (view == null) view = go.AddComponent<RoomPlayerView>();
-                view.Bind(p, p.userId == hostUserId, p.userId == myUserId);
+                view.Bind(p, p.userId == hostUserId, p.userId == myUserId, canManage, OnManageClicked);
+                view.SetManageInteractable(!isManaging);
                 spawnedPlayers.Add(view);
             }
         }
@@ -389,7 +528,7 @@ namespace WhoisntCitizen.Lobby
                                            && lastPlayerCount >= minPlayersToStart
                                            && lastAllGuestsReady
                                            && !lastInGame
-                                           && !isStarting && !isLeaving && !isTransitioning;
+                                           && !isStarting && !isLeaving && !isManaging && !isTransitioning;
         }
 
         /// <summary>준비 버튼: 방장이 아닌 참가자에게만 보이고, 내 상태에 따라 "준비" / "준비 취소"를 표시한다.</summary>
@@ -401,7 +540,7 @@ namespace WhoisntCitizen.Lobby
             readyButton.gameObject.SetActive(isGuest);
             readyButton.interactable = isGuest
                                        && !lastInGame
-                                       && !isReadying && !isStarting && !isLeaving && !isTransitioning;
+                                       && !isReadying && !isStarting && !isLeaving && !isManaging && !isTransitioning;
             if (readyButtonLabel != null) readyButtonLabel.text = myReady ? unreadyLabel : readyLabel;
         }
 
@@ -456,6 +595,7 @@ namespace WhoisntCitizen.Lobby
         private void BeginTransition()
         {
             isTransitioning = true;
+            CloseManagePopups();
             if (pollRoutine != null)
             {
                 StopCoroutine(pollRoutine);
