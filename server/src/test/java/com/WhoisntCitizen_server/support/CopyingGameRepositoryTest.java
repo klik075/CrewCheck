@@ -10,7 +10,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 테스트용 저장소 자체가 Redis처럼 "저장한 시점의 복사본"만 돌려주는지 확인한다. */
+/** 테스트용 저장소 자체가 Redis처럼 "저장한 시점의 JSON"만 남기고, 꺼낼 때마다 새 Game을 돌려주는지 확인한다. */
 class CopyingGameRepositoryTest {
 
     private static final Instant NOW = Instant.parse("2026-10-01T12:00:00Z");
@@ -84,7 +84,7 @@ class CopyingGameRepositoryTest {
     }
 
     @Test
-    void 플레이어_순서와_컬렉션_종류가_유지된다() {
+    void 플레이어_순서가_유지되고_꺼낸_게임도_고칠_수_있다() {
         Game original = newGame();
         repository.save(original);
 
@@ -94,5 +94,27 @@ class CopyingGameRepositoryTest {
         assertThat(loaded.getPlayer(2L).isContacted()).isTrue();
         loaded.recordNightAction(3L, 1L); // 복사된 컬렉션도 고칠 수 있어야 한다
         assertThat(loaded.getNightActions()).containsKeys(1L, 2L, 3L);
+    }
+
+    @Test
+    void 게임은_스냅샷_JSON으로_저장된다() {
+        Game original = newGame();
+        repository.save(original);
+
+        String json = repository.storedJson(original.getGameId());
+
+        assertThat(json).contains("\"schemaVersion\":1", "\"gameId\":\"" + original.getGameId() + "\"");
+        assertThat(repository.saveCount()).isEqualTo(1);
+    }
+
+    @Test
+    void 삭제하면_더_이상_꺼낼_수_없다() {
+        Game original = newGame();
+        repository.save(original);
+
+        repository.delete(original.getGameId());
+
+        assertThat(repository.findById(original.getGameId())).isEmpty();
+        assertThat(repository.findAll()).isEmpty();
     }
 }
