@@ -25,8 +25,11 @@ public class InMemoryGameRepository implements GameRepository {
     }
 
     @Override
-    public List<Game> findAll() {
-        return List.copyOf(store.values());
+    public List<String> findActiveIds() {
+        return store.values().stream()
+                .filter(game -> !game.isEnded())
+                .map(Game::getGameId)
+                .toList();
     }
 
     @Override

@@ -115,6 +115,6 @@ class CopyingGameRepositoryTest {
         repository.delete(original.getGameId());
 
         assertThat(repository.findById(original.getGameId())).isEmpty();
-        assertThat(repository.findAll()).isEmpty();
+        assertThat(repository.findActiveIds()).isEmpty();
     }
 }

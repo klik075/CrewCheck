@@ -7,6 +7,7 @@ import com.WhoisntCitizen_server.game.repository.snapshot.GameSnapshotCodec;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -21,16 +22,25 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * RedisGameRepository(1-6)와 같은 코덱을 쓰므로, 저장 형식(스냅샷·매퍼·JSON)에서 빠지는 값이 있으면
  * Redis 없이도 이 저장소를 쓰는 테스트(GameSaveDisciplineTest 등)에서 먼저 드러난다.
+ *
+ * 진행 중인 게임 목록(findActiveIds)도 Redis와 같은 방식으로, JSON을 다시 읽지 않고 따로 둔 id 집합으로 관리한다.
+ * (Redis: save할 때 끝나지 않은 게임이면 SADD, 끝났으면 SREM / delete할 때 SREM)
  */
 public class CopyingGameRepository implements GameRepository {
 
     private final GameSnapshotCodec codec = new GameSnapshotCodec();
     private final Map<String, String> store = new ConcurrentHashMap<>();
+    private final Set<String> activeIds = ConcurrentHashMap.newKeySet();
     private int saveCount;
 
     @Override
     public Game save(Game game) {
         store.put(game.getGameId(), codec.encode(game));
+        if (game.isEnded()) {
+            activeIds.remove(game.getGameId());
+        } else {
+            activeIds.add(game.getGameId());
+        }
         saveCount++;
         return game;
     }
@@ -41,13 +51,14 @@ public class CopyingGameRepository implements GameRepository {
     }
 
     @Override
-    public List<Game> findAll() {
-        return store.values().stream().map(codec::decode).toList();
+    public List<String> findActiveIds() {
+        return List.copyOf(activeIds);
     }
 
     @Override
     public void delete(String gameId) {
         store.remove(gameId);
+        activeIds.remove(gameId);
     }
 
     /** 지금까지 save()가 불린 횟수 */
