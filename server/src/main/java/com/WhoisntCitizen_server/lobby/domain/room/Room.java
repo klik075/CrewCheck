@@ -98,6 +98,26 @@ public class Room {
         return input != null && input.equals(password);
     }
 
+    // ---------- 준비 상태 ----------
+
+    // 참가자의 준비 상태를 바꾼다. 방장은 준비할 필요가 없으므로 호출하지 않는다. (RoomService에서 막음)
+    public void changeReady(Long userId, boolean ready) {
+        for (RoomPlayer player : players) {
+            if (player.getUserId().equals(userId)) {
+                player.changeReady(ready);
+                return;
+            }
+        }
+        throw new IllegalStateException("해당 방에 참가 중이지 않습니다.");
+    }
+
+    // 방장을 뺀 모든 참가자가 준비했는지. 방장 혼자면 true (인원 검사는 따로 한다).
+    public boolean allGuestsReady() {
+        return players.stream()
+                .filter(p -> !p.getUserId().equals(hostUserId)) // 방장 빼고
+                .allMatch(RoomPlayer::isReady); // 전부 레디인가?
+    }
+
     // ---------- 게임 상태 ----------
 
     /** 게임 시작: 방을 IN_GAME으로 바꾸고 진행 중인 게임 id를 기록한다. */
