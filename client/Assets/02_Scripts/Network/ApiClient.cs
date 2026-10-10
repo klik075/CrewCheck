@@ -89,6 +89,18 @@ namespace WhoisntCitizen.Network
             Run(UnityWebRequest.kHttpVerbPUT, path, body, requireAuth, onDone);
         }
 
+        /// <summary>PATCH 요청. 값을 "일부 수정"하는 요청용. 응답 본문은 파싱하지 않는다. (예: 닉네임 변경)</summary>
+        public static void Patch(string path, object body, Action<ApiResult> onDone, bool requireAuth = true)
+        {
+            Run("PATCH", path, body, requireAuth, onDone);
+        }
+
+        /// <summary>GET 요청. 본문을 파싱하지 않고 원문 그대로 돌려준다. (응답이 객체/배열 어느 쪽인지 호출한 쪽이 판단할 때)</summary>
+        public static void GetRaw(string path, Action<ApiResult> onDone, bool requireAuth = true)
+        {
+            Run(UnityWebRequest.kHttpVerbGET, path, null, requireAuth, onDone);
+        }
+
         /// <summary>DELETE 요청. (예: 방 나가기 → 204 No Content)</summary>
         public static void Delete(string path, Action<ApiResult> onDone, bool requireAuth = true)
         {
