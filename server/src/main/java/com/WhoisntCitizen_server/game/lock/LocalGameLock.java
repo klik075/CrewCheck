@@ -16,6 +16,7 @@ import java.util.function.Supplier;
  *
  * 대기 시간(waitTimeout) 안에 잠금을 잡지 못하면 LockTimeoutException을 던진다. (GameLock 계약)
  * 이미 이 스레드가 쥐고 있는 잠금(재진입)은 기다리지 않고 바로 잡는다.
+ * 잡은 뒤·푼 뒤 GameLockScope에 알린다. (잠금이 풀린 뒤 할 일 실행, 잠금 순서 검사)
  *
  * 끝난 게임의 잠금 객체는 지우지 않는다. 다른 스레드가 기다리는 중일 수 있어 안전하게 지우기 어렵고,
  * 게임 하나당 작은 객체 하나라 지금 규모에서는 문제가 되지 않는다.
@@ -41,10 +42,15 @@ public class LocalGameLock implements GameLock {
         Objects.requireNonNull(gameId, "gameId");
         ReentrantLock lock = locks.computeIfAbsent(gameId, id -> new ReentrantLock());
         acquire(lock, gameId);
+        GameLockScope.enter();
         try {
             return action.get();
         } finally {
-            lock.unlock();
+            try {
+                lock.unlock();
+            } finally {
+                GameLockScope.exit(); // 가장 바깥 잠금이 풀렸으면 afterUnlock으로 넘긴 일을 실행한다
+            }
         }
     }
 

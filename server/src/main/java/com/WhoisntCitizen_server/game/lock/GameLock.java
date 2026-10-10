@@ -10,7 +10,10 @@ import java.util.function.Supplier;
  *  - 잠금 안에서 저장소에서 게임을 불러오고(load), 바꿨으면 저장(save)한 뒤 잠금을 푼다.
  *    (게임을 Redis에 두게 되면 잠금 밖에서 불러온 객체는 이미 낡은 값일 수 있다)
  *  - 재진입이 된다. 잠금 안에서 같은 gameId로 다시 잠가도 막히지 않는다.
- *  - 잠금 순서는 "방 잠금 → 게임 잠금"만 허용한다. 게임 잠금 안에서 방 잠금을 잡지 않는다.
+ *  - 잠금 순서는 "방 잠금 → 게임 잠금"만 허용한다. 게임 잠금 안에서 방 잠금을 잡으면 방 잠금이 거부한다. (LockOrderTest)
+ *  - 잠금 안에서는 상태 변경과 저장만 한다. 채팅 안내 같은 알리는 일은 GameLockScope.afterUnlock으로,
+ *    로비·전적처럼 다른 잠금이나 DB를 쓰는 일은 DeferredEventPublisher로 잠금 밖으로 넘긴다.
+ *  - 구현은 잠금을 잡은 직후 GameLockScope.enter(), 푼 직후 GameLockScope.exit()를 부른다.
  *  - 정해진 대기 시간 안에 잠금을 잡지 못하면 LockTimeoutException을 던진다. 이때 action은 실행되지 않는다.
  *
  * 모든 구현은 LockContractTest(테스트)가 정한 동작을 지켜야 한다.

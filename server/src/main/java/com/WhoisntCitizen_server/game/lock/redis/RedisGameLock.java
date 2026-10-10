@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.lock.redis;
 
 import com.WhoisntCitizen_server.common.exception.LockTimeoutException;
 import com.WhoisntCitizen_server.game.lock.GameLock;
+import com.WhoisntCitizen_server.game.lock.GameLockScope;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
@@ -55,10 +56,15 @@ public class RedisGameLock implements GameLock {
         Objects.requireNonNull(gameId, "gameId");
         RLock lock = redisson.getLock(key(gameId));
         acquire(lock, gameId);
+        GameLockScope.enter();
         try {
             return action.get();
         } finally {
-            release(lock, gameId);
+            try {
+                release(lock, gameId);
+            } finally {
+                GameLockScope.exit(); // 가장 바깥 잠금이 풀렸으면 afterUnlock으로 넘긴 일을 실행한다
+            }
         }
     }
 
