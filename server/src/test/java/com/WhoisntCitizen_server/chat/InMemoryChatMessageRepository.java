@@ -16,6 +16,7 @@ class InMemoryChatMessageRepository implements ChatMessageRepository {
 
     private final Map<Long, List<ChatMessage>> rooms = new ConcurrentHashMap<>();
     private final Map<Long, AtomicLong> seqs = new ConcurrentHashMap<>();
+    private final Map<Long, Long> gameStarts = new ConcurrentHashMap<>(); // 게임 시작 때의 마지막 메시지 id
 
     @Override
     public synchronized ChatMessage save(long roomId, MessageType type, Long userId, String nickname, String message,
@@ -45,5 +46,22 @@ class InMemoryChatMessageRepository implements ChatMessageRepository {
     public synchronized void deleteRoom(long roomId) {
         rooms.remove(roomId);
         seqs.remove(roomId);
+        gameStarts.remove(roomId);
+    }
+
+    @Override
+    public synchronized void markGameStart(long roomId) {
+        AtomicLong seq = seqs.get(roomId);
+        gameStarts.put(roomId, seq == null ? 0L : seq.get());
+    }
+
+    @Override
+    public synchronized long deleteSinceGameStart(long roomId) {
+        Long startId = gameStarts.remove(roomId);
+        List<ChatMessage> all = rooms.get(roomId);
+        if (startId == null || all == null) return 0;
+        int before = all.size();
+        all.removeIf(m -> m.id() > startId);
+        return before - all.size();
     }
 }
