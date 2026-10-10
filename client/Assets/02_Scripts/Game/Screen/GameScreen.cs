@@ -20,6 +20,8 @@ namespace WhoisntCitizen.Game
     ///       뽑은 카드를 다시 눌러 되돌리면 표를 거둔다(기권, targetId 0). 오른쪽 하단 [투표 완료]를 누르면 지금 상태로 고정(confirm=true)하고
     ///       카드패가 내려간다. 아무 카드도 뽑지 않은 채 시간이 끝나면 서버가 기권으로 처리한다(별도 기권 버튼 없음).
     ///       기존 VotePanel 투표 처리는 [카드패 투표로 교체 - 주석 처리] 표시로 막아 두었다(패널은 보기 전용으로 남는다).
+    /// 밤: NightRoomView가 낮 테이블 자리에 내 직업의 방과 내 캐릭터를 보여 준다. 서로 아는 해적은 한 방에 있고, 앵무새는 접선하면
+    ///       해적 방으로 들어간다(NightRoomRules). 밤 능력이 접수되면 직업 컷인과 직업 모션을 내 화면에만 보여 준다.
     // [공개 안내 수동 설정 - 주석 처리]
     // /// 채팅 기록: 공개 안내는 실제 서버면 서버 채팅이 보내므로 AnnouncePublic일 때만 남긴다.
     /// 채팅 기록: 공개 안내(페이즈·밤 결과·처형·승리)는 서버 채팅(GameChatController)이 같은 채팅창에 보여 주면 남기지 않고,
@@ -75,6 +77,9 @@ namespace WhoisntCitizen.Game
         private string currentPhase;
         private DayRoundTableView dayTable;
         private DayTableVoteCards voteCards;
+        private NightRoomView nightRoom;
+        private readonly List<long> contactedPirates = new List<long>(); // 이번 판 내 접선으로 알게 된 해적 (앵무새)
+        private long cutInVersion = -1;                                  // 능력 컷인을 보여 준 밤의 phaseVersion (밤마다 처음 한 번)
         private string announcedRole;
         private string announcedTeammates;
         private bool nightDrawerOpened;
@@ -155,6 +160,10 @@ namespace WhoisntCitizen.Game
             // 투표 카드: 내 표는 테이블 위 대상 자리로 던지고, 처형 때 공개 득표를 각 자리에 더미로 놓는다
             voteCards = gameObject.AddComponent<DayTableVoteCards>();
             voteCards.Bind(dayTable, phaseText != null ? phaseText.font : null);
+            // 밤: 내 직업의 방에 내 캐릭터(낮과 같은 스킨)를 세운다. 서로 아는 해적은 한 방에 있다. 능력을 쓰면 직업 컷인과 모션
+            nightRoom = gameObject.AddComponent<NightRoomView>();
+            nightRoom.Initialize(chatLog != null ? chatLog.transform as RectTransform : null,
+                phaseText != null ? phaseText.font : null, dayTable.SkinOf);
             if (nightPanel != null)
             {
                 nightPanel.PortraitResolver = PortraitOf;
@@ -259,6 +268,7 @@ namespace WhoisntCitizen.Game
             voteConfirmAnnounced = false;
             currentPhase = phaseChanged.Phase;
             if (dayTable != null) dayTable.SetPhase(currentPhase);
+            if (nightRoom != null) nightRoom.SetPhase(currentPhase);
             if (voteCards != null && currentPhase != GamePhases.Execution)
             {
                 voteCards.Clear(); // 처형 결과 동안만 남기고, 새 투표·밤에는 테이블을 비운다
@@ -310,6 +320,7 @@ namespace WhoisntCitizen.Game
             }
             ApplyDrawerContent(bottomTab != null ? bottomTab.Mode : BottomTabMode.Closed);
             RefreshPanels();
+            UpdateNightRoom();
         }
 
         public void ShowPlayerDied(GameEvent died)
@@ -395,6 +406,12 @@ namespace WhoisntCitizen.Game
                 return;
             }
             AddSystem(GameScreenText.ActionAccepted(result, session.Me.actionCode, session.MyNightTarget, session.SkippedTonight, session.State));
+            foreach (long pirateId in result.contactedPirateIds)
+            {
+                if (!contactedPirates.Contains(pirateId)) contactedPirates.Add(pirateId); // 앵무새 접선: 해적 방으로 간다
+            }
+            PlayNightAbility();
+            UpdateNightRoom(); // 접선으로 방이 바뀌면 능력 연출이 끝난 뒤에 바뀐다
             RefreshPanels();
         }
 
@@ -611,6 +628,9 @@ namespace WhoisntCitizen.Game
         {
             currentPhase = null;
             if (dayTable != null) dayTable.Clear();
+            if (nightRoom != null) nightRoom.Clear();
+            contactedPirates.Clear();
+            cutInVersion = -1;
             announcedRole = null;
             announcedTeammates = null;
             playerViews.Clear();
@@ -655,6 +675,8 @@ namespace WhoisntCitizen.Game
                 dayTable.SetPlayers(state.players);
                 dayTable.SetPhase(state.phase);
             }
+            if (nightRoom != null) nightRoom.SetPhase(state.phase);
+            UpdateNightRoom(); // 밤에 동료가 죽거나 /me로 동료가 늘면 방에 반영 (스킨은 위의 테이블 것)
             GameSession session = Session;
             if (state == null || session == null || session.Me == null)
             {
@@ -695,6 +717,40 @@ namespace WhoisntCitizen.Game
                 SyncTableVote(); // 내가 투표한 사람이 게임에서 나가 표가 지워졌으면 카드도 거둔다
             }
             RefreshPanels();
+        }
+
+        // ================================================================ 밤 방
+
+        /// <summary>내 직업의 밤 방과 그 방에 있는 사람을 맞춘다 (NightRoomRules). 같은 값이면 아무것도 하지 않는다.</summary>
+        private void UpdateNightRoom()
+        {
+            GameSession session = Session;
+            if (nightRoom == null || session == null || session.Me == null || session.State == null)
+            {
+                return;
+            }
+            NightRoom room = NightRoomRules.RoomFor(session.Me, session.State, contactedPirates);
+            nightRoom.SetRoom(room.DesignId, room.Members, session.Me.playerId);
+        }
+
+        /// <summary>밤 능력이 접수되면 직업 컷인(그 밤 처음 고를 때만)과 직업 모션을 내 화면에만 보여 준다. 넘기기는 연출 없음.</summary>
+        private void PlayNightAbility()
+        {
+            GameSession session = Session;
+            if (nightRoom == null || session == null || session.Me == null || session.State == null || currentPhase != GamePhases.Night)
+            {
+                return;
+            }
+            long target = session.MyNightTarget;
+            if (target == 0)
+            {
+                return;
+            }
+            bool firstTonight = cutInVersion != session.State.phaseVersion;
+            cutInVersion = session.State.phaseVersion;
+            MyRoleDto me = session.Me;
+            nightRoom.PlayAbility(NightRoomRules.DesignIdFor(me.role), me.actionCode, me.roleName,
+                GameScreenText.AbilityCutInLine(me.actionCode, target, session.State), firstTonight);
         }
 
         // ================================================================ 투표 카드패

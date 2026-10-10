@@ -168,6 +168,14 @@ namespace WhoisntCitizen.Game
             return ReportFormatter.ActionName(actionCode) + " 대상으로 " + GameStateQueries.NicknameOf(state, chosenTargetId) + "님을 골랐습니다.";
         }
 
+        /// <summary>밤 능력 컷인 아래 줄: "공격 · 영희님". 결과는 넣지 않는다(아침에 밤 결과로 온다).</summary>
+        public static string AbilityCutInLine(string actionCode, long targetId, GameStateDto state)
+        {
+            string target = targetId != 0 ? GameStateQueries.NicknameOf(state, targetId) : null;
+            string action = ReportFormatter.ActionName(actionCode);
+            return string.IsNullOrEmpty(target) ? action : action + " · " + target + "님";
+        }
+
         public static string VoteAccepted(long targetId, GameStateDto state)
         {
             return GameStateQueries.NicknameOf(state, targetId) + "님에게 투표했습니다.";
