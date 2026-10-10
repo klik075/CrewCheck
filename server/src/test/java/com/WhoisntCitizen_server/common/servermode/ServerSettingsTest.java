@@ -22,6 +22,7 @@ class ServerSettingsTest {
         assertThat(settings.get(ServerSetting.GAME_REPOSITORY)).isEqualTo("memory");
         assertThat(settings.get(ServerSetting.GAME_LOCK)).isEqualTo("local");
         assertThat(settings.get(ServerSetting.ROOM_LOCK)).isEqualTo("local");
+        assertThat(settings.get(ServerSetting.GAME_TIMER)).isEqualTo("local");
         assertThat(settings.overridden()).isEmpty();
     }
 
@@ -57,7 +58,7 @@ class ServerSettingsTest {
         assertThat(settings.get(ServerSetting.GAME_REPOSITORY)).isEqualTo("memory");
         assertThat(settings.get(ServerSetting.ROOM_LOCK)).isEqualTo("local");
         assertThat(settings.overridden()).containsExactly(ServerSetting.GAME_LOCK);
-        assertThat(settings.summary()).isEqualTo("mode=single | 게임 저장소=memory | 게임 잠금=redis(직접 지정) | 방 잠금=local");
+        assertThat(settings.summary()).isEqualTo("mode=single | 게임 저장소=memory | 게임 잠금=redis(직접 지정) | 방 잠금=local | 게임 타이머=local");
     }
 
     @Test

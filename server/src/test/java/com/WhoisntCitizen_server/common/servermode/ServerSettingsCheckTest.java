@@ -19,7 +19,8 @@ class ServerSettingsCheckTest {
 
     @Test
     void single에서_전부_redis로_덮어써도_섞이지_않았으니_경고가_없다() {
-        assertThat(warnings("mafia.game.repository", "redis", "mafia.game.lock", "redis", "mafia.room.lock", "redis"))
+        assertThat(warnings("mafia.game.repository", "redis", "mafia.game.lock", "redis", "mafia.room.lock", "redis",
+                "mafia.game.timer", "redis"))
                 .isEmpty();
     }
 
@@ -40,10 +41,10 @@ class ServerSettingsCheckTest {
     }
 
     @Test
-    void multi에서_전부_redis여도_타이머와_접속_기록은_아직_local이라고_경고한다() {
+    void multi에서_전부_redis여도_접속_기록은_아직_local이라고_경고한다() {
         List<String> warnings = warnings("mafia.server.mode", "multi");
 
-        assertThat(warnings).containsExactly("multi 모드에 필요한 타이머/접속 기록이 아직 서버 메모리(local)입니다. 서버는 1대만 띄우세요.");
+        assertThat(warnings).containsExactly("multi 모드에 필요한 접속 기록(연결 끊김 판정)이 아직 서버 메모리(local)입니다. 서버는 1대만 띄우세요.");
     }
 
     @Test
