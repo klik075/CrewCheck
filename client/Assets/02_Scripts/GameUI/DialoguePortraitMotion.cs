@@ -20,6 +20,8 @@ namespace WhoisntCitizen.GameUI
         private Quaternion restRotation;
         private float speakingWeight;
         private bool speaking;
+        private float scaleMultiplier = 1f;
+        private bool restCaptured;
 
         public bool IsSpeaking => speaking;
 
@@ -28,12 +30,28 @@ namespace WhoisntCitizen.GameUI
             speaking = value;
         }
 
+        /// <summary>Size on top of the rest scale (ChibiCharacterView uses it so every skin is the same height).</summary>
+        public void SetScaleMultiplier(float value)
+        {
+            CaptureRest();
+            scaleMultiplier = value;
+            if (!isActiveAndEnabled) transform.localScale = restScale * scaleMultiplier;
+        }
+
         private void OnEnable()
         {
+            CaptureRest();
+            speakingWeight = 0f;
+        }
+
+        // Once: the transform afterwards holds rest * multiplier, which must not become the new rest.
+        private void CaptureRest()
+        {
+            if (restCaptured) return;
+            restCaptured = true;
             restPosition = transform.localPosition;
             restScale = transform.localScale;
             restRotation = transform.localRotation;
-            speakingWeight = 0f;
         }
 
         private void Update()
@@ -50,7 +68,7 @@ namespace WhoisntCitizen.GameUI
                 (talk * speakingLift + talkDetail * speakingLift * 0.25f);
 
             transform.localPosition = restPosition + Vector3.up * lift;
-            transform.localScale = Vector3.Scale(restScale,
+            transform.localScale = Vector3.Scale(restScale * scaleMultiplier,
                 new Vector3(1f - breath * breathScale * 0.5f,
                     1f + breath * breathScale + speakingWeight * talk * 0.003f, 1f));
             transform.localRotation = restRotation * Quaternion.Euler(0f, 0f,
@@ -60,7 +78,7 @@ namespace WhoisntCitizen.GameUI
         private void OnDisable()
         {
             transform.localPosition = restPosition;
-            transform.localScale = restScale;
+            transform.localScale = restScale * scaleMultiplier;
             transform.localRotation = restRotation;
         }
     }
