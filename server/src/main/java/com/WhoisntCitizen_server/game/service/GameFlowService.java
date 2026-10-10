@@ -16,6 +16,7 @@ import com.WhoisntCitizen_server.game.event.GameEndedEvent;
 import com.WhoisntCitizen_server.game.event.PlayersDepartedEvent;
 import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
 import com.WhoisntCitizen_server.game.lock.GameLock;
+import com.WhoisntCitizen_server.game.lock.GameLockScope;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.game.scheduling.DeferredEventPublisher;
 import com.WhoisntCitizen_server.game.scheduling.GameTimeoutHandler;
@@ -497,32 +498,43 @@ public class GameFlowService implements GameTimeoutHandler {
 
     /**
      * 방 채팅창에 시스템 메시지로 남길 안내 문장을 발행한다. 채팅 모듈(ChatNoticeEventListener)이 받아 저장한다.
+     * 게임 잠금 안에서 불려도 실제 발행(채팅 저장, 이후 WebSocket 전송)은 잠금이 풀린 직후 같은 스레드에서 한다.
+     * (GameLockScope.afterUnlock: 넣은 순서대로, API 응답 전에 실행된다) 안내 문장은 잠금 안에서 미리 만들어 둔다.
      * 안내가 실패해도 게임 진행은 계속되도록 예외를 삼킨다.
      */
     private void announce(Game game, String message) {
         if (message == null) {
             return;
         }
-        try {
-            eventPublisher.publishEvent(new RoomNoticeEvent(game.getRoomId(), message));
-        } catch (RuntimeException e) {
-            log.warn("[{}] 채팅 안내 발행 실패: {}", game.getGameId(), e.getMessage());
-        }
+        String gameId = game.getGameId();
+        RoomNoticeEvent event = new RoomNoticeEvent(game.getRoomId(), message);
+        GameLockScope.afterUnlock(() -> {
+            try {
+                eventPublisher.publishEvent(event);
+            } catch (RuntimeException e) {
+                log.warn("[{}] 채팅 안내 발행 실패: {}", gameId, e.getMessage());
+            }
+        });
     }
 
     /**
      * 같은 게임의 해적(접선한 앵무새 포함)에게만 보이는 시스템 메시지로 남길 안내를 발행한다.
      * (해적의 공격 대상 선택·넘기기, 앵무새 접선. NightService가 호출) 안내가 실패해도 게임 진행은 계속된다.
+     * announce와 같이 게임 잠금이 풀린 뒤에 발행한다.
      */
     public void announceToPirates(Game game, String message) {
         if (message == null) {
             return;
         }
-        try {
-            eventPublisher.publishEvent(new PirateNoticeEvent(game.getRoomId(), game.getGameId(), message));
-        } catch (RuntimeException e) {
-            log.warn("[{}] 해적 안내 발행 실패: {}", game.getGameId(), e.getMessage());
-        }
+        String gameId = game.getGameId();
+        PirateNoticeEvent event = new PirateNoticeEvent(game.getRoomId(), gameId, message);
+        GameLockScope.afterUnlock(() -> {
+            try {
+                eventPublisher.publishEvent(event);
+            } catch (RuntimeException e) {
+                log.warn("[{}] 해적 안내 발행 실패: {}", gameId, e.getMessage());
+            }
+        });
     }
 
     private static String phaseMessage(Game game, GamePhase phase, int seconds) {
