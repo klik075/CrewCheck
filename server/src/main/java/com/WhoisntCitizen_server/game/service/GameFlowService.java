@@ -372,7 +372,7 @@ public class GameFlowService implements GameTimeoutHandler {
     }
 
     /**
-     * 10. 끝난 게임 정리. 결과를 조회할 시간(endedRetentionSeconds)을 준 뒤 메모리에서 삭제한다.
+     * 10. 끝난 게임 정리. 결과를 조회할 시간(endedRetentionSeconds)을 준 뒤 저장소(메모리 또는 Redis)에서 삭제한다.
      * 삭제 후에는 해당 gameId로 조회하면 404(GAME_NOT_FOUND)가 된다.
      * 이미 예약된 페이즈 타이머가 늦게 실행돼도 onPhaseTimeout이 게임을 못 찾으면 그냥 끝나므로 안전하다.
      * 취소된 게임이면 이때 방도 삭제하도록 알린다. (취소 직후에 지우면 클라이언트가 취소 안내와 결과를 보지 못한다)
@@ -406,7 +406,7 @@ public class GameFlowService implements GameTimeoutHandler {
         }
         gameRepository.delete(gameId);
         activityTracker.clear(gameId);
-        log.info("[{}] 종료된 게임을 메모리에서 삭제", gameId);
+        log.info("[{}] 종료된 게임을 저장소에서 삭제", gameId);
     }
 
     /** 정리할 때 필요한 값. 잠금 안에서 읽어 잠금 밖으로 가지고 나온다. */
