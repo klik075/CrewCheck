@@ -10,14 +10,15 @@ import java.util.Locale;
  *  1) 개별 설정에 값이 있으면 그 값 (덮어쓰기)
  *  2) 비어 있으면 모드의 기본값 (single → 서버 메모리 값, multi → Redis 값)
  *
- * 3.5단계(접속 기록)에서 설정이 생기면 여기에 항목을 추가한다.
+ * 새 설정이 생기면 여기에 항목을 추가한다.
  * 그러면 모드 하나로 함께 바뀌고, 서버가 켜질 때 조합 검사(ServerSettingsCheck)에도 자동으로 들어간다.
  */
 public enum ServerSetting {
     GAME_REPOSITORY("mafia.game.repository", "게임 저장소", "memory", "redis"),
     GAME_LOCK("mafia.game.lock", "게임 잠금", "local", "redis"),
     ROOM_LOCK("mafia.room.lock", "방 잠금", "local", "redis"),
-    GAME_TIMER("mafia.game.timer", "게임 타이머", "local", "redis");
+    GAME_TIMER("mafia.game.timer", "게임 타이머", "local", "redis"),
+    GAME_ACTIVITY("mafia.game.activity", "접속 기록", "local", "redis");
 
     private final String key;
     private final String label;

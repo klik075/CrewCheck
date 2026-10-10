@@ -1,5 +1,10 @@
 package com.WhoisntCitizen_server.common.servermode;
 
+import com.WhoisntCitizen_server.game.activity.LocalPlayerActivityTracker;
+import com.WhoisntCitizen_server.game.activity.PlayerActivityConfig;
+import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
+import com.WhoisntCitizen_server.game.activity.redis.PlayerActivityRedisConfig;
+import com.WhoisntCitizen_server.game.activity.redis.RedisPlayerActivityTracker;
 import com.WhoisntCitizen_server.game.lock.GameLock;
 import com.WhoisntCitizen_server.game.lock.GameLockConfig;
 import com.WhoisntCitizen_server.game.lock.LocalGameLock;
@@ -54,7 +59,8 @@ class ServerModeSelectionTest {
             .withUserConfiguration(InMemoryGameRepository.class, GameRedisConfig.class, GameRedisConnectionConfig.class,
                     GameLockConfig.class, GameLockRedisConfig.class,
                     RoomLockConfig.class, RoomLockRedisConfig.class,
-                    GameTimerConfig.class, GameTimerRedisConfig.class)
+                    GameTimerConfig.class, GameTimerRedisConfig.class,
+                    PlayerActivityConfig.class, PlayerActivityRedisConfig.class)
             .withBean(Clock.class, Clock::systemUTC)
             // 타이머가 쓰는 공용 스케줄러. 직접 돌리지 않는 가짜라 Redis 타이머 확인 작업이 켜져도 Redis에 묻지 않는다
             .withBean("gamePhaseScheduler", TaskScheduler.class,
@@ -87,6 +93,7 @@ class ServerModeSelectionTest {
             assertThat(context.getBean(GameLock.class)).isInstanceOf(LocalGameLock.class);
             assertThat(context.getBean(RoomLock.class)).isInstanceOf(LocalRoomLock.class);
             assertThat(context.getBean(GameTimer.class)).isInstanceOf(LocalGameTimer.class);
+            assertThat(context.getBean(PlayerActivityTracker.class)).isInstanceOf(LocalPlayerActivityTracker.class);
             assertThat(context).doesNotHaveBean(GameRedis.class).doesNotHaveBean(RedissonClient.class)
                     .doesNotHaveBean(RedisTimerPoller.class);
         });
@@ -96,11 +103,34 @@ class ServerModeSelectionTest {
     void 개별_설정이_빈_문자열이면_모드를_따른다() {
         // application.properties의 ${GAME_REPOSITORY:} 등은 환경변수가 없으면 빈 문자열이 된다
         runner.withPropertyValues("mafia.server.mode=single",
-                        "mafia.game.repository=", "mafia.game.lock=", "mafia.room.lock=", "mafia.game.timer=")
+                        "mafia.game.repository=", "mafia.game.lock=", "mafia.room.lock=", "mafia.game.timer=",
+                        "mafia.game.activity=")
                 .run(context -> {
                     assertThat(context.getBean(GameRepository.class)).isInstanceOf(InMemoryGameRepository.class);
                     assertThat(context.getBean(GameLock.class)).isInstanceOf(LocalGameLock.class);
                     assertThat(context.getBean(RoomLock.class)).isInstanceOf(LocalRoomLock.class);
+                    assertThat(context.getBean(PlayerActivityTracker.class)).isInstanceOf(LocalPlayerActivityTracker.class);
+                });
+    }
+
+    @Test
+    void single에서_접속_기록만_redis로_덮어쓰면_게임용_Redis_연결도_만든다() {
+        runner.withPropertyValues("mafia.server.mode=single", "mafia.game.activity=redis").run(context -> {
+            assertThat(context).hasSingleBean(PlayerActivityTracker.class);
+            assertThat(context.getBean(PlayerActivityTracker.class)).isInstanceOf(RedisPlayerActivityTracker.class);
+            assertThat(context).hasSingleBean(GameRedis.class);
+            assertThat(context.getBean(GameRepository.class)).isInstanceOf(InMemoryGameRepository.class);
+            assertThat(context.getBean(GameTimer.class)).isInstanceOf(LocalGameTimer.class);
+        });
+    }
+
+    @Test
+    void multi에서_접속_기록을_local로_덮어쓰면_서버_메모리_접속_기록을_쓴다() {
+        runner.withPropertyValues("mafia.server.mode=multi", "mafia.game.lock=local", "mafia.room.lock=local",
+                        "mafia.game.activity=local")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(PlayerActivityTracker.class);
+                    assertThat(context.getBean(PlayerActivityTracker.class)).isInstanceOf(LocalPlayerActivityTracker.class);
                 });
     }
 
@@ -170,6 +200,8 @@ class ServerModeSelectionTest {
             assertThat(context.getBean(RoomLock.class).withLock(1L, () -> "ok")).isEqualTo("ok");
             assertThat(context).hasSingleBean(GameTimer.class);
             assertThat(context.getBean(GameTimer.class)).isInstanceOf(RedisGameTimer.class);
+            assertThat(context).hasSingleBean(PlayerActivityTracker.class);
+            assertThat(context.getBean(PlayerActivityTracker.class)).isInstanceOf(RedisPlayerActivityTracker.class);
         });
     }
 

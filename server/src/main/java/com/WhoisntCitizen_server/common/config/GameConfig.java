@@ -1,7 +1,5 @@
 package com.WhoisntCitizen_server.common.config;
 
-import com.WhoisntCitizen_server.game.activity.LocalPlayerActivityTracker;
-import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
 import com.WhoisntCitizen_server.game.scheduling.DeferredEventPublisher;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -53,11 +51,5 @@ public class GameConfig {
                                                          Clock clock,
                                                          ApplicationEventPublisher eventPublisher) {
         return new SchedulerDeferredEventPublisher(scheduler, clock, eventPublisher);
-    }
-
-    /** 플레이어별 마지막 요청 시각(연결 끊김 판정용). 지금은 서버 메모리에 둔다. */
-    @Bean
-    public PlayerActivityTracker playerActivityTracker() {
-        return new LocalPlayerActivityTracker();
     }
 }
