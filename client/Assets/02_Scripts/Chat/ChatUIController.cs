@@ -481,8 +481,14 @@ namespace WhoisntCitizen.Chat
         }
 
         /// 전체 목록으로 교체 (시작 시 / 주기적 동기화)
+        public event System.Action<ChatMessage> LiveMessageReceived;
+        private bool hasLiveSnapshot;
+
         void OnFullListReceived(List<ChatMessage> list)
         {
+            long previousId = _lastId;
+            bool notifyLive = hasLiveSnapshot;
+            hasLiveSnapshot = true;
             bool statusChanged = ClearStatus();
             var sorted = SortOldestFirst(list).ToList();
             if (!statusChanged && SameIds(sorted, _messages)) return; // 바뀐 게 없으면 다시 그리지 않음
@@ -494,6 +500,10 @@ namespace WhoisntCitizen.Chat
             _messages.AddRange(sorted);
             TrimToMax();
             _lastId = MaxId(_messages);
+            if (notifyLive)
+                foreach (var message in sorted)
+                    if (long.TryParse(message.id, out long id) && id > previousId)
+                        LiveMessageReceived?.Invoke(message);
             ResolveNoticeAnchors();
             LogNewSystemMessages();
             Render();
@@ -510,6 +520,7 @@ namespace WhoisntCitizen.Chat
                 bool hasId = long.TryParse(m.id, out id);
                 if (hasId && id <= _lastId) continue; // 이미 받은 메시지
                 _messages.Add(m);
+                if (hasId) LiveMessageReceived?.Invoke(m);
                 if (hasId && id > _lastId) _lastId = id;
                 added = true;
             }
