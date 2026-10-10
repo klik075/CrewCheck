@@ -45,6 +45,9 @@ dependencies {
 
     // Redis
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    // 분산 잠금(Redisson). 스타터가 아니라 core만 쓴다: 기본 Redis 연결(Lettuce)은 그대로 두고
+    // 잠금용 연결만 그룹별로 직접 만든다 (common/redis/RedissonClients). 4.x가 Spring Boot 4를 지원한다
+    implementation 'org.redisson:redisson:4.7.0'
 
     // DB: MySQL(개발/운영) + Flyway 마이그레이션, 테스트는 H2
     runtimeOnly 'com.mysql:mysql-connector-j'
