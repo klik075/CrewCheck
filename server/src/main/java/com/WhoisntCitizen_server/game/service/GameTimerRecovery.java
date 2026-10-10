@@ -1,6 +1,8 @@
 package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.exception.LockTimeoutException;
+import com.WhoisntCitizen_server.common.servermode.ConditionalOnServerSetting;
+import com.WhoisntCitizen_server.common.servermode.ServerSetting;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.lock.GameLock;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
@@ -34,9 +36,15 @@ import java.util.Optional;
  *    (그 경우 취소된 게임의 방 삭제 이벤트는 발행되지 않고, 로비가 게임이 없는 방을 대기 상태로 되돌린다)
  *  - 메모리 저장소(InMemoryGameRepository): 재시작하면 게임 자체가 사라지므로 할 일이 없다.
  *  - 서버 여러 대 중 한 대만 죽은 경우: 살아 있는 서버는 재시작하지 않으므로 죽은 서버가 걸어 둔 타이머를 대신 걸지 않는다.
- *    이 문제는 타이머를 Redis로 옮기는 3단계에서 해결한다. 그때 이 클래스는 필요 없어지거나 줄어든다.
+ *    이 문제는 타이머를 Redis로 옮기는 3단계에서 해결한다.
+ *
+ * 게임 타이머가 local일 때만 등록한다. (mafia.game.timer의 최종 값)
+ * redis 타이머는 예약 자체가 Redis에 남아 재시작해도 다시 걸 필요가 없다. 오히려 다시 걸면 다른 서버가 실행 중인
+ * 예약(점수 = 가져간 시각 + lease)을 원래 시각으로 되돌려, 같은 타이머가 두 서버에서 동시에 실행될 수 있다.
+ * (저장 직후·예약 전에 서버가 죽어 예약이 빠진 게임은 3-7의 멈춘 게임 감시가 맡는다)
  */
 @Component
+@ConditionalOnServerSetting(value = ServerSetting.GAME_TIMER, havingValue = "local")
 public class GameTimerRecovery {
 
     private static final Logger log = LoggerFactory.getLogger(GameTimerRecovery.class);

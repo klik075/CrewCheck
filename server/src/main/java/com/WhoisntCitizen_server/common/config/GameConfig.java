@@ -3,11 +3,7 @@ package com.WhoisntCitizen_server.common.config;
 import com.WhoisntCitizen_server.game.activity.LocalPlayerActivityTracker;
 import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
 import com.WhoisntCitizen_server.game.scheduling.DeferredEventPublisher;
-import com.WhoisntCitizen_server.game.scheduling.GameTimeoutHandler;
-import com.WhoisntCitizen_server.game.scheduling.GameTimer;
-import com.WhoisntCitizen_server.game.scheduling.LocalGameTimer;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationEventPublisher;
@@ -49,17 +45,6 @@ public class GameConfig {
         // initialize()는 직접 부르지 않는다. ThreadPoolTaskScheduler가 InitializingBean이라
         // Spring이 Bean 등록 시 afterPropertiesSet() → initialize()를 호출한다. (직접 부르면 두 번 초기화)
         return scheduler;
-    }
-
-    /**
-     * 게임 타이머(페이즈 제한 시간, 끝난 게임 정리). 지금은 서버 메모리의 스케줄러에 예약한다.
-     * handler(GameFlowService)는 ObjectProvider로 호출 시점에 꺼낸다. GameFlowService도 GameTimer를 주입받으므로
-     * 여기서 바로 주입받으면 순환 의존이 된다.
-     */
-    @Bean
-    public GameTimer gameTimer(@Qualifier("gamePhaseScheduler") TaskScheduler scheduler,
-                               ObjectProvider<GameTimeoutHandler> handler) {
-        return new LocalGameTimer(scheduler, handler::getObject);
     }
 
     /** 게임 잠금이 풀린 뒤 발행할 이벤트(게임 종료, 연결 끊김). 스케줄러 스레드에서 발행한다. */
