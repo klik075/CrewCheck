@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.scheduling.redis;
 
 import com.WhoisntCitizen_server.common.servermode.ConditionalOnServerSetting;
 import com.WhoisntCitizen_server.common.servermode.ServerSetting;
+import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.game.repository.redis.GameRedis;
 import com.WhoisntCitizen_server.game.scheduling.GameTimeoutHandler;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,6 +24,7 @@ import java.time.Clock;
  *  - RedisTimerDispatcher: 가져간 예약을 작업 스레드(game-timer-N, workers개)에 하나씩 넘긴다. 서버가 꺼질 때 close
  *  - RedisTimerPoller    : poll-interval-millis마다 dispatcher를 부른다. 공용 스케줄러(gamePhaseScheduler)에서 돈다.
  *                          SmartLifecycle이라 다른 Bean이 모두 준비된 뒤 시작하고, 꺼질 때 먼저 멈춘다
+ *  - StuckGameWatchdog   : 30초마다 "끝날 시각이 지났는데 예약이 없는" 게임을 찾아 타이머를 다시 건다 (멈춘 게임 감시)
  *
  * 게임 그룹 Redis 연결(GameRedis)은 GameRedisConnectionConfig가 만든다. (게임 상태 저장소와 같은 연결)
  * 게임 상태는 Redis에 두는 것을 전제로 한다. 저장소가 memory인데 타이머만 redis면, 다른 서버가 가져간 타이머가
@@ -52,5 +54,12 @@ public class GameTimerRedisConfig {
     public RedisTimerPoller redisTimerPoller(RedisTimerDispatcher redisTimerDispatcher, RedisTimerProperties props,
                                              @Qualifier("gamePhaseScheduler") TaskScheduler scheduler, Clock clock) {
         return RedisTimerPoller.of(redisTimerDispatcher, props, scheduler, clock);
+    }
+
+    /** 저장 직후·예약 전에 서버가 죽어 예약이 빠진 게임을 찾아 다시 건다. (서버 메모리 타이머의 GameTimerRecovery 역할) */
+    @Bean
+    public StuckGameWatchdog stuckGameWatchdog(GameRepository gameRepository, RedisGameTimer redisGameTimer,
+                                               @Qualifier("gamePhaseScheduler") TaskScheduler scheduler, Clock clock) {
+        return new StuckGameWatchdog(gameRepository, redisGameTimer, scheduler, clock);
     }
 }

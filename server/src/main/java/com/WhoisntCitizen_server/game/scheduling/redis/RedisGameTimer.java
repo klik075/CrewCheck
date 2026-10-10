@@ -142,6 +142,18 @@ public class RedisGameTimer implements GameTimer {
         redis.opsForZSet().add(TIMERS_KEY, key, at.toEpochMilli()); // 있으면 점수만 바뀐다
     }
 
+    /**
+     * 같은 대상의 예약이 없을 때만 예약한다(ZADD NX). 예약했으면 true.
+     * 멈춘 게임 감시(StuckGameWatchdog)가 쓴다. 이미 있는 예약은 점수(시각)를 바꾸지 않는다.
+     * 다른 서버가 가져가 실행 중인 예약(점수 = 가져간 시각 + lease)을 "지금"으로 되돌리면 두 서버가 같은 타이머를
+     * 동시에 실행할 수 있기 때문이다.
+     */
+    public boolean schedulePhaseTimeoutIfAbsent(String gameId, long phaseVersion, Instant at) {
+        Objects.requireNonNull(at, "at");
+        Boolean added = redis.opsForZSet().addIfAbsent(TIMERS_KEY, TimerKeys.phase(gameId, phaseVersion), at.toEpochMilli());
+        return Boolean.TRUE.equals(added);
+    }
+
     // ---------- 2~4) 가져가기 · 실행 · 완료 ----------
 
     /**

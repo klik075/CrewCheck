@@ -18,6 +18,7 @@ import com.WhoisntCitizen_server.game.scheduling.redis.GameTimerRedisConfig;
 import com.WhoisntCitizen_server.game.scheduling.redis.RedisGameTimer;
 import com.WhoisntCitizen_server.game.scheduling.redis.RedisTimerDispatcher;
 import com.WhoisntCitizen_server.game.scheduling.redis.RedisTimerPoller;
+import com.WhoisntCitizen_server.game.scheduling.redis.StuckGameWatchdog;
 import com.WhoisntCitizen_server.lobby.config.RoomLockConfig;
 import com.WhoisntCitizen_server.lobby.lock.LocalRoomLock;
 import com.WhoisntCitizen_server.lobby.lock.RoomLock;
@@ -133,7 +134,8 @@ class ServerModeSelectionTest {
             assertThat(context.getBean(GameTimer.class)).isInstanceOf(RedisGameTimer.class);
             assertThat(context).hasSingleBean(GameRedis.class)
                     .hasSingleBean(RedisTimerDispatcher.class)
-                    .hasSingleBean(RedisTimerPoller.class);
+                    .hasSingleBean(RedisTimerPoller.class)
+                    .hasSingleBean(StuckGameWatchdog.class);
             assertThat(context.getBean(RedisTimerPoller.class).isRunning()).as("서버가 켜지면 확인 작업도 켜진다").isTrue();
         });
     }

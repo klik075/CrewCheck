@@ -197,6 +197,24 @@ class RedisGameTimerTest extends GameTimerContractTest {
         assertThat(server.size()).isZero();
     }
 
+    // ---------- 없을 때만 예약 (멈춘 게임 감시용) ----------
+
+    @Test
+    void 없을_때만_예약은_예약이_없으면_건다() {
+        assertThat(redisTimer.schedulePhaseTimeoutIfAbsent("g1", 3, at(10))).isTrue();
+
+        assertThat(redisTimer.scheduledAt(TimerKeys.phase("g1", 3))).contains(at(10));
+    }
+
+    @Test
+    void 없을_때만_예약은_이미_있으면_시각을_바꾸지_않는다() {
+        redisTimer.schedulePhaseTimeoutIfAbsent("g1", 3, at(30));
+
+        assertThat(redisTimer.schedulePhaseTimeoutIfAbsent("g1", 3, at(5))).isFalse();
+
+        assertThat(redisTimer.scheduledAt(TimerKeys.phase("g1", 3))).contains(at(30));
+    }
+
     // ---------- 지연 측정 ----------
 
     @Test
