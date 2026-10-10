@@ -4,6 +4,8 @@ using UnityEngine;
 using WhoisntCitizen.Chat; // [공개 안내 자동 판단] 서버 채팅(GameChatController) 상태로 공개 안내 여부를 정한다
 using WhoisntCitizen.GameUI;
 using WhoisntCitizen.Vote;
+using WhoisntCitizen.Lobby;
+using UnityEngine.UI;
 
 namespace WhoisntCitizen.Game
 {
@@ -68,6 +70,8 @@ namespace WhoisntCitizen.Game
         private readonly List<PlayerView> playerViews = new List<PlayerView>();
         private readonly Dictionary<long, int> playerOrder = new Dictionary<long, int>();
         private string currentPhase;
+        private DayRoundTableView dayTable;
+        private DayTableVoteCards voteCards;
         private string announcedRole;
         private string announcedTeammates;
         private bool nightDrawerOpened;
@@ -132,6 +136,15 @@ namespace WhoisntCitizen.Game
                 // votePanel.VoteConfirmed += OnVoteConfirmed;
             }
             SetUpVoteCardHand();
+            dayTable = gameObject.AddComponent<DayRoundTableView>();
+            Transform background = transform.Find("Background");
+            dayTable.Initialize(background != null ? background.GetComponent<Image>() : null,
+                chatLog != null ? chatLog.transform as RectTransform : null,
+                phaseText != null ? phaseText.font : null, null, RoomSession.HasRoom ? RoomSession.MaxPlayers : 12);
+            dayTable.SetPhase(currentPhase);
+            // 투표 카드: 내 표는 테이블 위 대상 자리로 던지고, 처형 때 공개 득표를 각 자리에 더미로 놓는다
+            voteCards = gameObject.AddComponent<DayTableVoteCards>();
+            voteCards.Bind(dayTable, phaseText != null ? phaseText.font : null);
             if (nightPanel != null)
             {
                 nightPanel.PortraitResolver = PortraitOf;
@@ -215,6 +228,11 @@ namespace WhoisntCitizen.Game
                 ResetScreen(); // 새 게임 (또는 재접속)
             }
             currentPhase = phaseChanged.Phase;
+            if (dayTable != null) dayTable.SetPhase(currentPhase);
+            if (voteCards != null && currentPhase != GamePhases.Execution)
+            {
+                voteCards.Clear(); // 처형 결과 동안만 남기고, 새 투표·밤에는 테이블을 비운다
+            }
             if (phaseText != null)
             {
                 phaseText.text = GameScreenText.PhaseTitle(phaseChanged.Day, phaseChanged.Phase);
@@ -309,6 +327,10 @@ namespace WhoisntCitizen.Game
             {
                 votePanel.SetVoteCounts(GameScreenText.VoteCounts(result));
             }
+            if (voteCards != null && currentPhase == GamePhases.Execution)
+            {
+                voteCards.ShowTally(result.votes); // 공개된 득표 수만큼 각 대상 자리에 카드 더미 (누가 냈는지는 없다)
+            }
         }
 
         public void ShowGameResult(GameResultDto result)
@@ -345,6 +367,7 @@ namespace WhoisntCitizen.Game
                 AddSystem(GameScreenText.VoteAccepted(session.MyVoteTarget, session.State));
             }
             SyncDrawnCardWithServer(); // 빠르게 바꿔 누른 경우 등, 화면의 뽑은 카드를 서버가 받은 표에 맞춘다
+            SyncTableVote();           // 받아 준 표: 내 앞에 카드를 내려놓고 대상 자리로 던진다
         }
 
         public void ShowError(string message)
@@ -358,6 +381,7 @@ namespace WhoisntCitizen.Game
             if (currentPhase == GamePhases.Vote)
             {
                 SyncDrawnCardWithServer();
+                SyncTableVote();
             }
         }
 
@@ -430,6 +454,7 @@ namespace WhoisntCitizen.Game
         private void ResetScreen()
         {
             currentPhase = null;
+            if (dayTable != null) dayTable.Clear();
             announcedRole = null;
             announcedTeammates = null;
             playerViews.Clear();
@@ -456,11 +481,22 @@ namespace WhoisntCitizen.Game
             {
                 voteCardHand.HideImmediate();
             }
+            if (voteCards != null)
+            {
+                voteCards.Clear();
+            }
         }
 
         /// <summary>투표 패널은 "나"를 처음 만들 때 정하므로, /me를 받은 뒤부터 플레이어 목록을 넘긴다.</summary>
         private void RefreshPlayers(GameStateDto state)
         {
+            if (state == null) return;
+            if (dayTable != null)
+            {
+                // 자리·스킨은 서버의 플레이어 순서로 정한다 (모든 화면에서 같은 사람이 같은 자리·같은 스킨)
+                dayTable.SetPlayers(state.players);
+                dayTable.SetPhase(state.phase);
+            }
             GameSession session = Session;
             if (state == null || session == null || session.Me == null)
             {
@@ -493,6 +529,7 @@ namespace WhoisntCitizen.Game
                 {
                     TryShowVoteHand(); // /me가 늦게 왔거나 투표 도중 재접속한 경우
                 }
+                SyncTableVote(); // 내가 투표한 사람이 게임에서 나가 표가 지워졌으면 카드도 거둔다
             }
             RefreshPanels();
         }
@@ -546,6 +583,16 @@ namespace WhoisntCitizen.Game
             if (voteCardHand != null)
             {
                 voteCardHand.Hide();
+            }
+        }
+
+        /// <summary>테이블 위 내 투표 카드를 서버가 받아 둔 내 표에 맞춘다. 같은 표면 아무것도 하지 않는다.</summary>
+        private void SyncTableVote()
+        {
+            GameSession session = Session;
+            if (voteCards != null && session != null && currentPhase == GamePhases.Vote)
+            {
+                voteCards.ShowMyVote(MyId, session.MyVoteTarget);
             }
         }
 
