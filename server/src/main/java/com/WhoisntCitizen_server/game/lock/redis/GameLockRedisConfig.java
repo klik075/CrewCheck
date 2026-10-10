@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Configuration;
  *
  * 값이 local이거나 없으면 만들지 않는다. Redisson은 만들 때 바로 Redis에 접속하므로,
  * 쓰지 않는데 만들면 Redis 없이 서버를 띄울 수 없게 된다.
- * 이 연결을 쓰는 게임 잠금 구현(RedisGameLock)은 2-3에서 추가한다.
+ * 이 연결로 만드는 게임 잠금 구현은 RedisGameLock이다. GameLock Bean으로 연결하는 것은 2-7에서 한다.
  */
 @Configuration
 @ConditionalOnProperty(name = "mafia.game.lock", havingValue = "redis")
