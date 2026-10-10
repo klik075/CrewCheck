@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Configuration;
  * 기본 연결(Lettuce)은 건드리지 않고, 잠금용 Redisson 연결만 따로 만든다.
  *
  * 값이 local이거나 없으면 만들지 않는다. (Redisson은 만들 때 바로 Redis에 접속한다)
- * 이 연결을 쓰는 방 잠금 구현(RedisRoomLock)은 2-4에서 추가한다.
+ * 이 연결로 만드는 방 잠금 구현은 RedisRoomLock이다. RoomLock Bean으로 연결하는 것은 2-7에서 한다.
  */
 @Configuration
 @ConditionalOnProperty(name = "mafia.room.lock", havingValue = "redis")
