@@ -197,6 +197,46 @@ class RedisGameTimerTest extends GameTimerContractTest {
         assertThat(server.size()).isZero();
     }
 
+    // ---------- 지연 측정 ----------
+
+    @Test
+    void 가져갈_때_원래_예약_시각을_함께_가져온다() {
+        RedisGameTimer server = server();
+        server.schedulePhaseTimeout("g1", 1, NOW.plusMillis(10_250));
+        server.scheduleCleanup("g2", at(12));
+        clock.advance(Duration.ofSeconds(15));
+
+        List<RedisGameTimer.Claimed> claimed = server.claimDue();
+
+        assertThat(claimed).extracting(RedisGameTimer.Claimed::key).containsExactly("phase:g1:1", "cleanup:g2");
+        assertThat(claimed).extracting(RedisGameTimer.Claimed::dueAt)
+                .containsExactly(NOW.plusMillis(10_250).toEpochMilli(), at(12).toEpochMilli());
+        assertThat(claimed).extracting(RedisGameTimer.Claimed::leaseUntil)
+                .containsOnly(at(15).plus(RedisGameTimer.DEFAULT_LEASE).toEpochMilli());
+    }
+
+    @Test
+    void 늦은_정도는_지금에서_예약_시각을_뺀_값이다() {
+        RedisGameTimer.Claimed c = new RedisGameTimer.Claimed("phase:g1:1", 1_000, 31_000);
+
+        assertThat(RedisGameTimer.lateMillis(c, 3_500)).isEqualTo(2_500);
+        assertThat(RedisGameTimer.lateMillis(c, 1_000)).isZero();
+        assertThat(RedisGameTimer.lateMillis(c, 500)).as("시계가 어긋나 음수면 0").isZero();
+    }
+
+    @Test
+    void lease가_지나_다시_가져간_예약은_다시_실행할_수_있게_된_시각부터_잰다() {
+        RedisGameTimer dying = server();
+        dying.schedulePhaseTimeout("g1", 3, at(10));
+        clock.advance(Duration.ofSeconds(10));
+        dying.claimDue();                                      // 가져가고 죽음 → 점수가 at(10) + 30초
+
+        clock.advance(RedisGameTimer.DEFAULT_LEASE);
+        RedisGameTimer.Claimed again = server().claimDue().get(0);
+
+        assertThat(again.dueAt()).isEqualTo(at(10).plus(RedisGameTimer.DEFAULT_LEASE).toEpochMilli());
+    }
+
     // ---------- 서버 여러 대 ----------
 
     @Test

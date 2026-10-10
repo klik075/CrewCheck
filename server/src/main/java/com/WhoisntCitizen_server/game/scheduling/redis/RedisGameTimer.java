@@ -49,7 +49,10 @@ import java.util.function.Supplier;
  * 받는 쪽(GameFlowService)은 자기 실패를 직접 처리한다. (잠금 실패는 재예약, 판정 오류는 게임 취소)
  *
  * 점수는 각 서버의 Clock으로 계산한다. 서버끼리 시계가 어긋나면 그만큼 일찍·늦게 실행된다. (보통 NTP로 맞춰져 있다)
- * 주기적으로 pollOnce를 부르는 부분은 3-4에서 붙인다. 지금은 테스트가 직접 부른다.
+ * 실행하는 방법은 두 가지다.
+ *  - pollOnce(): 가져온 예약을 부른 스레드에서 차례로 실행한다. 테스트(타이머 계약)와 점검용.
+ *  - claimDue(limit) + runClaimed(c): 가져가기와 실행을 나눈다. 서버에서는 RedisTimerDispatcher가
+ *    빈 작업 스레드 수만큼만 가져가 예약마다 다른 스레드에서 실행한다. (한 게임이 잠금을 기다려도 다른 게임은 실행된다)
  */
 public class RedisGameTimer implements GameTimer {
 
@@ -58,17 +61,23 @@ public class RedisGameTimer implements GameTimer {
     public static final Duration DEFAULT_LEASE = Duration.ofSeconds(30);
     /** 한 번 확인할 때 가져가는 최대 개수. 밀린 예약이 많아도 한 번의 확인이 너무 길어지지 않게 한다 */
     public static final int DEFAULT_BATCH_SIZE = 100;
+    /**
+     * 예약 시각보다 이만큼 넘게 늦게 실행되면 경고를 남긴다. 확인 간격(기본 100ms)과 실행 시간을 생각하면 평소에는 넘지 않는다.
+     * 자주 보이면 작업 스레드(workers)가 모자라거나 게임 잠금이 오래 막히는 것이다.
+     */
+    static final Duration LATE_WARN = Duration.ofSeconds(1);
 
     private static final Logger log = LoggerFactory.getLogger(RedisGameTimer.class);
 
     /**
      * 시간이 된 예약을 가져간다. KEYS[1] = timers, ARGV[1] = 지금(ms), ARGV[2] = 가져간 뒤 점수(지금 + lease), ARGV[3] = 최대 개수
-     * 점수 순(오래된 것부터)으로 member 목록을 돌려준다.
+     * 점수 순(오래된 것부터)으로 [member1, 원래 점수1, member2, 원래 점수2, ...]를 돌려준다.
+     * 원래 점수(예약 시각)는 점수를 lease로 바꾸기 전에 읽어 둔 값이다. 얼마나 늦게 실행되는지 재는 데 쓴다.
      */
     @SuppressWarnings("rawtypes")
     private static final RedisScript<List> CLAIM = new DefaultRedisScript<>(
-            "local due = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, tonumber(ARGV[3]))\n"
-                    + "for i = 1, #due do\n"
+            "local due = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'WITHSCORES', 'LIMIT', 0, tonumber(ARGV[3]))\n"
+                    + "for i = 1, #due, 2 do\n"
                     + "  redis.call('ZADD', KEYS[1], ARGV[2], due[i])\n"
                     + "end\n"
                     + "return due",
@@ -143,29 +152,56 @@ public class RedisGameTimer implements GameTimer {
     public int pollOnce() {
         List<Claimed> claimed = claimDue();
         for (Claimed c : claimed) {
-            fire(c);
-            complete(c);
+            runClaimed(c);
         }
         return claimed.size();
     }
 
-    /** 시간이 된 예약을 가져간다. 점수를 "지금 + lease"로 바꿔 다른 서버가 가져가지 못하게 한다. */
+    /** 시간이 된 예약을 최대 batchSize개 가져간다. */
     List<Claimed> claimDue() {
-        long now = clock.millis();
-        long leaseUntil = now + lease.toMillis();
-        List<?> members = redis.execute(CLAIM, List.of(TIMERS_KEY),
-                String.valueOf(now), String.valueOf(leaseUntil), String.valueOf(batchSize));
-        if (members == null || members.isEmpty()) {
+        return claimDue(batchSize);
+    }
+
+    /**
+     * 시간이 된 예약을 최대 limit개(batchSize를 넘지 않음) 가져간다. 점수를 "지금 + lease"로 바꿔 다른 서버가 가져가지 못하게 한다.
+     * 가져간 예약은 lease 안에 runClaimed로 실행해야 한다. (그러지 못하면 lease 뒤 다른 서버가 다시 실행한다)
+     */
+    List<Claimed> claimDue(int limit) {
+        int max = Math.min(limit, batchSize);
+        if (max <= 0) {
             return List.of();
         }
-        List<Claimed> claimed = new ArrayList<>(members.size());
-        for (Object member : members) {
-            claimed.add(new Claimed(String.valueOf(member), leaseUntil));
+        long now = clock.millis();
+        long leaseUntil = now + lease.toMillis();
+        List<?> pairs = redis.execute(CLAIM, List.of(TIMERS_KEY),
+                String.valueOf(now), String.valueOf(leaseUntil), String.valueOf(max));
+        if (pairs == null || pairs.isEmpty()) {
+            return List.of();
+        }
+        List<Claimed> claimed = new ArrayList<>(pairs.size() / 2);
+        for (int i = 0; i + 1 < pairs.size(); i += 2) {
+            String member = String.valueOf(pairs.get(i));
+            long dueAt = (long) Double.parseDouble(String.valueOf(pairs.get(i + 1)));
+            claimed.add(new Claimed(member, dueAt, leaseUntil));
         }
         return claimed;
     }
 
+    /**
+     * 가져간 예약 하나를 실행하고 완료 처리한다. 예외를 밖으로 던지지 않는다.
+     * 완료(Redis)가 실패하면 예약이 남아 lease 뒤 다시 실행된다. (받는 쪽이 버전으로 걸러낸다)
+     */
+    void runClaimed(Claimed c) {
+        fire(c);
+        try {
+            complete(c);
+        } catch (RuntimeException e) {
+            log.warn("게임 타이머 완료 처리 실패. lease 뒤 다시 실행될 수 있습니다: {} ({})", c.key(), e.getMessage());
+        }
+    }
+
     private void fire(Claimed c) {
+        warnIfLate(c);
         TimerTarget target;
         try {
             target = TimerKeys.parse(c.key());
@@ -181,14 +217,35 @@ public class RedisGameTimer implements GameTimer {
         }
     }
 
+    /**
+     * 예약 시각보다 LATE_WARN 넘게 늦게 실행되면 경고를 남긴다. 실제로 밀리는지 숫자로 보기 위한 것이다.
+     * lease가 지나 다시 가져간 예약(실행 중 서버가 죽은 경우)은 "다시 실행할 수 있게 된 시각"부터 잰다.
+     */
+    private void warnIfLate(Claimed c) {
+        long lateMillis = lateMillis(c, clock.millis());
+        if (lateMillis > LATE_WARN.toMillis()) {
+            log.warn("게임 타이머가 예약 시각보다 {}ms 늦게 실행됩니다: {} (작업 스레드가 모자라거나 게임 잠금이 오래 막혔을 수 있습니다)",
+                    lateMillis, c.key());
+        }
+    }
+
+    /** 예약 시각보다 얼마나 늦었는지(ms). 일찍 실행되는 일은 없지만 서버 시계가 어긋나면 음수가 될 수 있어 0으로 맞춘다. */
+    static long lateMillis(Claimed c, long nowMillis) {
+        return Math.max(0, nowMillis - c.dueAt());
+    }
+
     /** 점수가 가져갈 때 바꾼 값 그대로일 때만 지운다. 지웠으면 true. */
     boolean complete(Claimed c) {
         Long removed = redis.execute(COMPLETE, List.of(TIMERS_KEY), c.key(), String.valueOf(c.leaseUntil()));
         return removed != null && removed == 1L;
     }
 
-    /** 가져간 예약. leaseUntil은 가져갈 때 바꿔 둔 점수(완료할 때 이 값인지 확인한다) */
-    record Claimed(String key, long leaseUntil) {
+    /**
+     * 가져간 예약.
+     * @param dueAt      가져가기 전의 점수 = 예약 시각(epoch ms). 늦게 실행되는지 재는 데 쓴다
+     * @param leaseUntil 가져갈 때 바꿔 둔 점수. 완료할 때 이 값인지 확인한다
+     */
+    record Claimed(String key, long dueAt, long leaseUntil) {
     }
 
     // ---------- 테스트·점검용 ----------
