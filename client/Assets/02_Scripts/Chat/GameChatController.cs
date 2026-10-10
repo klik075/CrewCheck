@@ -382,8 +382,14 @@ namespace WhoisntCitizen.Chat
             _fetching = false;
         }
 
+        public event System.Action<ChatMessage> LiveMessageReceived;
+        private bool hasLiveSnapshot;
+
         void OnFullListReceived(List<ChatMessage> list)
         {
+            long previousId = _lastId;
+            bool notifyLive = hasLiveSnapshot;
+            hasLiveSnapshot = true;
             _lastStatus = "";
             var sorted = SortOldestFirst(list).ToList();
             if (SameIds(sorted, _messages)) return;
@@ -394,6 +400,10 @@ namespace WhoisntCitizen.Chat
             _messages.AddRange(sorted);
             TrimToMax();
             _lastId = MaxId(_messages);
+            if (notifyLive)
+                foreach (var message in sorted)
+                    if (long.TryParse(message.id, out long id) && id > previousId)
+                        LiveMessageReceived?.Invoke(message);
             ResolveAnchors();
             LogNewSystemMessages();
             Render();
@@ -409,6 +419,7 @@ namespace WhoisntCitizen.Chat
                 bool hasId = long.TryParse(m.id, out id);
                 if (hasId && id <= _lastId) continue;
                 _messages.Add(m);
+                if (hasId) LiveMessageReceived?.Invoke(m);
                 if (hasId && id > _lastId) _lastId = id;
                 added = true;
             }

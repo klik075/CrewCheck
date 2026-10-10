@@ -17,6 +17,8 @@ namespace WhoisntCitizen.GameUI
     /// <summary>
     /// One reusable avatar view. Swap the skin to change the design while keeping
     /// the same seat, pose and speaking controls.
+    /// Every skin is drawn at the same height with its feet on this object's position (sprites are fitted by
+    /// Tools/ChibiSkinFit/FitSkins.ps1: trimmed, pivot where the character sits), so a new skin never moves or resizes.
     /// </summary>
     public sealed class ChibiCharacterView : MonoBehaviour
     {
@@ -25,6 +27,10 @@ namespace WhoisntCitizen.GameUI
         [SerializeField] private DialoguePortraitMotion motion;
         [SerializeField] private ChibiPose pose;
         [SerializeField] private bool faceLeft;
+        [Tooltip("Height of a seated character in world units, the same for every skin.")]
+        [SerializeField] private float seatedHeight = 3.6f;
+        [Tooltip("Height of the standing pose in world units.")]
+        [SerializeField] private float standingHeight = 3.9f;
 
         private bool speaking;
         private float nextBlinkAt;
@@ -139,6 +145,18 @@ namespace WhoisntCitizen.GameUI
 
             visual.sprite = sprite != null ? sprite : skin.Standing;
             visual.flipX = pose == ChibiPose.SeatedSide && faceLeft;
+            FitHeight(visual.sprite);
+        }
+
+        // Sprites come from sheets with different cell sizes and pixels-per-unit; scale each to one height.
+        // Play mode only: in edit mode this would write the scale into the prefab or scene.
+        private void FitHeight(Sprite sprite)
+        {
+            if (!Application.isPlaying || sprite == null || sprite.rect.height <= 0f) return;
+            float target = pose == ChibiPose.Standing ? standingHeight : seatedHeight;
+            float scale = target / (sprite.rect.height / sprite.pixelsPerUnit);
+            if (motion != null && motion.transform == visual.transform) motion.SetScaleMultiplier(scale);
+            else visual.transform.localScale = new Vector3(scale, scale, 1f);
         }
     }
 }
