@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.game.service;
 
+import com.WhoisntCitizen_server.common.exception.LockTimeoutException;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.lock.GameLock;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
@@ -12,6 +13,8 @@ import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -38,6 +41,9 @@ public class GameTimerRecovery {
 
     private static final Logger log = LoggerFactory.getLogger(GameTimerRecovery.class);
 
+    /** 게임 잠금을 잡지 못한 게임을 다시 시도하는 횟수 (한 번에 잠금 대기 시간만큼 기다린다) */
+    static final int MAX_ROUNDS = 3;
+
     private final GameRepository gameRepository;
     private final GameLock gameLock;
     private final GameTimer gameTimer;
@@ -58,17 +64,31 @@ public class GameTimerRecovery {
         }
     }
 
-    /** 진행 중인 모든 게임의 타이머를 다시 건다. 다시 건 게임 수를 돌려준다. 한 게임이 실패해도 나머지는 계속한다. */
+    /**
+     * 진행 중인 모든 게임의 타이머를 다시 건다. 다시 건 게임 수를 돌려준다. 한 게임이 실패해도 나머지는 계속한다.
+     * 게임 잠금을 잡지 못한 게임(다른 서버가 쥐고 있는 등)은 모아 두었다가 최대 MAX_ROUNDS번까지 다시 시도한다.
+     * 그래도 못 건 게임은 멈출 수 있으므로 오류 로그를 남긴다.
+     */
     public int recoverAll() {
         int recovered = 0;
-        for (String gameId : gameRepository.findActiveIds()) {
-            try {
-                if (recover(gameId)) {
-                    recovered++;
+        List<String> pending = new ArrayList<>(gameRepository.findActiveIds());
+        for (int round = 1; round <= MAX_ROUNDS && !pending.isEmpty(); round++) {
+            List<String> lockBusy = new ArrayList<>();
+            for (String gameId : pending) {
+                try {
+                    if (recover(gameId)) {
+                        recovered++;
+                    }
+                } catch (LockTimeoutException e) {
+                    lockBusy.add(gameId);
+                } catch (RuntimeException e) {
+                    log.error("[{}] 페이즈 타이머 복구 실패", gameId, e);
                 }
-            } catch (RuntimeException e) {
-                log.error("[{}] 페이즈 타이머 복구 실패", gameId, e);
             }
+            pending = lockBusy;
+        }
+        if (!pending.isEmpty()) {
+            log.error("게임 잠금을 잡지 못해 페이즈 타이머를 복구하지 못한 게임: {}", pending);
         }
         return recovered;
     }
