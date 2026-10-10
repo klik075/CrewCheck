@@ -13,16 +13,18 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.function.IntSupplier;
 
 /**
- * 서버가 켜져 있는 동안 짧은 간격(기본 250ms)으로 RedisGameTimer.pollOnce()를 부른다.
+ * 서버가 켜져 있는 동안 짧은 간격(기본 100ms, mafia.redis.game.timer.poll-interval-millis)으로 시간이 된 예약을 확인한다.
+ * 서버에서는 RedisTimerDispatcher.dispatchOnce()를 부른다. (가져가서 작업 스레드에 넘기기. 실행은 작업 스레드가 한다)
  * 서버마다 하나씩 돈다. 여러 서버가 같은 예약을 확인해도 한 서버만 가져간다. (RedisGameTimer의 Lua 가져가기)
  *
  * 동작
  *  - 서버가 켜지면(start) 바로 한 번 확인하고, 그 뒤로는 "확인이 끝난 시각 + 간격"마다 확인한다.
  *    확인이 끝난 뒤에 다음을 예약하므로 확인이 겹쳐 돌지 않는다. (fixed delay)
- *  - 한 번 확인에서 batchSize만큼 가득 가져왔으면 밀린 예약이 더 있다는 뜻이라 바로 다시 확인한다.
+ *  - 한 번 확인에서 batchSize만큼 가득 가져왔으면 밀린 예약이 더 있을 수 있어 바로 다시 확인한다.
+ *    (작업 스레드에 넘기는 경우 batchSize = 작업 스레드 수. 그사이 끝난 스레드가 있으면 더 가져간다)
  *    한 번에 너무 오래 붙잡지 않도록 최대 MAX_ROUNDS_PER_TICK번까지만 이어서 확인한다.
  *  - 확인이 실패해도(Redis 연결 끊김 등) 멈추지 않고 다음 간격에 다시 확인한다.
- *    250ms마다 같은 경고가 쌓이지 않게 처음 실패와 FAILURE_LOG_EVERY번째마다만 남기고, 복구되면 알린다.
+ *    짧은 간격마다 같은 경고가 쌓이지 않게 처음 실패와 FAILURE_LOG_EVERY번째마다만 남기고, 복구되면 알린다.
  *  - 서버가 꺼지면(stop) 다음 확인을 예약하지 않는다. 실행 중이던 확인은 끝까지 마친다.
  *    끝마치지 못하고 꺼져도 예약은 Redis에 남아 lease 뒤 다른 서버(또는 재시작한 이 서버)가 실행한다.
  *
@@ -33,8 +35,8 @@ public class RedisTimerPoller implements SmartLifecycle {
 
     /** 밀린 예약이 많을 때 한 번의 확인에서 이어서 부르는 최대 횟수 */
     static final int MAX_ROUNDS_PER_TICK = 10;
-    /** 연속 실패를 이 횟수마다 한 번 로그로 남긴다 (250ms 간격이면 약 10초) */
-    static final int FAILURE_LOG_EVERY = 40;
+    /** 연속 실패를 이 횟수마다 한 번 로그로 남긴다 (100ms 간격이면 약 10초) */
+    static final int FAILURE_LOG_EVERY = 100;
 
     private static final Logger log = LoggerFactory.getLogger(RedisTimerPoller.class);
 
@@ -65,9 +67,10 @@ public class RedisTimerPoller implements SmartLifecycle {
         this.batchSize = batchSize;
     }
 
-    /** Redis 타이머로 만든다. */
-    public static RedisTimerPoller of(RedisGameTimer timer, RedisTimerProperties props, TaskScheduler scheduler, Clock clock) {
-        return new RedisTimerPoller(timer::pollOnce, props.batchSize(), scheduler, clock, props.pollInterval());
+    /** 가져간 예약을 작업 스레드에 넘기는 dispatcher로 만든다. (서버에서 쓰는 방법) */
+    public static RedisTimerPoller of(RedisTimerDispatcher dispatcher, RedisTimerProperties props,
+                                      TaskScheduler scheduler, Clock clock) {
+        return new RedisTimerPoller(dispatcher::dispatchOnce, dispatcher.workers(), scheduler, clock, props.pollInterval());
     }
 
     // ---------- 켜고 끄기 (SmartLifecycle) ----------

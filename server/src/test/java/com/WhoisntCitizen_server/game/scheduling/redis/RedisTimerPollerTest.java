@@ -167,16 +167,17 @@ class RedisTimerPollerTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RedisTimerPoller(poll, BATCH, scheduler, clock, Duration.ZERO))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new RedisTimerProperties(0, 30, 100)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new RedisTimerProperties(250, 0, 100)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new RedisTimerProperties(250, 30, 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new RedisTimerProperties(0, 30, 100, 4)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new RedisTimerProperties(250, 0, 100, 4)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new RedisTimerProperties(250, 30, 0, 4)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new RedisTimerProperties(250, 30, 100, 0)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void 설정의_기본값을_시간으로_바꾼다() {
-        RedisTimerProperties props = new RedisTimerProperties(250, 30, 100);
+        RedisTimerProperties props = new RedisTimerProperties(100, 30, 100, 4);
 
-        assertThat(props.pollInterval()).isEqualTo(Duration.ofMillis(250));
+        assertThat(props.pollInterval()).isEqualTo(Duration.ofMillis(100));
         assertThat(props.lease()).isEqualTo(Duration.ofSeconds(30));
     }
 }
