@@ -56,11 +56,9 @@ public class MemberDto {
 
 	@Getter
 	@NoArgsConstructor
-	@AllArgsConstructor
-	@Builder
 	public static class LinkSocialRequest {
-		@NotBlank(message = "소셜 토큰은 필수입니다.")
-		private String token;
+		@NotBlank(message = "토큰 값은 필수입니다.")
+		private String token; // 구글(idToken)이든 카카오(accessToken)든 범용으로 token 하나로 수신
 	}
 
 	@Getter

@@ -47,4 +47,10 @@ public class User {
 	public double getWinRate() {
 		return playCount == 0 ? 0.0 : (double) winCount / playCount;
 	}
+
+	public void updateNickname(String newNickname) {
+		if (newNickname != null && !newNickname.isBlank()) {
+			this.nickname = newNickname;
+		}
+	}
 }
