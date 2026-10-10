@@ -1,6 +1,7 @@
 package com.WhoisntCitizen_server.lobby.lock.redis;
 
 import com.WhoisntCitizen_server.common.exception.LockTimeoutException;
+import com.WhoisntCitizen_server.game.lock.GameLockScope;
 import com.WhoisntCitizen_server.lobby.lock.RoomLock;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -51,6 +52,7 @@ public class RedisRoomLock implements RoomLock {
     @Override
     public <T> T withLock(Long roomId, Supplier<T> action) {
         Objects.requireNonNull(roomId, "roomId");
+        GameLockScope.requireNotHeld("방", roomId); // 잠금 순서: 방 잠금 → 게임 잠금만 허용
         RLock lock = redisson.getLock(key(roomId));
         acquire(lock, roomId);
         try {

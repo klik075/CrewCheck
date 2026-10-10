@@ -1,6 +1,7 @@
 package com.WhoisntCitizen_server.lobby.lock;
 
 import com.WhoisntCitizen_server.common.exception.LockTimeoutException;
+import com.WhoisntCitizen_server.game.lock.GameLockScope;
 
 import java.time.Duration;
 import java.util.Objects;
@@ -16,6 +17,7 @@ import java.util.function.Supplier;
  * (게임 잠금 LocalGameLock과 같은 방식)
  *
  * 대기 시간(waitTimeout) 안에 잠금을 잡지 못하면 LockTimeoutException을 던진다. (RoomLock 계약)
+ * 게임 잠금을 쥔 스레드가 부르면 잠금 순서 위반으로 IllegalStateException을 던진다. (RoomLock 계약)
  *
  * 삭제된 방의 잠금 객체는 지우지 않는다. 다른 스레드가 기다리는 중일 수 있어 안전하게 지우기 어렵고,
  * 방 하나당 작은 객체 하나라 지금 규모에서는 문제가 되지 않는다.
@@ -39,6 +41,7 @@ public class LocalRoomLock implements RoomLock {
     @Override
     public <T> T withLock(Long roomId, Supplier<T> action) {
         Objects.requireNonNull(roomId, "roomId");
+        GameLockScope.requireNotHeld("방", roomId); // 잠금 순서: 방 잠금 → 게임 잠금만 허용
         ReentrantLock lock = locks.computeIfAbsent(roomId, id -> new ReentrantLock());
         acquire(lock, roomId);
         try {

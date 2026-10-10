@@ -12,7 +12,8 @@ import java.util.function.Supplier;
  *  - 잠금 안에서 저장소에서 방을 다시 읽고(load), 바꿨으면 저장(save)한 뒤 잠금을 푼다.
  *    (방은 Redis에 있으므로 잠금 밖에서 읽은 Room은 이미 낡은 값일 수 있다)
  *  - 재진입이 된다. 잠금 안에서 같은 roomId로 다시 잠가도 막히지 않는다.
- *  - 잠금 순서는 "방 잠금 → 게임 잠금(GameLock)"만 허용한다. 게임 잠금 안에서 방 잠금을 잡지 않는다.
+ *  - 잠금 순서는 "방 잠금 → 게임 잠금(GameLock)"만 허용한다. 게임 잠금 안에서 방 잠금을 잡으면
+ *    IllegalStateException을 던진다. (GameLockScope.requireNotHeld, 테스트: LockOrderTest)
  *  - 정해진 대기 시간 안에 잠금을 잡지 못하면 LockTimeoutException을 던진다. 이때 action은 실행되지 않는다.
  *
  * 모든 구현은 LockContractTest(테스트)가 정한 동작을 지켜야 한다.
