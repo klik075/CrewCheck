@@ -3,6 +3,7 @@ package com.WhoisntCitizen_server.common.exception;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -83,6 +84,19 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
         return ResponseEntity.badRequest().body(new ErrorResponse("BAD_REQUEST", e.getMessage()));
+    }
+
+    /**
+     * 게임·방 잠금을 대기 시간 안에 잡지 못함: 503 + Retry-After: 1
+     * 같은 게임(방)에 요청이 몰렸거나 다른 서버가 오래 쥐고 있는 경우다. 요청한 작업은 실행되지 않았으므로
+     * 클라이언트는 잠시 뒤 같은 요청을 다시 보내면 된다. (code: LOCK_BUSY)
+     */
+    @ExceptionHandler(LockTimeoutException.class)
+    public ResponseEntity<ErrorResponse> handleLockTimeout(LockTimeoutException e) {
+        log.warn("잠금 대기 시간 초과: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, "1")
+                .body(new ErrorResponse("LOCK_BUSY", "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."));
     }
 
     /** Redis 서버에 연결할 수 없음 (로비 방, 채팅 메시지): 503 */
