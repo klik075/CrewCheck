@@ -1,65 +1,40 @@
 package com.WhoisntCitizen_server.game.scheduling;
 
+import com.WhoisntCitizen_server.support.GameTimerContractTest;
 import com.WhoisntCitizen_server.support.ManualTaskScheduler;
 import com.WhoisntCitizen_server.support.MutableClock;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class LocalGameTimerTest {
+/**
+ * 서버 메모리 게임 타이머가 타이머 계약(GameTimerContractTest)을 지키는지 확인한다.
+ * 스케줄러는 ManualTaskScheduler라서 fireDue()는 "지금 시각까지 된 작업 실행"이다.
+ */
+class LocalGameTimerTest extends GameTimerContractTest {
 
-    private static final Instant NOW = Instant.parse("2026-10-07T12:00:00Z");
-
-    private final List<String> calls = new ArrayList<>();
     private ManualTaskScheduler scheduler;
-    private LocalGameTimer timer;
 
-    @BeforeEach
-    void setUp() {
-        scheduler = new ManualTaskScheduler(new MutableClock(NOW));
-        GameTimeoutHandler handler = new GameTimeoutHandler() {
-            @Override
-            public void onPhaseTimeout(String gameId, long phaseVersion) {
-                calls.add("timeout " + gameId + " v" + phaseVersion);
-            }
-
-            @Override
-            public void onCleanup(String gameId) {
-                calls.add("cleanup " + gameId);
-            }
-        };
-        timer = new LocalGameTimer(scheduler, () -> handler);
+    @Override
+    protected GameTimer newTimer(MutableClock clock, GameTimeoutHandler handler) {
+        scheduler = new ManualTaskScheduler(clock);
+        return new LocalGameTimer(scheduler, () -> handler);
     }
 
-    @Test
-    void 예약_시각이_되면_페이즈_종료를_알린다() {
-        timer.schedulePhaseTimeout("g1", 3, NOW.plusSeconds(30));
-
-        scheduler.advance(Duration.ofSeconds(29));
-        assertThat(calls).isEmpty();
-
-        scheduler.advance(Duration.ofSeconds(1));
-        assertThat(calls).containsExactly("timeout g1 v3");
+    @Override
+    protected void fireDue() {
+        scheduler.runDue();
     }
 
-    @Test
-    void 정리_예약도_시각_순서대로_실행된다() {
-        timer.scheduleCleanup("g1", NOW.plusSeconds(60));
-        timer.schedulePhaseTimeout("g2", 1, NOW.plusSeconds(5));
-
-        scheduler.advance(Duration.ofSeconds(60));
-
-        assertThat(calls).containsExactly("timeout g2 v1", "cleanup g1");
-    }
+    // ---------- 서버 메모리 구현만의 동작 ----------
 
     @Test
     void handler는_예약할_때가_아니라_실행할_때_꺼낸다() {
+        // GameFlowService와 GameTimer가 서로를 주입받는 순환을 피하려고 handler를 Supplier로 받는다
+        List<String> calls = new ArrayList<>();
         List<GameTimeoutHandler> holder = new ArrayList<>();
         LocalGameTimer lazy = new LocalGameTimer(scheduler, () -> holder.get(0));
         lazy.schedulePhaseTimeout("g1", 1, NOW.plusSeconds(1)); // 아직 handler 없음
@@ -74,7 +49,8 @@ class LocalGameTimerTest {
             public void onCleanup(String gameId) {
             }
         });
-        scheduler.advance(Duration.ofSeconds(1));
+        clock.advance(java.time.Duration.ofSeconds(1));
+        fireDue();
 
         assertThat(calls).containsExactly("late g1");
     }
