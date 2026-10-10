@@ -15,6 +15,8 @@ import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
 import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomGameFinishedEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomGameStartingEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomHostChangedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerKickedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerJoinedEvent;
@@ -325,6 +327,9 @@ public class RoomService {
                     .map(p -> new GameParticipant(p.getUserId(), p.getNickname()))
                     .toList();
 
+            // 채팅: 여기부터 게임 중 메시지. 게임 생성이 곧바로 안내(역할 배정, 첫 밤)를 남기므로 그보다 먼저 알린다.
+            eventPublisher.publishEvent(new RoomGameStartingEvent(roomId));
+
             // 게임을 먼저 만들고 성공했을 때만 방 상태를 바꾼다. 게임 생성이 실패하면 방은 WAITING 그대로다.
             StartGameResponse started = gameService.startGame(String.valueOf(roomId), participants);
 
@@ -350,6 +355,8 @@ public class RoomService {
 
             room.finishGame();
             roomRepository.save(room);
+            // 채팅: 게임 중 메시지를 지운다. 호출한 쪽(RoomGameListener)이 이 다음에 "대기실로 돌아왔습니다" 안내를 남긴다.
+            eventPublisher.publishEvent(new RoomGameFinishedEvent(roomId));
             return true;
         });
     }
@@ -450,6 +457,7 @@ public class RoomService {
         log.warn("방 {}: 진행 중인 게임({})을 찾을 수 없어 대기 상태로 복구", room.getId(), room.getGameId());
         room.finishGame();
         roomRepository.save(room);
+        eventPublisher.publishEvent(new RoomGameFinishedEvent(room.getId())); // 채팅: 게임 중 메시지 정리 (안내보다 먼저)
         eventPublisher.publishEvent(RoomNoticeEvent.of(room.getId(), "진행 중이던 게임을 찾을 수 없어 대기실로 돌아왔습니다."));
         return true;
     }

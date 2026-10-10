@@ -18,6 +18,7 @@ import java.util.Set;
  * Redis 저장 구조 (roomId = 1 인 경우)
  *  - chat:v1:room:1:seq       (String)     메시지 id(messageId) 발급용 카운터 (INCR)
  *  - chat:v1:room:1:messages  (Sorted Set) score = 메시지 id, member = 메시지 JSON
+ *  - chat:v1:room:1:gameStart (String)     게임이 시작될 때의 마지막 메시지 id. 게임이 끝나면 이 id 뒤의 메시지(게임 중 메시지)를 지운다
  *
  * Sorted Set을 쓰면 "최신 N개"와 "id 이후 새 메시지"를 둘 다 빠르게 꺼낼 수 있습니다.
  * 방마다 최신 chat.max-messages-per-room 개만 남기고 오래된 메시지는 지웁니다.
@@ -47,6 +48,10 @@ public class RedisChatMessageRepository implements ChatMessageRepository {
 
     private static String seqKey(long roomId) {
         return KEY_PREFIX + roomId + ":seq";
+    }
+
+    private static String gameStartKey(long roomId) {
+        return KEY_PREFIX + roomId + ":gameStart";
     }
 
     @Override
@@ -83,7 +88,30 @@ public class RedisChatMessageRepository implements ChatMessageRepository {
 
     @Override
     public void deleteRoom(long roomId) {
-        redis.delete(List.of(messagesKey(roomId), seqKey(roomId)));
+        redis.delete(List.of(messagesKey(roomId), seqKey(roomId), gameStartKey(roomId)));
+    }
+
+    @Override
+    public void markGameStart(long roomId) {
+        String lastId = redis.opsForValue().get(seqKey(roomId)); // 아직 메시지가 없으면 null → 0
+        redis.opsForValue().set(gameStartKey(roomId), lastId == null ? "0" : lastId);
+    }
+
+    @Override
+    public long deleteSinceGameStart(long roomId) {
+        // GETDEL은 Redis 6.2 이상이라 GET 후 DELETE로 나눈다. (같은 방의 시작/종료는 방 잠금 안에서 차례로 일어난다)
+        String mark = redis.opsForValue().get(gameStartKey(roomId));
+        if (mark == null) return 0;
+        redis.delete(gameStartKey(roomId));
+        long startId;
+        try {
+            startId = Long.parseLong(mark);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+        // 점수(id)가 startId보다 큰 메시지 = 게임이 시작된 뒤에 저장된 메시지
+        Long removed = redis.opsForZSet().removeRangeByScore(messagesKey(roomId), startId + 1, Double.POSITIVE_INFINITY);
+        return removed == null ? 0 : removed;
     }
 
     private List<ChatMessage> parseAll(Set<String> jsons) {

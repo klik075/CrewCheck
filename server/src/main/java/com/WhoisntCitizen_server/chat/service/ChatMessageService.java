@@ -154,6 +154,20 @@ public class ChatMessageService {
         repository.deleteRoom(roomId);
     }
 
+    /** 게임 시작 표시를 남깁니다. 이후 메시지는 게임이 끝나면 지워집니다. (로비 이벤트 처리용) */
+    void markGameStart(long roomId) {
+        repository.markGameStart(roomId);
+    }
+
+    /**
+     * 게임 중에 오간 메시지(게임 시작 표시 이후)를 모두 지웁니다. (로비 이벤트 처리용)
+     * 대기실로 돌아온 방의 채팅에는 게임 전 대기실 대화와 그 뒤의 메시지만 남습니다.
+     * @return 지운 메시지 수
+     */
+    long clearGameMessages(long roomId) {
+        return repository.deleteSinceGameStart(roomId);
+    }
+
     /** 같은 게임의 해적(접선한 앵무새 포함)에게만 보이는 시스템 메시지를 저장합니다. (해적 안내 이벤트 처리용) */
     ChatMessage saveSystemForPirates(long roomId, String gameId, String message) {
         return repository.save(roomId, MessageType.SYSTEM,
