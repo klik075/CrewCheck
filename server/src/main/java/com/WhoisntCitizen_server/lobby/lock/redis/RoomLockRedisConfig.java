@@ -1,11 +1,15 @@
 package com.WhoisntCitizen_server.lobby.lock.redis;
 
 import com.WhoisntCitizen_server.common.redis.RedissonClients;
+import com.WhoisntCitizen_server.lobby.lock.RoomLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.time.Duration;
 
 /**
  * 로비 그룹 Redisson 연결. mafia.room.lock=redis 일 때만 만든다.
@@ -15,7 +19,8 @@ import org.springframework.context.annotation.Configuration;
  * 기본 연결(Lettuce)은 건드리지 않고, 잠금용 Redisson 연결만 따로 만든다.
  *
  * 값이 local이거나 없으면 만들지 않는다. (Redisson은 만들 때 바로 Redis에 접속한다)
- * 이 연결로 만드는 방 잠금 구현은 RedisRoomLock이다. RoomLock Bean으로 연결하는 것은 2-7에서 한다.
+ * 이 연결로 방 잠금(RedisRoomLock)을 만들어 RoomLock Bean으로 등록한다.
+ * 값이 local이거나 없으면 RoomLockConfig의 LocalRoomLock이 쓰인다. 둘 중 하나만 등록된다.
  */
 @Configuration
 @ConditionalOnProperty(name = "mafia.room.lock", havingValue = "redis")
@@ -27,5 +32,12 @@ public class RoomLockRedisConfig {
                                         @Value("${spring.data.redis.database:0}") int database,
                                         @Value("${spring.data.redis.password:}") String password) {
         return RedissonClients.create(host, port, database, password);
+    }
+
+    /** 서버 여러 대가 함께 쓰는 방 잠금. 대기 시간(mafia.lock.wait-timeout-millis)을 넘기면 LockTimeoutException */
+    @Bean
+    public RoomLock redisRoomLock(@Qualifier("lobbyRedisson") RedissonClient lobbyRedisson,
+                                  @Value("${mafia.lock.wait-timeout-millis:10000}") long waitTimeoutMillis) {
+        return new RedisRoomLock(lobbyRedisson, Duration.ofMillis(waitTimeoutMillis));
     }
 }
