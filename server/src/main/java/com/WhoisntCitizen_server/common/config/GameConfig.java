@@ -2,8 +2,6 @@ package com.WhoisntCitizen_server.common.config;
 
 import com.WhoisntCitizen_server.game.activity.LocalPlayerActivityTracker;
 import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
-import com.WhoisntCitizen_server.game.lock.GameLock;
-import com.WhoisntCitizen_server.game.lock.LocalGameLock;
 import com.WhoisntCitizen_server.game.scheduling.DeferredEventPublisher;
 import com.WhoisntCitizen_server.game.scheduling.GameTimeoutHandler;
 import com.WhoisntCitizen_server.game.scheduling.GameTimer;
@@ -11,7 +9,6 @@ import com.WhoisntCitizen_server.game.scheduling.LocalGameTimer;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
@@ -21,7 +18,6 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import java.security.SecureRandom;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.Random;
 
 @Configuration
@@ -72,12 +68,6 @@ public class GameConfig {
                                                          Clock clock,
                                                          ApplicationEventPublisher eventPublisher) {
         return new SchedulerDeferredEventPublisher(scheduler, clock, eventPublisher);
-    }
-
-    /** 게임 한 판 단위 잠금. 지금은 서버 메모리(JVM) 잠금이다. 대기 시간을 넘기면 LockTimeoutException */
-    @Bean
-    public GameLock gameLock(@Value("${mafia.lock.wait-timeout-millis:10000}") long waitTimeoutMillis) {
-        return new LocalGameLock(Duration.ofMillis(waitTimeoutMillis));
     }
 
     /** 플레이어별 마지막 요청 시각(연결 끊김 판정용). 지금은 서버 메모리에 둔다. */
