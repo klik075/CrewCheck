@@ -118,7 +118,6 @@ namespace WhoisntCitizen.GameUI
         private readonly Vector2[] layoutPositions = new Vector2[SeatCount];
         private readonly int[] seatOrder = new int[SeatCount];
         public int Capacity => capacity;
-        private ChatUIController roomChat;
         private GameChatController gameChat;
 
         public void Initialize(Image backgroundImage, RectTransform chat, TMP_FontAsset font, ChibiCharacterSkin[] availableSkins, int maxPlayers = SeatCount)
@@ -438,9 +437,7 @@ namespace WhoisntCitizen.GameUI
 
         private void OnDisable()
         {
-            if (roomChat != null) roomChat.LiveMessageReceived -= OnLiveMessage;
             if (gameChat != null) gameChat.LiveMessageReceived -= OnLiveMessage;
-            roomChat = null;
             gameChat = null;
             ClearSpeech();
         }
@@ -448,9 +445,6 @@ namespace WhoisntCitizen.GameUI
         private void BindChat()
         {
             if (!Application.isPlaying) return;
-            foreach (var chat in FindObjectsByType<ChatUIController>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-                if (chat.gameObject.scene == gameObject.scene && roomChat == null)
-                { roomChat = chat; roomChat.LiveMessageReceived += OnLiveMessage; }
             foreach (var chat in FindObjectsByType<GameChatController>(FindObjectsInactive.Include, FindObjectsSortMode.None))
                 if (chat.gameObject.scene == gameObject.scene && gameChat == null)
                 { gameChat = chat; gameChat.LiveMessageReceived += OnLiveMessage; }

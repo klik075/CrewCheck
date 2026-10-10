@@ -47,7 +47,7 @@ namespace WhoisntCitizen.Game
             {
                 case GamePhases.Night: return phaseChanged.Day + "일차 밤이 되었습니다.";
                 case GamePhases.Day: return phaseChanged.Day + "일차 낮이 되었습니다. 토론을 시작하세요.";
-                case GamePhases.Vote: return "투표 시간입니다. 하단 [+] 버튼으로 투표하세요.";
+                case GamePhases.Vote: return "투표 시간입니다. 처형할 플레이어의 카드를 뽑고 [투표 완료]를 누르세요. 카드를 뽑지 않으면 기권(넘기기)으로 처리됩니다.";
                 case GamePhases.Ended: return "게임이 끝났습니다.";
                 default: return string.Empty;
             }
@@ -61,6 +61,8 @@ namespace WhoisntCitizen.Game
         public const string YouDied = "당신은 사망했습니다. 이제 지켜볼 수만 있습니다.";
         public const string WaitingForServer = "판정 중";
         public const string SkippedTonight = "이번 밤은 능력을 쓰지 않습니다.";
+        public const string DayDiscussionHint = "토론을 넘길 수 있습니다.\n살아 있는 전원이 넘기면 바로 투표합니다.";
+        public const string DeadCannotSkipDay = "사망한 플레이어는 토론을 넘길 수 없습니다.";
         public const string GameClosed = "게임이 끝나 대기실로 돌아갑니다.";
         public const string CancelledGameClosed = "게임이 취소되어 로비로 돌아갑니다.";
         /// <summary>취소된 게임의 방은 서버가 곧 지우므로 로비로 보낸 뒤 보여 준다.</summary>
@@ -112,6 +114,45 @@ namespace WhoisntCitizen.Game
             return action + " 대상을 고르세요.";
         }
 
+        /// <summary>넘긴 인원 표시. 예: "(3/5)". 인원을 모르면 빈 문자열.</summary>
+        public static string DaySkipCount(DaySkipResultDto progress)
+        {
+            return progress == null || progress.requiredCount <= 0
+                ? string.Empty
+                : "(" + progress.skippedCount + "/" + progress.requiredCount + ")";
+        }
+
+        /// <summary>
+        /// 낮 토론 패널 안내. 낮이 아니면 빈 문자열, 사망했으면 이유, 넘겼으면 넘긴 인원, 아니면 넘길 수 있다는 안내.
+        /// </summary>
+        public static string DayStatus(bool isDay, bool alive, bool skipped, DaySkipResultDto progress)
+        {
+            if (!isDay)
+            {
+                return string.Empty;
+            }
+            if (!alive)
+            {
+                return DeadCannotSkipDay;
+            }
+            if (skipped)
+            {
+                string count = DaySkipCount(progress);
+                return "토론을 넘겼습니다. " + count + "\n다른 사람을 기다리는 중입니다.";
+            }
+            return DayDiscussionHint;
+        }
+
+        /// <summary>토론 넘기기가 접수됐을 때 채팅 기록에 남길 문구. (실제 서버는 방 채팅에 닉네임과 인원을 따로 알린다)</summary>
+        public static string DaySkipAccepted(DaySkipResultDto result)
+        {
+            if (result.phase == GamePhases.Vote)
+            {
+                return "모두 토론을 넘겨 바로 투표를 시작합니다.";
+            }
+            return "토론을 넘겼습니다. " + DaySkipCount(result);
+        }
+
         /// <summary>밤 행동이 접수됐을 때 채팅 기록에 남길 문구. 접선이면 접선 알림.</summary>
         public static string ActionAccepted(NightActionResultDto result, string actionCode, long chosenTargetId, bool skipped, GameStateDto state)
         {
@@ -130,6 +171,22 @@ namespace WhoisntCitizen.Game
         public static string VoteAccepted(long targetId, GameStateDto state)
         {
             return GameStateQueries.NicknameOf(state, targetId) + "님에게 투표했습니다.";
+        }
+
+        /// <summary>[투표 완료]를 서버가 받았다. targetId 0 = 기권(넘기기).</summary>
+        public static string VoteConfirmed(long targetId, GameStateDto state)
+        {
+            return targetId == 0
+                ? "투표를 넘겼습니다(기권)."
+                : GameStateQueries.NicknameOf(state, targetId) + "님에게 투표를 완료했습니다.";
+        }
+
+        /// <summary>[투표 완료]를 누르지 않은 채 투표 시간이 끝났다. 고른 카드가 없으면 기권으로 처리된다.</summary>
+        public static string VoteTimedOut(string drawnNickname)
+        {
+            return string.IsNullOrEmpty(drawnNickname)
+                ? "투표 시간이 끝났습니다. 카드를 뽑지 않아 기권(넘기기)으로 처리됩니다."
+                : "투표 시간이 끝났습니다. 뽑아 둔 " + drawnNickname + "님에게 투표한 것으로 처리됩니다.";
         }
 
         /// <summary>결과 화면의 내 승패. 취소된 게임이면 무효.</summary>

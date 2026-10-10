@@ -64,14 +64,19 @@ namespace WhoisntCitizen.Game.Tests
             Handle("SkipNightAction", onDone, cb => inner.SkipNightAction(gameId, cb));
         }
 
+        public void SkipDay(string gameId, Action<GameApiResult<DaySkipResultDto>> onDone)
+        {
+            Handle("SkipDay", onDone, cb => inner.SkipDay(gameId, cb));
+        }
+
         public void GetNightResult(string gameId, Action<GameApiResult<NightResultDto>> onDone)
         {
             Handle("GetNightResult", onDone, cb => inner.GetNightResult(gameId, cb));
         }
 
-        public void Vote(string gameId, long targetId, Action<GameApiResult<VoteResultDto>> onDone)
+        public void Vote(string gameId, long targetId, bool confirm, Action<GameApiResult<VoteResultDto>> onDone)
         {
-            Handle("Vote", onDone, cb => inner.Vote(gameId, targetId, cb));
+            Handle("Vote", onDone, cb => inner.Vote(gameId, targetId, confirm, cb));
         }
 
         public void GetExecutionResult(string gameId, Action<GameApiResult<ExecutionResultDto>> onDone)
@@ -123,6 +128,7 @@ namespace WhoisntCitizen.Game.Tests
         public readonly List<ExecutionResultDto> Executions = new List<ExecutionResultDto>();
         public readonly List<GameResultDto> GameResults = new List<GameResultDto>();
         public readonly List<NightActionResultDto> ActionsAccepted = new List<NightActionResultDto>();
+        public readonly List<DaySkipResultDto> DaySkipsAccepted = new List<DaySkipResultDto>();
         public readonly List<VoteResultDto> VotesAccepted = new List<VoteResultDto>();
         public readonly List<string> Errors = new List<string>();
         public readonly List<bool> Connections = new List<bool>();
@@ -134,7 +140,7 @@ namespace WhoisntCitizen.Game.Tests
             get
             {
                 return States + Phases.Count + Deaths.Count + MyRoles.Count + NightResults.Count + Executions.Count
-                    + GameResults.Count + ActionsAccepted.Count + VotesAccepted.Count + Errors.Count + Connections.Count
+                    + GameResults.Count + ActionsAccepted.Count + DaySkipsAccepted.Count + VotesAccepted.Count + Errors.Count + Connections.Count
                     + (Closed ? 1 : 0);
             }
         }
@@ -147,6 +153,7 @@ namespace WhoisntCitizen.Game.Tests
         public void ShowExecutionResult(ExecutionResultDto result) { Executions.Add(result); }
         public void ShowGameResult(GameResultDto result) { GameResults.Add(result); }
         public void ShowActionAccepted(NightActionResultDto result) { ActionsAccepted.Add(result); }
+        public void ShowDaySkipAccepted(DaySkipResultDto result) { DaySkipsAccepted.Add(result); }
         public void ShowVoteAccepted(VoteResultDto result) { VotesAccepted.Add(result); }
         public void ShowError(string message) { Errors.Add(message); }
         public void ShowConnection(bool connected) { Connections.Add(connected); }

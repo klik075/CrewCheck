@@ -62,7 +62,9 @@ namespace WhoisntCitizen.Game
         private readonly List<FakeAction> nightActions = new List<FakeAction>(); // 행동자당 1개. 다시 내면 같은 자리에서 바뀐다
         private readonly HashSet<long> skippedActors = new HashSet<long>();
         private readonly HashSet<long> lockedActors = new HashSet<long>();      // 이번 밤 접선해서 행동이 확정된 앵무새
+        private readonly HashSet<long> daySkippers = new HashSet<long>();       // 이번 낮 토론을 넘긴 플레이어
         private readonly Dictionary<long, long> votes = new Dictionary<long, long>(); // 투표자 → 대상
+        private readonly HashSet<long> confirmedVoters = new HashSet<long>(); // "투표 완료"한 플레이어 (표가 없으면 기권)
 
         private string phase;
         private int day;
@@ -126,14 +128,17 @@ namespace WhoisntCitizen.Game
             left.Alive = false;
 
             votes.Remove(playerId);
+            confirmedVoters.Remove(playerId);
             foreach (long voter in new List<long>(votes.Keys))
             {
                 if (votes[voter] == playerId)
                 {
                     votes.Remove(voter);
+                    confirmedVoters.Remove(voter); // 그 표로 투표 완료한 사람도 다시 고를 수 있다 (서버와 같다)
                 }
             }
             skippedActors.Remove(playerId);
+            daySkippers.Remove(playerId);
             for (int i = nightActions.Count - 1; i >= 0; i--)
             {
                 FakeAction a = nightActions[i];
@@ -156,6 +161,10 @@ namespace WhoisntCitizen.Game
             else if (phase == GamePhases.Vote && AllVotesSubmitted())
             {
                 ResolveVote(clock());
+            }
+            else if (phase == GamePhases.Day && DaySkipCount() >= AliveCount())
+            {
+                EnterVote(clock()); // 남은 사람이 모두 낮 토론을 넘겼다
             }
         }
 
@@ -287,6 +296,41 @@ namespace WhoisntCitizen.Game
                 new NightActionResultDto { accepted = true, phase = phase, phaseVersion = phaseVersion }));
         }
 
+        /// <summary>서버 GameFlowService.skipDay와 같다. 낮에 살아 있는 사람만 넘길 수 있고, 살아 있는 전원이 넘기면 바로 투표로.</summary>
+        public void SkipDay(string gameId, Action<GameApiResult<DaySkipResultDto>> onDone)
+        {
+            if (!Begin(gameId, onDone))
+            {
+                return;
+            }
+            string error = null;
+            if (phase != GamePhases.Day)
+            {
+                error = PhaseError(GamePhases.Day);
+            }
+            else if (!Me.Alive)
+            {
+                error = "넘기는 플레이어가 이미 사망했습니다: " + MyPlayerId; // 서버 문구 그대로
+            }
+            if (error != null)
+            {
+                Reply(onDone, RuleViolation<DaySkipResultDto>(error));
+                return;
+            }
+
+            daySkippers.Add(MyPlayerId); // 이미 넘겼으면 그대로
+            long skipped = DaySkipCount();
+            long required = AliveCount();
+            if (skipped >= required)
+            {
+                EnterVote(clock());
+            }
+            Reply(onDone, GameApiResult<DaySkipResultDto>.Ok(new DaySkipResultDto
+            {
+                accepted = true, phase = phase, phaseVersion = phaseVersion, skippedCount = skipped, requiredCount = required
+            }));
+        }
+
         public void GetNightResult(string gameId, Action<GameApiResult<NightResultDto>> onDone)
         {
             if (!Begin(gameId, onDone))
@@ -298,13 +342,14 @@ namespace WhoisntCitizen.Game
                 : GameApiResult<NightResultDto>.Ok(lastNightResult));
         }
 
-        public void Vote(string gameId, long targetId, Action<GameApiResult<VoteResultDto>> onDone)
+        public void Vote(string gameId, long targetId, bool confirm, Action<GameApiResult<VoteResultDto>> onDone)
         {
             if (!Begin(gameId, onDone))
             {
                 return;
             }
-            FakePlayer target = Find(targetId);
+            bool abstain = targetId == 0; // 0이면 표를 거둔다 (기권)
+            FakePlayer target = abstain ? null : Find(targetId);
             string error = null;
             if (phase != GamePhases.Vote)
             {
@@ -313,6 +358,14 @@ namespace WhoisntCitizen.Game
             else if (!Me.Alive)
             {
                 error = "투표하는 플레이어가 이미 사망했습니다: " + MyPlayerId;
+            }
+            else if (!confirm && confirmedVoters.Contains(MyPlayerId))
+            {
+                error = "이미 투표를 완료했습니다.";
+            }
+            else if (abstain)
+            {
+                // 기권: 대상 검사 없음
             }
             else if (target == null)
             {
@@ -328,7 +381,18 @@ namespace WhoisntCitizen.Game
                 return;
             }
 
-            votes[MyPlayerId] = targetId;
+            if (abstain)
+            {
+                votes.Remove(MyPlayerId);
+            }
+            else
+            {
+                votes[MyPlayerId] = targetId;
+            }
+            if (confirm)
+            {
+                confirmedVoters.Add(MyPlayerId);
+            }
             if (AllVotesSubmitted())
             {
                 ResolveVote(clock());
@@ -392,7 +456,7 @@ namespace WhoisntCitizen.Game
             switch (phase)
             {
                 case GamePhases.Night: ResolveNight(at); break;
-                case GamePhases.NightResult: MoveTo(GamePhases.Day, at, options.DaySeconds); break;
+                case GamePhases.NightResult: EnterDay(at); break;
                 case GamePhases.Day: EnterVote(at); break;
                 case GamePhases.Vote: ResolveVote(at); break;
                 case GamePhases.Execution: EnterNight(at); break;
@@ -423,9 +487,58 @@ namespace WhoisntCitizen.Game
             }
         }
 
+        /// <summary>낮 토론. 봇은 바로 토론을 넘긴다(BotsAct). 그래서 내가 넘기면 곧바로 투표가 시작된다.</summary>
+        private void EnterDay(double at)
+        {
+            daySkippers.Clear();
+            MoveTo(GamePhases.Day, at, options.DaySeconds);
+            if (!options.BotsAct)
+            {
+                return;
+            }
+            foreach (FakePlayer p in players)
+            {
+                if (p.Alive && p.Id != MyPlayerId)
+                {
+                    daySkippers.Add(p.Id);
+                }
+            }
+            if (DaySkipCount() >= AliveCount())
+            {
+                EnterVote(at); // 내가 이미 죽었으면 봇만으로 다 넘긴 것
+            }
+        }
+
+        private long DaySkipCount()
+        {
+            long count = 0;
+            foreach (FakePlayer p in players)
+            {
+                if (p.Alive && daySkippers.Contains(p.Id))
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        private long AliveCount()
+        {
+            long count = 0;
+            foreach (FakePlayer p in players)
+            {
+                if (p.Alive)
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+
         private void EnterVote(double at)
         {
             votes.Clear();
+            confirmedVoters.Clear();
             MoveTo(GamePhases.Vote, at, options.VoteSeconds);
             if (options.BotsAct)
             {
@@ -938,7 +1051,7 @@ namespace WhoisntCitizen.Game
                 if (p.Alive)
                 {
                     alive++;
-                    if (votes.ContainsKey(p.Id))
+                    if (confirmedVoters.Contains(p.Id))
                     {
                         voted++;
                     }
@@ -969,6 +1082,7 @@ namespace WhoisntCitizen.Game
                 {
                     votes[bot.Id] = candidates[random.Next(candidates.Count)].Id;
                 }
+                confirmedVoters.Add(bot.Id); // 봇은 바로 투표 완료한다 (대상이 없으면 기권)
             }
         }
 

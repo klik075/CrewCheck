@@ -7,7 +7,7 @@ namespace WhoisntCitizen.Game
     /// Game 씬의 게임 진행 담당 MonoBehaviour. 흐름은 GameSession(Core)이 하고, 여기서는 Unity 수명주기와 서버 선택만 맡는다.
     /// - 실제 서버: Room 씬(대기실)에서 받은 RoomSession.GameId로 WaitingRoomController가 BeginGame(gameId)를 부른다.
     /// - 가짜 서버(useFakeServer): 로그인·방 없이 BeginFakeGame()으로 바로 시작한다(Play만 누르면 된다).
-    /// - UI(G 단계)는 IGameView를 구현해 gameView에 넣고, 버튼은 SubmitNightAction·SkipNightAction·Vote를 부른다.
+    /// - UI(G 단계)는 IGameView를 구현해 gameView에 넣고, 버튼은 SubmitNightAction·SkipNightAction·SkipDay·Vote를 부른다.
     ///   gameView가 비어 있으면 같은 오브젝트·자식에서 IGameView를 찾고, 그래도 없으면 Console 로그(LogGameView)로 대신한다.
     /// </summary>
     public sealed class GameController : MonoBehaviour
@@ -20,6 +20,8 @@ namespace WhoisntCitizen.Game
         [SerializeField] private bool useFakeServer;
         [SerializeField] private string fakeMyRole = RoleCodes.CrewCaptain;
         [SerializeField] private bool fakeBotsAct = true;
+        [Tooltip("봇이 대상·투표를 고르는 난수 씨앗. 같은 값이면 매 판 같은 결과가 나온다. -1이면 판마다 바뀐다.")]
+        [SerializeField] private int fakeSeed = 42;
         [Tooltip("⋮ 메뉴 \"가짜 서버: 연결 끊김\"으로 내보낼 플레이어 (102 해적 ~ 108 선원)")]
         [SerializeField] private long fakeDisconnectPlayerId = 104;
 
@@ -101,7 +103,8 @@ namespace WhoisntCitizen.Game
         public void BeginFakeGame()
         {
             EndGame();
-            fakeApi = new FakeGameApi(new FakeGameOptions { MyRole = fakeMyRole, BotsAct = fakeBotsAct }, Clock);
+            int seed = fakeSeed >= 0 ? fakeSeed : Environment.TickCount & int.MaxValue;
+            fakeApi = new FakeGameApi(new FakeGameOptions { MyRole = fakeMyRole, BotsAct = fakeBotsAct, Seed = seed }, Clock);
             Session = new GameSession(fakeApi, FakeGameApi.FakeGameId, view, Clock, pollIntervalSeconds);
         }
 
@@ -129,9 +132,20 @@ namespace WhoisntCitizen.Game
             return Session != null && Session.SkipNightAction();
         }
 
+        public bool SkipDay()
+        {
+            return Session != null && Session.SkipDay();
+        }
+
         public bool Vote(long targetId)
         {
             return Session != null && Session.Vote(targetId);
+        }
+
+        /// <summary>투표. targetId 0 = 기권(표를 거둔다), confirm = 투표 완료(지금 상태로 고정). 보냈으면 true.</summary>
+        public bool Vote(long targetId, bool confirm)
+        {
+            return Session != null && Session.Vote(targetId, confirm);
         }
 
         /// <summary>개발용: 가짜 서버의 남은 시간을 건너뛴다. 인스펙터 ⋮ 메뉴에서도 부를 수 있다.</summary>

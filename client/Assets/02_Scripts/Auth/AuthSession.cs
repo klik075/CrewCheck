@@ -64,6 +64,12 @@ public static class AuthSession
         SetSession(memberId, 0, username, null, accessToken);
     }
 
+    /// <summary>닉네임 변경 성공 시 호출 (세션의 닉네임만 갱신)</summary>
+    public static void SetNickname(string nickname)
+    {
+        Nickname = nickname;
+    }
+
     /// <summary>로그아웃 / 토큰 만료 시 호출</summary>
     public static void Clear()
     {

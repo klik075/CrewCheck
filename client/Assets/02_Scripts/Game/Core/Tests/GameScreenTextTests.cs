@@ -29,7 +29,7 @@ namespace WhoisntCitizen.Game.Tests
         {
             Assert.AreEqual("2일차 밤이 되었습니다.", GameScreenText.PhaseAnnouncement(new GameEvent { Phase = GamePhases.Night, Day = 2 }));
             Assert.AreEqual("1일차 낮이 되었습니다. 토론을 시작하세요.", GameScreenText.PhaseAnnouncement(new GameEvent { Phase = GamePhases.Day, Day = 1 }));
-            Assert.AreEqual("투표 시간입니다. 하단 [+] 버튼으로 투표하세요.", GameScreenText.PhaseAnnouncement(new GameEvent { Phase = GamePhases.Vote, Day = 1 }));
+            Assert.AreEqual("투표 시간입니다. 처형할 플레이어의 카드를 뽑고 [투표 완료]를 누르세요. 카드를 뽑지 않으면 기권(넘기기)으로 처리됩니다.", GameScreenText.PhaseAnnouncement(new GameEvent { Phase = GamePhases.Vote, Day = 1 }));
             Assert.AreEqual(string.Empty, GameScreenText.PhaseAnnouncement(new GameEvent { Phase = GamePhases.NightResult, Day = 1 }));
             Assert.AreEqual(string.Empty, GameScreenText.PhaseAnnouncement(new GameEvent { Phase = GamePhases.Execution, Day = 1 }));
         }

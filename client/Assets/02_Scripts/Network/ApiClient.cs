@@ -83,6 +83,24 @@ namespace WhoisntCitizen.Network
             Run(UnityWebRequest.kHttpVerbPOST, path, body, requireAuth, onDone);
         }
 
+        /// <summary>PUT 요청. 값을 "정하는" 요청용. 응답 본문은 파싱하지 않는다. (예: 준비 상태 → 204 No Content)</summary>
+        public static void Put(string path, object body, Action<ApiResult> onDone, bool requireAuth = true)
+        {
+            Run(UnityWebRequest.kHttpVerbPUT, path, body, requireAuth, onDone);
+        }
+
+        /// <summary>PATCH 요청. 값을 "일부 수정"하는 요청용. 응답 본문은 파싱하지 않는다. (예: 닉네임 변경)</summary>
+        public static void Patch(string path, object body, Action<ApiResult> onDone, bool requireAuth = true)
+        {
+            Run("PATCH", path, body, requireAuth, onDone);
+        }
+
+        /// <summary>GET 요청. 본문을 파싱하지 않고 원문 그대로 돌려준다. (응답이 객체/배열 어느 쪽인지 호출한 쪽이 판단할 때)</summary>
+        public static void GetRaw(string path, Action<ApiResult> onDone, bool requireAuth = true)
+        {
+            Run(UnityWebRequest.kHttpVerbGET, path, null, requireAuth, onDone);
+        }
+
         /// <summary>DELETE 요청. (예: 방 나가기 → 204 No Content)</summary>
         public static void Delete(string path, Action<ApiResult> onDone, bool requireAuth = true)
         {
@@ -97,7 +115,7 @@ namespace WhoisntCitizen.Network
         /// 요청 하나를 보내는 코루틴. 호출한 쪽에서 StartCoroutine으로 실행한다.
         /// </summary>
         /// <param name="baseUrl">서버 주소 (보통 ApiConfig.BaseUrl)</param>
-        /// <param name="method">"GET" / "POST" / "DELETE" 등</param>
+        /// <param name="method">"GET" / "POST" / "PUT" / "DELETE" 등</param>
         /// <param name="path">"/api/v1/rooms" 처럼 / 로 시작하는 경로</param>
         /// <param name="body">JSON으로 보낼 객체. 본문이 없으면 null</param>
         /// <param name="needsAuth">true면 Authorization 헤더를 붙이고 401 시 로그아웃 처리</param>

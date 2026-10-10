@@ -8,7 +8,7 @@ namespace WhoisntCitizen.Chat
     /// 내 화면에만 보이는 안내 문장(로그인, 방 입장·퇴장, 입력 오류, 연결 상태 등)을
     /// 채팅창과 Unity 콘솔에 동시에 출력합니다.
     ///  - 서버에 저장되지 않으며 다른 플레이어에게는 보이지 않습니다. (방 전체 안내는 서버 시스템 메시지)
-    ///  - 채팅창이 없는 씬(로비 등)에서 보낸 안내는 보관해 두었다가 채팅창(ChatUIController)이 열리면 표시합니다.
+    ///  - 채팅창이 없는 씬(로비 등)에서 보낸 안내는 보관해 두었다가 채팅창(GameChatController)이 열리면 표시합니다.
     /// 사용: ChatNotice.Post("'{방 제목}' 방에 입장했습니다.");
     /// </summary>
     public static class ChatNotice

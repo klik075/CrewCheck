@@ -35,6 +35,8 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private Button refreshButton;       // Buttons/Button_Refresh
         [Tooltip("(선택) 로그아웃 버튼. 비워 두면 사용하지 않는다.")]
         [SerializeField] private Button logoutButton;
+        [Tooltip("(선택) 설정 버튼. 누르면 계정 연동(구글/카카오)이 있는 설정 팝업을 연다.")]
+        [SerializeField] private Button settingButton;
 
         [Header("Room List (RoomListArea)")]
         [SerializeField] private Transform roomListContent;  // Scroll View/Viewport/Content
@@ -52,6 +54,8 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private CreateRoomPopup createRoomPopup; // Popup/Popup_CreateRoom
         [Tooltip("비밀방 입장 시 비밀번호 입력 팝업. 비워 두면 비밀방에 들어갈 수 없다.")]
         [SerializeField] private RoomPasswordPopup roomPasswordPopup; // Popup/Popup_RoomPassword
+        [Tooltip("설정 팝업(계정 연동). 비워 두면 설정 버튼을 쓰지 않는다.")]
+        [SerializeField] private AccountLinkPopup accountLinkPopup; // Popup/Popup_Setting
 
         [Header("Status")]
         [SerializeField] private StatusMessageView statusMessage; // Canvas/StatusMessageText
@@ -82,6 +86,7 @@ namespace WhoisntCitizen.Lobby
             BindIfEmpty(createRoomButton, OnCreateRoomClicked);
             BindIfEmpty(refreshButton, OnRefreshClicked);
             BindIfEmpty(logoutButton, OnLogoutClicked);
+            BindIfEmpty(settingButton, OnSettingClicked);
             BindIfEmpty(searchButton, OnSearchClicked);
             BindIfEmpty(clearButton, OnClearSearchClicked);
 
@@ -114,6 +119,7 @@ namespace WhoisntCitizen.Lobby
             ShowUserInfo();
             if (createRoomPopup != null) createRoomPopup.Close(); // 씬에서 켜 둔 채 저장했어도 닫고 시작
             if (roomPasswordPopup != null) roomPasswordPopup.Close();
+            if (accountLinkPopup != null) accountLinkPopup.gameObject.SetActive(false);
             ClearRoomList();                                      // Content에 놓여 있던 샘플 RoomItem 제거
 
             // 4) 방 목록 불러오기 (이후에는 새로고침 버튼을 눌렀을 때만 갱신한다)
@@ -125,6 +131,7 @@ namespace WhoisntCitizen.Lobby
             if (createRoomButton != null) createRoomButton.onClick.RemoveListener(OnCreateRoomClicked);
             if (refreshButton != null) refreshButton.onClick.RemoveListener(OnRefreshClicked);
             if (logoutButton != null) logoutButton.onClick.RemoveListener(OnLogoutClicked);
+            if (settingButton != null) settingButton.onClick.RemoveListener(OnSettingClicked);
             if (searchButton != null) searchButton.onClick.RemoveListener(OnSearchClicked);
             if (clearButton != null) clearButton.onClick.RemoveListener(OnClearSearchClicked);
             if (searchInput != null) searchInput.onSubmit.RemoveListener(OnSearchSubmitted);
@@ -186,6 +193,13 @@ namespace WhoisntCitizen.Lobby
                 return;
             }
             RefreshRooms(silent: false);
+        }
+
+        // 설정 팝업(계정 연동) 열기
+        public void OnSettingClicked()
+        {
+            if (isJoining || SceneLoader.IsLoading || accountLinkPopup == null) return;
+            accountLinkPopup.Open();
         }
 
         // (선택) 로그아웃

@@ -13,11 +13,11 @@ using WhoisntCitizen.Lobby; // RoomSession: 로비에서 입장한 방
 namespace WhoisntCitizen.Chat
 {
     /// <summary>
-    /// GameScene 채팅: ChatScene(ChatUIController)의 서버 기능을 GameScene UI에 연결합니다.
+    /// GameScene 채팅: 서버 채팅 기능을 GameScene UI에 연결합니다.
     ///  - 화면: ChatLogView(채팅 기록) + BottomTabController(GameScene 하단 탭) 또는 ChatInputBar(Room 씬 입력 바)
     ///  - 서버: ChatApiClient (조회·전송·공지, JWT)
     ///
-    /// 기능 (ChatScene과 동일)
+    /// 기능
     ///  - 시작: 로비에서 들어온 방(RoomSession)으로 바로 채팅. 단독 실행 시 [개발용] 자동 로그인 → 방 참가(없으면 생성)
     ///  - pollInterval초마다 afterId 이후 새 메시지만 받아 기록 뒤에 붙이고, N회마다 전체 목록으로 동기화
     ///  - 서버 시스템 메시지(입장·퇴장, 게임 진행 안내, 공지) → [시스템] + Unity 콘솔 [Chat][시스템]
@@ -27,7 +27,7 @@ namespace WhoisntCitizen.Chat
     ///  - 오류는 채팅용 문장으로 바꿔 표시하고 콘솔에는 원문도 남김. 401이면 다시 로그인
     ///  - SendSystemMessage(): 공지 전송 (에디터 창 Tools > Chat > System Message Console)
     ///
-    /// 글꼴은 ChatLogView의 줄 프리팹(ChatLogLine) 것을 그대로 쓰고, 글자색은 ChatScene 설정을 씁니다.
+    /// 글꼴은 ChatLogView의 줄 프리팹(ChatLogLine) 것을 그대로 쓰고, 글자색은 아래 Style 설정을 씁니다.
     /// </summary>
     public class GameChatController : MonoBehaviour, IChatSystemSender
     {
@@ -59,7 +59,7 @@ namespace WhoisntCitizen.Chat
         public int fullSyncEveryPolls = 15;
         public float retryInterval = 3f;
 
-        [Header("Style (ChatScene과 같은 색)")]
+        [Header("Style")]
         public Color myNameColor = new Color(0.45f, 0.8f, 1f);
         public Color otherNameColor = new Color(1f, 0.85f, 0.4f);
         public Color errorColor = new Color(1f, 0.45f, 0.45f);

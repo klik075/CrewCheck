@@ -17,7 +17,7 @@ namespace WhoisntCitizen.Lobby
     ///   });
     ///
     /// Lobby 씬은 GetRooms / CreateRoom / JoinRoom / GetRoom 을 사용한다.
-    /// GetRoom / LeaveRoom / StartGame 은 Room 씬(대기실, RoomUIController)에서 사용한다.
+    /// GetRoom / LeaveRoom / SetReady / TransferHost / KickPlayer / StartGame 은 Room 씬(대기실, RoomUIController)에서 사용한다.
     /// </summary>
     public static class RoomApi
     {
@@ -86,6 +86,7 @@ namespace WhoisntCitizen.Lobby
         /// 방 입장. POST /api/v1/rooms/{roomId}/players
         /// 공개방/비밀방 모두 같은 API다. 비밀방이면 password를 body로 보내고, 공개방이면 body 없이 보낸다.
         /// 실패: 403 WRONG_ROOM_PASSWORD 비밀번호 없음/불일치 (errorCode로 확인, 횟수 제한 없음)
+        ///       403 KICKED_FROM_ROOM 방장에게 추방된 방 (다시 들어갈 수 없음)
         ///       409 게임 중 / 정원 초과 / 이미 참가 중, 400 존재하지 않는 방
         /// </summary>
         /// <param name="password">비밀방 비밀번호. 공개방이면 null</param>
@@ -118,9 +119,39 @@ namespace WhoisntCitizen.Lobby
         }
 
         /// <summary>
+        /// 준비 / 준비 취소 (방장 제외). PUT /api/v1/rooms/{roomId}/players/me/ready  body {"ready": true/false}
+        /// 성공 시 204, 본문 없음. 이미 같은 상태여도 성공한다.
+        /// 실패: 409 게임 중 / 참가 중이 아님 / 방장, 400 방 없음
+        /// </summary>
+        public static void SetReady(long roomId, bool ready, Action<ApiResult> onDone)
+        {
+            ApiClient.Put($"{RoomsPath}/{roomId}/players/me/ready", new SetReadyRequest { ready = ready }, onDone);
+        }
+
+        /// <summary>
+        /// 방장 위임 (방장만). PUT /api/v1/rooms/{roomId}/host  body {"userId": 5}
+        /// 성공 시 204, 본문 없음. 새 방장의 준비 상태는 해제되고, 나는 준비 안 한 일반 참가자가 된다.
+        /// 실패: 403 방장 아님, 409 게임 중 / 대상이 방에 없음, 400 자기 자신 / 방 없음
+        /// </summary>
+        public static void TransferHost(long roomId, long targetUserId, Action<ApiResult> onDone)
+        {
+            ApiClient.Put($"{RoomsPath}/{roomId}/host", new TransferHostRequest { userId = targetUserId }, onDone);
+        }
+
+        /// <summary>
+        /// 플레이어 추방 (방장만). DELETE /api/v1/rooms/{roomId}/players/{userId}
+        /// 성공 시 204, 본문 없음. 추방된 사람은 이 방에 다시 들어올 수 없다. (입장 시 403 KICKED_FROM_ROOM)
+        /// 실패: 403 방장 아님, 409 게임 중 / 대상이 방에 없음, 400 자기 자신 / 방 없음
+        /// </summary>
+        public static void KickPlayer(long roomId, long targetUserId, Action<ApiResult> onDone)
+        {
+            ApiClient.Delete($"{RoomsPath}/{roomId}/players/{targetUserId}", onDone);
+        }
+
+        /// <summary>
         /// 게임 시작 (방장만). POST /api/v1/rooms/{roomId}/games
         /// 성공하면 방이 IN_GAME이 되고 gameId를 돌려준다.
-        /// 실패: 409 방장 아님 / 이미 게임 중 / 4명 미만
+        /// 실패: 403 방장 아님, 409 이미 게임 중 / 4명 미만 / 준비 안 된 참가자 있음
         /// </summary>
         public static void StartGame(long roomId, Action<ApiResult<StartGameResponse>> onDone)
         {

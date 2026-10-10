@@ -4,8 +4,8 @@ namespace WhoisntCitizen.Chat
 {
     /// <summary>
     /// 시스템 메시지(공지)를 보낼 수 있는 채팅 컨트롤러.
-    /// 에디터 창(Tools > Chat > System Message Console)이 ChatScene(ChatUIController)과
-    /// GameScene(GameChatController) 어느 쪽이든 같은 방식으로 찾아 쓰기 위한 인터페이스입니다.
+    /// 에디터 창(Tools > Chat > System Message Console)이 GameScene(GameChatController) 등
+    /// 이 인터페이스를 구현한 채팅 컨트롤러를 같은 방식으로 찾아 쓰기 위한 인터페이스입니다.
     /// </summary>
     public interface IChatSystemSender
     {

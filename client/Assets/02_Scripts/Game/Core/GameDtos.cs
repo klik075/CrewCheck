@@ -77,6 +77,22 @@ namespace WhoisntCitizen.Game
         public List<long> contactedPirateIds = new List<long>(); // 이번 제출로 앵무새가 접선했을 때만 채워진다
     }
 
+    // ---------------------------------------------------------------- 낮 토론 넘기기 POST /day/skip
+
+    /// <summary>
+    /// 낮 토론 넘기기 접수 결과 (서버 DaySkipResponse). 살아 있는 전원이 넘겨 바로 투표로 넘어갔으면 phase가 VOTE.
+    /// skippedCount / requiredCount = 넘긴 생존자 수 / 살아 있는 플레이어 수. 이미 넘겼으면 그대로 다시 온다.
+    /// </summary>
+    [Serializable]
+    public class DaySkipResultDto
+    {
+        public bool accepted;
+        public string phase;
+        public long phaseVersion;
+        public long skippedCount;
+        public long requiredCount;
+    }
+
     // ---------------------------------------------------------------- 밤 결과 GET /night-result
 
     [Serializable]
@@ -121,6 +137,14 @@ namespace WhoisntCitizen.Game
     }
 
     // ---------------------------------------------------------------- 투표 POST /votes, 처형 결과 GET /execution-result
+
+    /// <summary>POST /votes 본문. targetId 0 = 기권(표를 거둔다), confirm = 투표 완료(지금 상태로 고정).</summary>
+    [Serializable]
+    public class VoteRequestDto
+    {
+        public long targetId;
+        public bool confirm;
+    }
 
     [Serializable]
     public class VoteResultDto

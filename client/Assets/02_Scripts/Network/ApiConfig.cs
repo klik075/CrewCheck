@@ -7,7 +7,7 @@ namespace WhoisntCitizen.Network
     public static class ApiConfig
     {
         /// <summary>기본 서버 주소 (로컬 서버, 포트 8080). 상수라 [SerializeField] 기본값으로도 쓸 수 있다.</summary>
-        public const string DefaultBaseUrl = "http://3.38.117.166:8080";
+        public const string DefaultBaseUrl = "http://localhost:8080";
 
         /// <summary>실제로 요청을 보낼 서버 주소 (끝에 / 없이). 배포 서버로 바꿀 때 이 값을 바꾼다.</summary>
         public static string BaseUrl = DefaultBaseUrl;

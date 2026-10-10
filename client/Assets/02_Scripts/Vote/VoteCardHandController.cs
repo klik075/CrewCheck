@@ -16,12 +16,16 @@ namespace WhoisntCitizen.Vote
     ///  - 마우스   : 카드에 올리면 카드가 살짝 위로 올라간다. (VoteCardView)
     ///  - 클릭     : 그 카드가 카드패에서 위로 빠져나와 카드패 위에 단독으로 놓인다 → VoteRequested(playerId)
     ///  - 재투표   : 뽑아 둔 카드가 있을 때 카드패의 다른 카드를 누르면, 뽑아 둔 카드가 카드패로 돌아가고 이어서 누른 카드가 뽑힌다.
+    ///  - 넘기기   : 뽑아 둔 카드를 다시 누르면 카드패로 돌아간다 → VoteRequested(0). 아무 카드도 뽑지 않은 상태 = 기권(넘기기).
+    ///               (별도 기권 버튼 없음. 이 상태로 시간이 끝나거나 투표 완료를 누르면 기권으로 처리된다)
+    ///  - 투표 완료 : 투표 중에는 오른쪽 하단에 [투표 완료] 버튼이 뜬다. 누르면 지금 상태(뽑은 카드 또는 기권)로 고정되고
+    ///               → VoteConfirmed(playerId, 기권이면 0), 카드패는 아래로 내려간다. 뽑아 둔 카드는 투표 시간이 끝날 때까지 남는다.
     ///  - Hide    : (투표 여부와 관계없이) 투표 시간이 끝나면 카드패는 아래로 내려가고, 뽑아 둔 카드는 점점 투명해지며 사라진다.
     ///
     /// 화면 구성은 코드로 만든다(프리팹·씬 수정 불필요). 이 오브젝트는 캔버스 아래 전체 화면 크기로 두면 된다.
     /// 자체 Canvas(overrideSorting)로 다른 UI 위에 그린다. 카드 밖은 클릭을 막지 않으므로 채팅 기록 등은 그대로 쓸 수 있다.
-    /// 서버 통신은 하지 않는다. VoteRequested를 받은 쪽(GameScreen)이 POST /votes를 보내고,
-    /// 서버가 거절하면 SetDrawnSilently(서버가 가진 내 표)로 화면을 되돌린다.
+    /// 서버 통신은 하지 않는다. VoteRequested·VoteConfirmed를 받은 쪽(GameScreen)이 POST /votes를 보내고,
+    /// 서버가 거절하면 SetDrawnSilently(서버가 가진 내 표)·Unlock으로 화면을 되돌린다.
     /// </summary>
     [RequireComponent(typeof(RectTransform))]
     public sealed class VoteCardHandController : MonoBehaviour
@@ -59,14 +63,34 @@ namespace WhoisntCitizen.Vote
         [SerializeField] private float drawnFadeDuration = 0.9f;
 
         [Header("안내 문구")]
-        [SerializeField] private string pickHint = "처형할 플레이어의 카드를 뽑으세요";
-        [SerializeField] private string votedHintFormat = "{0}님에게 투표했습니다 · 다른 카드를 누르면 바꿀 수 있어요";
+        [SerializeField] private string pickHint = "처형할 플레이어의 카드를 뽑으세요 · 뽑지 않으면 기권";
+        [SerializeField] private string votedHintFormat = "{0}님 선택 · 다시 누르면 취소(기권)";
+        [SerializeField] private string confirmedFormat = "{0}님에게 투표 완료";
+        [SerializeField] private string confirmedAbstainText = "기권으로 투표 완료";
 
-        /// <summary>카드를 뽑았다(투표). 인자는 대상 playerId.</summary>
+        [Header("투표 완료 버튼 (오른쪽 하단, 카드패 바로 위)")]
+        [SerializeField] private string confirmLabel = "투표 완료";
+        [SerializeField] private Vector2 confirmButtonSize = new Vector2(240f, 92f);
+        [SerializeField] private float confirmRightMargin = 28f;
+        [Tooltip("카드패(안내 문구 포함) 윗변에서 버튼 아랫변까지 간격")]
+        [SerializeField] private float confirmGap = 8f;
+        [SerializeField] private Color confirmColor = new Color(0.95f, 0.76f, 0.30f, 1f);
+        [SerializeField] private Color confirmTextColor = new Color(0.10f, 0.08f, 0.04f, 1f);
+
+        /// <summary>
+        /// 선택이 바뀌었다(임시 선택). 인자는 뽑은 카드의 playerId, 뽑은 카드를 다시 눌러 카드패로 돌려보냈으면 0(기권).
+        /// 시간이 끝나면 마지막 선택이 그대로 집계된다(0이면 기권).
+        /// </summary>
         public event Action<long> VoteRequested;
 
-        /// <summary>카드패가 화면에 올라와 있는지 (올라오는 중 포함, 내려가는 중 제외).</summary>
+        /// <summary>[투표 완료]를 눌렀다. 인자는 고정된 대상 playerId, 아무 카드도 뽑지 않았으면 0(기권).</summary>
+        public event Action<long> VoteConfirmed;
+
+        /// <summary>카드패가 화면에 올라와 있는지 (올라오는 중 포함, 내려가는 중 제외). 투표 완료로 카드패만 내려간 동안도 true.</summary>
         public bool IsShown { get; private set; }
+
+        /// <summary>[투표 완료]를 눌러 지금 상태가 고정되었는지.</summary>
+        public bool IsLocked { get; private set; }
 
         /// <summary>뽑아 둔 카드의 playerId. 없으면 0.</summary>
         public long DrawnPlayerId
@@ -82,6 +106,10 @@ namespace WhoisntCitizen.Vote
         private RectTransform handArea;   // 카드패 (아래에서 올라오고 내려간다)
         private RectTransform drawnLayer; // 뽑은 카드가 놓이는 층 (카드패 위에 그린다)
         private TextMeshProUGUI hintText;
+        private RectTransform confirmButtonRt; // 카드패(handArea) 안에 있어 카드패와 함께 오르내린다
+        private Button confirmButton;
+        private TextMeshProUGUI confirmText;
+        private TextMeshProUGUI lockedText;     // 투표 완료 뒤 카드패가 내려간 자리에 남는 안내
         private Canvas canvas;
         private bool built;
 
@@ -119,6 +147,7 @@ namespace WhoisntCitizen.Vote
             {
                 drawn.SetTarget(DrawnSlot(baseY), 0f, drawnScale);
             }
+            lockedText.rectTransform.anchoredPosition = new Vector2(0f, baseY + contentHeight + 4f);
         }
 
         // ================================================================ 설정
@@ -135,6 +164,14 @@ namespace WhoisntCitizen.Vote
             {
                 hintText.font = value;
             }
+            if (confirmText != null)
+            {
+                confirmText.font = value;
+            }
+            if (lockedText != null)
+            {
+                lockedText.font = value;
+            }
         }
 
         /// <summary>카드패를 이 RectTransform의 윗변 위에 놓는다. (하단 시트를 넘기면 탭 바를 가리지 않고, 시트가 올라가면 따라 올라간다)</summary>
@@ -148,8 +185,9 @@ namespace WhoisntCitizen.Vote
         /// <summary>
         /// 투표 시작: 카드패를 새로 만들어 아래에서 올린다.
         /// targets = 투표할 수 있는 플레이어(살아 있는 다른 플레이어). preDrawnId가 0이 아니면 그 카드를 뽑아 둔 상태로 시작한다(재접속 등).
+        /// preConfirmed면 이미 투표 완료한 상태로 시작한다(카드패는 올리지 않고 뽑은 카드·완료 안내만 보인다. 이벤트 없음).
         /// </summary>
-        public void Show(IList<PlayerView> targets, Func<long, Sprite> portraitResolver, long preDrawnId)
+        public void Show(IList<PlayerView> targets, Func<long, Sprite> portraitResolver, long preDrawnId, bool preConfirmed = false)
         {
             EnsureBuilt();
             StopRoutines();
@@ -173,8 +211,11 @@ namespace WhoisntCitizen.Vote
             }
 
             Relayout(true);
+            IsLocked = false;
             interactable = true;
             SetCardsInteractable(true);
+            SetConfirmVisible(true);
+            SetLockedText(null);
             IsShown = true;
             UpdateHint();
 
@@ -190,6 +231,10 @@ namespace WhoisntCitizen.Vote
                     Draw(card);
                 }
             }
+            if (preConfirmed)
+            {
+                Lock(false);
+            }
         }
 
         /// <summary>투표 종료: 카드패는 아래로 내려가고, 뽑아 둔 카드는 점점 투명해지며 사라진다.</summary>
@@ -200,8 +245,10 @@ namespace WhoisntCitizen.Vote
                 return;
             }
             IsShown = false;
+            IsLocked = false;
             interactable = false;
             SetCardsInteractable(false);
+            SetConfirmInteractable(false);
             StopRoutines();
             slideRoutine = StartCoroutine(HideRoutine());
         }
@@ -214,10 +261,72 @@ namespace WhoisntCitizen.Vote
                 return;
             }
             IsShown = false;
+            IsLocked = false;
             interactable = false;
             StopRoutines();
             ClearCards();
+            SetConfirmVisible(false);
+            SetLockedText(null);
             slideOffset = HiddenOffset();
+        }
+
+        /// <summary>
+        /// [투표 완료]: 지금 상태(뽑은 카드, 없으면 기권)로 고정하고 카드패를 내린다 → VoteConfirmed.
+        /// 버튼이 부르며, 테스트 등에서 직접 불러도 된다.
+        /// </summary>
+        public void Confirm()
+        {
+            Lock(true);
+        }
+
+        private void Lock(bool notify)
+        {
+            if (!IsShown || IsLocked)
+            {
+                return;
+            }
+            if (swapRoutine != null)
+            {
+                // 재투표 연출 도중: 앞 카드는 이미 돌아갔고 다음 카드는 아직 안 뽑혔다 → 화면에 보이는 그대로(기권) 고정한다
+                StopCoroutine(swapRoutine);
+                swapRoutine = null;
+                busy = false;
+            }
+            IsLocked = true;
+            interactable = false;
+            SetCardsInteractable(false);
+            if (drawn != null)
+            {
+                drawn.SetInteractable(false);
+            }
+            SetConfirmInteractable(false);
+            long target = DrawnPlayerId;
+            SetLockedText(drawn != null ? string.Format(confirmedFormat, drawn.Nickname) : confirmedAbstainText);
+            SlideTo(HiddenOffset(), hideDuration, EaseInBack); // 카드패(버튼 포함)만 내려간다. 뽑은 카드는 그 자리에 남는다
+            if (notify)
+            {
+                VoteConfirmed?.Invoke(target);
+            }
+        }
+
+        /// <summary>투표 완료를 되돌린다 (서버가 거절했거나, 고정한 표의 대상이 나가 서버가 그 표를 지웠을 때). 카드패가 다시 올라온다.</summary>
+        public void Unlock()
+        {
+            if (!IsShown || !IsLocked)
+            {
+                return;
+            }
+            IsLocked = false;
+            interactable = true;
+            SetCardsInteractable(true);
+            if (drawn != null)
+            {
+                drawn.SetInteractable(true);
+            }
+            SetConfirmInteractable(true);
+            SetLockedText(null);
+            UpdateHint();
+            SlideTo(0f, showDuration, EaseOutBack);
         }
 
         /// <summary>
@@ -289,13 +398,33 @@ namespace WhoisntCitizen.Vote
                 Draw(card);
             }
             UpdateHint();
+            if (IsLocked)
+            {
+                SetLockedText(drawn != null ? string.Format(confirmedFormat, drawn.Nickname) : confirmedAbstainText);
+            }
         }
 
         // ================================================================ 입력
 
         private void OnCardClicked(VoteCardView card)
         {
-            if (!interactable || busy || card.IsDrawn || !handCards.Contains(card))
+            if (!interactable || busy || IsLocked)
+            {
+                return;
+            }
+            if (card.IsDrawn)
+            {
+                // 뽑아 둔 카드를 다시 누름 → 카드패로 돌려보낸다. 아무 카드도 없으면 기권(넘기기)
+                if (card != drawn)
+                {
+                    return;
+                }
+                ReturnToHand(card);
+                UpdateHint();
+                VoteRequested?.Invoke(0);
+                return;
+            }
+            if (!handCards.Contains(card))
             {
                 return;
             }
@@ -335,7 +464,7 @@ namespace WhoisntCitizen.Vote
             }
             card.Rect.SetParent(drawnLayer, true); // 화면상 위치는 그대로 두고 층만 옮긴다 → 그 자리에서 위로 빠져나간다
             card.SetDrawn(true);
-            card.SetInteractable(false);
+            card.SetInteractable(interactable && !IsLocked); // 뽑은 카드를 다시 누르면 카드패로 돌아간다 (넘기기)
             card.FollowSpeed = 10f;
             card.SetTarget(DrawnSlot(BaseY()), 0f, drawnScale);
             drawn = card;
@@ -405,6 +534,10 @@ namespace WhoisntCitizen.Vote
             contentHeight = baseY + h * 0.5f + hoverLift;
             handArea.sizeDelta = new Vector2(root.rect.width, contentHeight);
             hintText.rectTransform.anchoredPosition = new Vector2(0f, contentHeight + 4f);
+            float hintHeight = hintText.preferredHeight > 0f ? hintText.preferredHeight : 40f;
+            confirmButtonRt.anchoredPosition = new Vector2(
+                root.rect.width * 0.5f - confirmRightMargin - confirmButtonSize.x * 0.5f,
+                contentHeight + 4f + hintHeight + confirmGap);
 
             for (int i = 0; i < n; i++)
             {
@@ -432,6 +565,10 @@ namespace WhoisntCitizen.Vote
             for (int i = 0; i < handCards.Count; i++)
             {
                 handCards[i].Rect.SetSiblingIndex(i + 1); // 0번은 안내 문구
+            }
+            if (confirmButtonRt != null)
+            {
+                confirmButtonRt.SetAsLastSibling(); // 버튼이 카드에 가려지지 않게
             }
             if (hovered != null && handCards.Contains(hovered))
             {
@@ -478,8 +615,21 @@ namespace WhoisntCitizen.Vote
             slideRoutine = null;
         }
 
+        private void SlideTo(float to, float duration, Func<float, float> ease)
+        {
+            if (slideRoutine != null)
+            {
+                StopCoroutine(slideRoutine);
+            }
+            slideRoutine = StartCoroutine(Slide(slideOffset, to, duration, ease));
+        }
+
         private IEnumerator HideRoutine()
         {
+            if (lockedText.gameObject.activeSelf)
+            {
+                StartCoroutine(FadeLockedText(drawnFadeDuration));
+            }
             VoteCardView fading = drawn;
             drawn = null;
             if (fading != null)
@@ -490,6 +640,20 @@ namespace WhoisntCitizen.Vote
             }
             yield return Slide(slideOffset, HiddenOffset(), hideDuration, EaseInBack);
             ClearCards(false); // 뽑은 카드는 아직 흐려지는 중이다. 다 흐려지면 FadeAndDestroy가 지운다
+            SetConfirmVisible(false);
+        }
+
+        private IEnumerator FadeLockedText(float duration)
+        {
+            float start = lockedText.alpha;
+            float t = 0f;
+            while (t < duration)
+            {
+                t += Time.unscaledDeltaTime;
+                lockedText.alpha = Mathf.Lerp(start, 0f, Mathf.Clamp01(t / duration));
+                yield return null;
+            }
+            SetLockedText(null);
         }
 
         /// <param name="atDrawnSlot">뽑은 카드면 true: 아직 날아가는 중이었어도 뽑은 카드 자리에서 흐려진다.</param>
@@ -586,13 +750,104 @@ namespace WhoisntCitizen.Vote
             hintText.raycastTarget = false;
             hintText.text = string.Empty;
 
+            // [투표 완료] 버튼: 카드패 안 오른쪽, 카드패 바로 위. 카드패와 함께 오르내린다
+            confirmButtonRt = NewRect("ConfirmButton", handArea);
+            confirmButtonRt.anchorMin = confirmButtonRt.anchorMax = new Vector2(0.5f, 0f);
+            confirmButtonRt.pivot = new Vector2(0.5f, 0f);
+            confirmButtonRt.sizeDelta = confirmButtonSize;
+            var confirmImage = confirmButtonRt.gameObject.AddComponent<Image>();
+            confirmImage.color = Color.white; // 색은 Button의 colors로 칠한다
+            confirmImage.raycastTarget = true;
+            confirmButton = confirmButtonRt.gameObject.AddComponent<Button>();
+            confirmButton.targetGraphic = confirmImage;
+            confirmButton.navigation = new Navigation { mode = Navigation.Mode.None };
+            ColorBlock colors = confirmButton.colors;
+            colors.normalColor = confirmColor;
+            colors.highlightedColor = Color.Lerp(confirmColor, Color.white, 0.25f);
+            colors.pressedColor = Color.Lerp(confirmColor, Color.black, 0.2f);
+            colors.selectedColor = confirmColor;
+            colors.disabledColor = new Color(confirmColor.r * 0.5f, confirmColor.g * 0.5f, confirmColor.b * 0.5f, 0.6f);
+            confirmButton.colors = colors;
+            confirmButton.onClick.AddListener(Confirm);
+            var confirmOutline = confirmButtonRt.gameObject.AddComponent<Outline>();
+            confirmOutline.effectColor = new Color(0f, 0f, 0f, 0.45f);
+            confirmOutline.effectDistance = new Vector2(2f, -2f);
+
+            var confirmLabelRt = NewRect("Label", confirmButtonRt);
+            confirmLabelRt.anchorMin = Vector2.zero;
+            confirmLabelRt.anchorMax = Vector2.one;
+            confirmLabelRt.offsetMin = Vector2.zero;
+            confirmLabelRt.offsetMax = Vector2.zero;
+            confirmText = confirmLabelRt.gameObject.AddComponent<TextMeshProUGUI>();
+            if (font != null)
+            {
+                confirmText.font = font;
+            }
+            confirmText.alignment = TextAlignmentOptions.Center;
+            confirmText.fontSize = 34f;
+            confirmText.fontStyle = FontStyles.Bold;
+            confirmText.color = confirmTextColor;
+            confirmText.richText = false;
+            confirmText.raycastTarget = false;
+            confirmText.text = confirmLabel;
+            confirmButtonRt.gameObject.SetActive(false);
+
             drawnLayer = NewRect("Drawn", root);
             drawnLayer.anchorMin = Vector2.zero;
             drawnLayer.anchorMax = Vector2.one;
             drawnLayer.offsetMin = Vector2.zero;
             drawnLayer.offsetMax = Vector2.zero;
 
+            // 투표 완료 뒤 안내 (카드패가 내려간 자리, 뽑은 카드 아래)
+            var lockedRt = NewRect("LockedHint", root);
+            lockedRt.anchorMin = lockedRt.anchorMax = new Vector2(0.5f, 0f);
+            lockedRt.pivot = new Vector2(0.5f, 0f);
+            lockedRt.sizeDelta = new Vector2(1000f, 50f);
+            lockedText = lockedRt.gameObject.AddComponent<TextMeshProUGUI>();
+            if (font != null)
+            {
+                lockedText.font = font;
+            }
+            lockedText.alignment = TextAlignmentOptions.Center;
+            lockedText.fontSize = 32f;
+            lockedText.color = new Color(1f, 0.92f, 0.7f, 1f);
+            lockedText.richText = false;
+            lockedText.raycastTarget = false;
+            lockedText.text = string.Empty;
+            lockedRt.gameObject.SetActive(false);
+
             slideOffset = -4000f;
+        }
+
+        private void SetConfirmVisible(bool visible)
+        {
+            if (confirmButtonRt == null)
+            {
+                return;
+            }
+            confirmButtonRt.gameObject.SetActive(visible);
+            SetConfirmInteractable(visible);
+        }
+
+        private void SetConfirmInteractable(bool value)
+        {
+            if (confirmButton != null)
+            {
+                confirmButton.interactable = value;
+            }
+        }
+
+        /// <summary>투표 완료 안내. null이면 숨긴다.</summary>
+        private void SetLockedText(string text)
+        {
+            if (lockedText == null)
+            {
+                return;
+            }
+            bool show = !string.IsNullOrEmpty(text);
+            lockedText.text = show ? text : string.Empty;
+            lockedText.alpha = 1f;
+            lockedText.gameObject.SetActive(show);
         }
 
         private void UpdateHint()
@@ -659,7 +914,7 @@ namespace WhoisntCitizen.Vote
             for (int i = handArea.childCount - 1; i >= 0; i--)
             {
                 Transform child = handArea.GetChild(i);
-                if (child != hintText.transform)
+                if (child != hintText.transform && child != confirmButtonRt)
                 {
                     Destroy(child.gameObject);
                 }

@@ -12,11 +12,13 @@ namespace WhoisntCitizen.Game
     /// <summary>
     /// 게임 화면의 단일 진입점(IGameView). GameSession이 알려 주는 것을 각 패널에 나눠 준다.
     /// - feat/vote(klik075)의 부품: ChatLogView(시스템 메시지), BottomTabController(하단 시트), VotePanelController(투표)
-    /// - G의 부품: NightActionPanel(밤 능력), RoleCardView(직업 카드), GameResultPanel(결과 + "대기실로")
+    /// - G의 부품: NightActionPanel(밤 능력), DaySkipPanel(낮 토론 넘기기), RoleCardView(직업 카드), GameResultPanel(결과 + "대기실로")
     /// 패널끼리는 서로 모르고, 입력(투표·밤 능력·대기실로)은 모두 여기서 GameController·WaitingRoomController로 넘긴다.
     /// GameController의 gameView 칸에 이 컴포넌트를 넣는다.
-    /// 하단 시트: 밤에는 [+] 서랍에 NightActionPanel을, 그 밖에는 VotePanel을 보여 준다(둘 다 Drawer 안에 나란히 둔다).
-    /// 투표: VOTE 페이즈가 되면 부채꼴 카드패(VoteCardHandController)가 아래에서 올라온다. 카드를 뽑으면 투표한다.
+    /// 하단 시트: 밤에는 [+] 서랍에 NightActionPanel을, 낮에는 DaySkipPanel을, 그 밖에는 VotePanel을 보여 준다(모두 Drawer 안에 나란히 둔다).
+    /// 투표: VOTE 페이즈가 되면 부채꼴 카드패(VoteCardHandController)가 아래에서 올라온다. 카드를 뽑으면 임시 투표(confirm=false),
+    ///       뽑은 카드를 다시 눌러 되돌리면 표를 거둔다(기권, targetId 0). 오른쪽 하단 [투표 완료]를 누르면 지금 상태로 고정(confirm=true)하고
+    ///       카드패가 내려간다. 아무 카드도 뽑지 않은 채 시간이 끝나면 서버가 기권으로 처리한다(별도 기권 버튼 없음).
     ///       기존 VotePanel 투표 처리는 [카드패 투표로 교체 - 주석 처리] 표시로 막아 두었다(패널은 보기 전용으로 남는다).
     // [공개 안내 수동 설정 - 주석 처리]
     // /// 채팅 기록: 공개 안내는 실제 서버면 서버 채팅이 보내므로 AnnouncePublic일 때만 남긴다.
@@ -48,6 +50,7 @@ namespace WhoisntCitizen.Game
 
         [Header("G 부품")]
         [SerializeField] private NightActionPanel nightPanel;
+        [SerializeField] private DaySkipPanel dayPanel;
         [SerializeField] private RoleCardView roleCard;
         [SerializeField] private GameResultPanel resultPanel;
 
@@ -75,10 +78,17 @@ namespace WhoisntCitizen.Game
         private string announcedRole;
         private string announcedTeammates;
         private bool nightDrawerOpened;
+        private bool dayDrawerOpened;
         private int shownSeconds = -1;
         private bool shownWaiting;
         private bool deadVoteNoticeShown;
         private readonly List<PlayerView> voteTargets = new List<PlayerView>();
+
+        // 투표 전송 대기: 앞 요청(밤 행동·투표)이 처리 중이면 보낼 수 없으므로, 마지막으로 원한 상태만 남겨 두었다가 보낸다
+        private bool hasPendingVote;
+        private long pendingVoteTarget;   // 0 = 기권
+        private bool pendingVoteConfirm;
+        private bool voteConfirmAnnounced; // 이번 투표의 "투표 완료"를 채팅에 알렸는지
 
         private GameSession Session
         {
@@ -151,6 +161,11 @@ namespace WhoisntCitizen.Game
                 nightPanel.Confirmed += OnNightConfirmed;
                 nightPanel.Skipped += OnNightSkipped;
             }
+            if (dayPanel != null)
+            {
+                dayPanel.PortraitResolver = PortraitOf;
+                dayPanel.Skipped += OnDaySkipped;
+            }
             if (resultPanel != null)
             {
                 resultPanel.BackRequested += OnBackRequested;
@@ -176,11 +191,16 @@ namespace WhoisntCitizen.Game
             if (voteCardHand != null)
             {
                 voteCardHand.VoteRequested -= OnCardVoteRequested;
+                voteCardHand.VoteConfirmed -= OnCardVoteConfirmed;
             }
             if (nightPanel != null)
             {
                 nightPanel.Confirmed -= OnNightConfirmed;
                 nightPanel.Skipped -= OnNightSkipped;
+            }
+            if (dayPanel != null)
+            {
+                dayPanel.Skipped -= OnDaySkipped;
             }
             if (resultPanel != null)
             {
@@ -194,6 +214,10 @@ namespace WhoisntCitizen.Game
 
         private void Update()
         {
+            if (hasPendingVote)
+            {
+                TrySendPendingVote(); // 앞 요청이 끝나면 보낸다
+            }
             GameSession session = Session;
             if (gameRoot != null && gameRoot.activeSelf != (session != null))
             {
@@ -227,6 +251,12 @@ namespace WhoisntCitizen.Game
             {
                 ResetScreen(); // 새 게임 (또는 재접속)
             }
+            if (currentPhase == GamePhases.Vote && phaseChanged.Phase != GamePhases.Vote)
+            {
+                AnnounceVoteTimeout(); // [투표 완료] 없이 시간이 끝났으면 결과(기권 등)를 알린다
+            }
+            ClearPendingVote(); // 페이즈가 바뀌면(새 투표 또는 투표 끝) 남은 전송은 버린다
+            voteConfirmAnnounced = false;
             currentPhase = phaseChanged.Phase;
             if (dayTable != null) dayTable.SetPhase(currentPhase);
             if (voteCards != null && currentPhase != GamePhases.Execution)
@@ -251,6 +281,14 @@ namespace WhoisntCitizen.Game
                     }
                     nightDrawerOpened = false;
                     TryOpenNightDrawer();
+                    break;
+                case GamePhases.Day:
+                    dayDrawerOpened = false;
+                    if (Session == null || !Session.CanSkipDay)
+                    {
+                        CloseDrawer(); // 사망자 등 넘길 수 없으면 예전처럼 서랍을 내린다
+                    }
+                    TryOpenDayDrawer();
                     break;
                 case GamePhases.Vote:
                     // [카드패 투표로 교체 - 주석 처리] 기존: 투표 패널 초기화 후 하단 서랍을 연다
@@ -302,6 +340,7 @@ namespace WhoisntCitizen.Game
             }
             RefreshPlayers(state);
             TryOpenNightDrawer();
+            TryOpenDayDrawer();
         }
 
         public void ShowNightResult(NightResultDto result)
@@ -359,15 +398,35 @@ namespace WhoisntCitizen.Game
             RefreshPanels();
         }
 
+        public void ShowDaySkipAccepted(DaySkipResultDto result)
+        {
+            // 실제 서버는 방 채팅에 "OO님이 토론을 넘겼습니다. (3/5)"를 보내므로, 서버 안내가 이 채팅창에 없을 때만 남긴다
+            if (AnnouncePublic)
+            {
+                AddSystem(GameScreenText.DaySkipAccepted(result));
+            }
+            RefreshPanels(); // 넘긴 인원은 패널 안내에 항상 보인다
+        }
+
         public void ShowVoteAccepted(VoteResultDto result)
         {
             GameSession session = Session;
-            if (session != null && session.MyVoteTarget != 0)
+            // [넘기기(기권) 기능 - 주석 처리] 기존: 카드를 뽑을 때마다(바로 확정) "OO님에게 투표했습니다"
+            // if (session != null && session.MyVoteTarget != 0)
+            // {
+            //     AddSystem(GameScreenText.VoteAccepted(session.MyVoteTarget, session.State));
+            // }
+            // 카드 선택은 임시 선택이라 채팅에 남기지 않는다(카드패 안내 문구로 보인다). [투표 완료]를 서버가 받으면 한 번 알린다
+            if (session != null && session.MyVoteConfirmed && !voteConfirmAnnounced)
             {
-                AddSystem(GameScreenText.VoteAccepted(session.MyVoteTarget, session.State));
+                voteConfirmAnnounced = true;
+                AddSystem(GameScreenText.VoteConfirmed(session.MyVoteTarget, session.State));
             }
-            SyncDrawnCardWithServer(); // 빠르게 바꿔 누른 경우 등, 화면의 뽑은 카드를 서버가 받은 표에 맞춘다
-            SyncTableVote();           // 받아 준 표: 내 앞에 카드를 내려놓고 대상 자리로 던진다
+            if (!hasPendingVote)
+            {
+                SyncDrawnCardWithServer(); // 빠르게 바꿔 누른 경우 등, 화면의 뽑은 카드를 서버가 받은 표에 맞춘다 (더 새 선택이 대기 중이면 그대로 둔다)
+            }
+            SyncTableVote(); // [투표 완료]를 서버가 받으면 내 앞에 카드를 내려놓고 대상 자리로 던진다
         }
 
         public void ShowError(string message)
@@ -378,9 +437,10 @@ namespace WhoisntCitizen.Game
                 chatLog.ScrollToLatest();
             }
             // 투표 중 오류(서버 거절·연결 실패)면 뽑은 카드를 서버가 실제로 가진 내 표로 되돌린다
-            if (currentPhase == GamePhases.Vote)
+            if (currentPhase == GamePhases.Vote && !hasPendingVote)
             {
                 SyncDrawnCardWithServer();
+                UnlockIfServerNotConfirmed(); // [투표 완료]가 거절됐으면 카드패를 다시 올린다
                 SyncTableVote();
             }
         }
@@ -411,14 +471,102 @@ namespace WhoisntCitizen.Game
         //     }
         // }
 
-        /// <summary>카드패에서 카드를 뽑음 → 서버로 투표. 보내지 못했으면(앞 요청 처리 중 등) 카드를 서버가 가진 표로 되돌린다.</summary>
+        // [넘기기(기권) 기능 - 주석 처리] 기존: 카드를 뽑으면 바로 투표 완료(confirm=true)로 보냈다
+        // /// <summary>카드패에서 카드를 뽑음 → 서버로 투표. 보내지 못했으면(앞 요청 처리 중 등) 카드를 서버가 가진 표로 되돌린다.</summary>
+        // private void OnCardVoteRequested(long targetId)
+        // {
+        //     bool sent = controller != null && controller.Vote(targetId);
+        //     if (!sent)
+        //     {
+        //         SyncDrawnCardWithServer();
+        //     }
+        // }
+
+        /// <summary>
+        /// 카드패에서 카드를 뽑거나(targetId) 뽑은 카드를 되돌림(0 = 기권) → 서버에 임시 선택으로 보낸다(confirm=false).
+        /// 시간이 끝나면 이 선택이 그대로 집계된다. 아무 카드도 없으면 기권.
+        /// </summary>
         private void OnCardVoteRequested(long targetId)
         {
-            bool sent = controller != null && controller.Vote(targetId);
+            QueueVote(targetId, false);
+        }
+
+        /// <summary>[투표 완료] → 지금 상태(뽑은 카드, 없으면 기권)로 고정해 보낸다(confirm=true). 카드패는 VoteCardHandController가 내린다.</summary>
+        private void OnCardVoteConfirmed(long targetId)
+        {
+            QueueVote(targetId, true);
+        }
+
+        private void QueueVote(long targetId, bool confirm)
+        {
+            hasPendingVote = true;
+            pendingVoteTarget = targetId;
+            pendingVoteConfirm = confirm; // 마지막으로 원한 상태만 보낸다 (완료 뒤에는 카드패가 잠겨 임시 선택이 오지 않는다)
+            TrySendPendingVote();
+        }
+
+        /// <summary>대기 중인 투표를 보낸다. 앞 요청이 처리 중이면 다음 프레임에 다시 시도한다.</summary>
+        private void TrySendPendingVote()
+        {
+            GameSession session = Session;
+            if (!hasPendingVote)
+            {
+                return;
+            }
+            if (session == null || controller == null || currentPhase != GamePhases.Vote)
+            {
+                ClearPendingVote();
+                return;
+            }
+            if (session.IsActionInFlight)
+            {
+                return; // 응답이 오면 Update에서 다시 보낸다
+            }
+            long target = pendingVoteTarget;
+            bool confirm = pendingVoteConfirm;
+            ClearPendingVote();
+            bool sent = controller.Vote(target, confirm);
             if (!sent)
             {
+                // 보낼 수 없는 상태(사망·종료 등): 화면을 서버가 가진 내 표로 되돌린다
                 SyncDrawnCardWithServer();
+                UnlockIfServerNotConfirmed();
             }
+        }
+
+        private void ClearPendingVote()
+        {
+            hasPendingVote = false;
+            pendingVoteTarget = 0;
+            pendingVoteConfirm = false;
+        }
+
+        /// <summary>카드패는 [투표 완료]로 잠겼는데 서버는 완료를 받지 않았으면(거절·대상 이탈로 표 삭제) 다시 고를 수 있게 푼다.</summary>
+        private void UnlockIfServerNotConfirmed()
+        {
+            GameSession session = Session;
+            if (voteCardHand == null || session == null || !voteCardHand.IsLocked || hasPendingVote || session.IsActionInFlight)
+            {
+                return;
+            }
+            if (!session.MyVoteConfirmed && currentPhase == GamePhases.Vote && session.CanVote)
+            {
+                voteCardHand.Unlock();
+                voteConfirmAnnounced = false;
+            }
+        }
+
+        /// <summary>투표 시간이 [투표 완료] 없이 끝났다: 마지막 선택이 집계되고, 고른 카드가 없으면 기권이다.</summary>
+        private void AnnounceVoteTimeout()
+        {
+            if (voteCardHand == null || !voteCardHand.IsShown || voteCardHand.IsLocked)
+            {
+                return; // 투표하지 않았거나(사망 등) 이미 완료했다
+            }
+            GameSession session = Session;
+            long drawnId = voteCardHand.DrawnPlayerId;
+            string nickname = drawnId != 0 && session != null ? GameStateQueries.NicknameOf(session.State, drawnId) : null;
+            AddSystem(GameScreenText.VoteTimedOut(nickname));
         }
 
         private void OnNightConfirmed(long targetId)
@@ -434,6 +582,14 @@ namespace WhoisntCitizen.Game
             if (controller != null)
             {
                 controller.SkipNightAction();
+            }
+        }
+
+        private void OnDaySkipped()
+        {
+            if (controller != null)
+            {
+                controller.SkipDay();
             }
         }
 
@@ -477,6 +633,8 @@ namespace WhoisntCitizen.Game
             }
             CloseDrawer();
             deadVoteNoticeShown = false;
+            ClearPendingVote();
+            voteConfirmAnnounced = false;
             if (voteCardHand != null)
             {
                 voteCardHand.HideImmediate();
@@ -524,6 +682,11 @@ namespace WhoisntCitizen.Game
                 if (voteCardHand != null && voteCardHand.IsShown)
                 {
                     voteCardHand.SyncPlayers(BuildVoteTargets(state, session.Me.playerId));
+                    // 투표 완료한 표의 대상이 나가면 서버가 그 표와 완료를 지운다 → 다시 고를 수 있게 카드패를 올린다
+                    if (voteConfirmAnnounced)
+                    {
+                        UnlockIfServerNotConfirmed();
+                    }
                 }
                 else
                 {
@@ -555,6 +718,7 @@ namespace WhoisntCitizen.Game
                 voteCardHand.SetBottomAnchor((RectTransform)bottomTab.transform);
             }
             voteCardHand.VoteRequested += OnCardVoteRequested;
+            voteCardHand.VoteConfirmed += OnCardVoteConfirmed;
         }
 
         /// <summary>VOTE 페이즈이고 내가 투표할 수 있으면 카드패를 올린다. 이미 올라와 있으면 아무것도 하지 않는다.</summary>
@@ -575,7 +739,7 @@ namespace WhoisntCitizen.Game
                 }
                 return;
             }
-            voteCardHand.Show(BuildVoteTargets(session.State, session.Me.playerId), PortraitOf, session.MyVoteTarget);
+            voteCardHand.Show(BuildVoteTargets(session.State, session.Me.playerId), PortraitOf, session.MyVoteTarget, session.MyVoteConfirmed);
         }
 
         private void HideVoteHand()
@@ -586,13 +750,14 @@ namespace WhoisntCitizen.Game
             }
         }
 
-        /// <summary>테이블 위 내 투표 카드를 서버가 받아 둔 내 표에 맞춘다. 같은 표면 아무것도 하지 않는다.</summary>
+        /// <summary>테이블 위 내 투표 카드를 서버가 받아 둔 내 표에 맞춘다. 같은 표면 아무것도 하지 않는다.
+        /// 카드패에서 고른 카드는 임시 선택이라, [투표 완료]를 서버가 받은 뒤에만 테이블에 낸다 (기권 완료는 카드 없음).</summary>
         private void SyncTableVote()
         {
             GameSession session = Session;
             if (voteCards != null && session != null && currentPhase == GamePhases.Vote)
             {
-                voteCards.ShowMyVote(MyId, session.MyVoteTarget);
+                voteCards.ShowMyVote(MyId, session.MyVoteConfirmed ? session.MyVoteTarget : 0);
             }
         }
 
@@ -600,7 +765,8 @@ namespace WhoisntCitizen.Game
         private void SyncDrawnCardWithServer()
         {
             GameSession session = Session;
-            if (voteCardHand != null && session != null)
+            // 보낸 투표의 응답을 기다리는 중이면 서버 값이 아직 옛 값이다 → 응답(ShowVoteAccepted·ShowError) 때 맞춘다
+            if (voteCardHand != null && session != null && !session.IsActionInFlight)
             {
                 voteCardHand.SetDrawnSilently(session.MyVoteTarget);
             }
@@ -631,6 +797,10 @@ namespace WhoisntCitizen.Game
             {
                 nightPanel.Refresh(session);
             }
+            if (dayPanel != null)
+            {
+                dayPanel.Refresh(session);
+            }
             if (roleCard != null && session.Me != null)
             {
                 roleCard.Show(session.Me, session.State);
@@ -646,6 +816,19 @@ namespace WhoisntCitizen.Game
                 return;
             }
             nightDrawerOpened = true;
+            OpenDrawer();
+            ApplyDrawerContent(BottomTabMode.Vote);
+        }
+
+        /// <summary>낮이 되면 살아 있는 사람에게 한 번 서랍을 열어 토론 넘기기 패널을 보여 준다. /me가 늦게 와도 받은 뒤에 연다.</summary>
+        private void TryOpenDayDrawer()
+        {
+            GameSession session = Session;
+            if (dayDrawerOpened || currentPhase != GamePhases.Day || session == null || !session.CanSkipDay)
+            {
+                return;
+            }
+            dayDrawerOpened = true;
             OpenDrawer();
             ApplyDrawerContent(BottomTabMode.Vote);
         }
@@ -672,7 +855,7 @@ namespace WhoisntCitizen.Game
         }
 
         /// <summary>
-        /// 서랍([+])이 열려 있으면 밤에는 NightActionPanel, 그 밖에는 VotePanel을 보여 준다.
+        /// 서랍([+])이 열려 있으면 밤에는 NightActionPanel, 낮에는 DaySkipPanel, 그 밖에는 VotePanel을 보여 준다.
         /// BottomTabController가 VotePanel을 켠 뒤(ModeChanged)에 불려서 밤이면 다시 바꿔 놓는다.
         /// </summary>
         private void ApplyDrawerContent(BottomTabMode mode)
@@ -682,13 +865,18 @@ namespace WhoisntCitizen.Game
                 return; // 내려가는 동안은 그대로 둔다. VotePanel은 다 내려간 뒤 BottomTabController가 끈다
             }
             bool night = mode == BottomTabMode.Vote && currentPhase == GamePhases.Night;
+            bool day = mode == BottomTabMode.Vote && currentPhase == GamePhases.Day && dayPanel != null;
             if (nightPanel != null)
             {
                 nightPanel.gameObject.SetActive(night);
             }
+            if (dayPanel != null)
+            {
+                dayPanel.gameObject.SetActive(day);
+            }
             if (votePanel != null && mode == BottomTabMode.Vote)
             {
-                votePanel.gameObject.SetActive(!night);
+                votePanel.gameObject.SetActive(!night && !day);
             }
         }
 
