@@ -5,6 +5,8 @@ import org.redisson.api.RedissonClient;
 import org.redisson.config.Config;
 import org.redisson.config.SingleServerConfig;
 
+import java.time.Duration;
+
 /**
  * Redisson 연결을 만드는 도우미. 용도별 Redis 그룹(게임, 로비 등)마다 이 메서드로 연결을 하나씩 만든다.
  *
@@ -24,12 +26,28 @@ public final class RedissonClients {
     private static final int CONNECTION_MINIMUM_IDLE = 2;
     private static final int CONNECTION_POOL_SIZE = 16;
 
+    /**
+     * 잠금 자동 연장(watchdog) 시간. 쥐는 시간을 정하지 않은 잠금은 이 시간으로 만료를 걸고 1/3마다 다시 늘린다.
+     * 서버가 죽어 연장이 멈추면 늦어도 이 시간 뒤 잠금이 풀린다. (Redisson 기본값과 같은 30초)
+     */
+    public static final Duration DEFAULT_LOCK_WATCHDOG_TIMEOUT = Duration.ofSeconds(30);
+
     private RedissonClients() {
     }
 
     /** Redis 한 대(single server)에 접속하는 Redisson 연결을 만든다. password가 비어 있으면 비밀번호 없이 접속한다. */
     public static RedissonClient create(String host, int port, int database, String password) {
+        return create(host, port, database, password, DEFAULT_LOCK_WATCHDOG_TIMEOUT);
+    }
+
+    /**
+     * 잠금 자동 연장 시간을 정해서 연결을 만든다.
+     * 테스트에서 "서버가 죽으면 잠금이 풀리는지"를 30초씩 기다리지 않고 확인할 때 짧게 준다.
+     */
+    public static RedissonClient create(String host, int port, int database, String password,
+                                        Duration lockWatchdogTimeout) {
         Config config = new Config();
+        config.setLockWatchdogTimeout(lockWatchdogTimeout.toMillis());
         SingleServerConfig server = config.useSingleServer()
                 .setAddress("redis://" + host + ":" + port)
                 .setDatabase(database)
