@@ -20,7 +20,7 @@ class ServerSettingsCheckTest {
     @Test
     void single에서_전부_redis로_덮어써도_섞이지_않았으니_경고가_없다() {
         assertThat(warnings("mafia.game.repository", "redis", "mafia.game.lock", "redis", "mafia.room.lock", "redis",
-                "mafia.game.timer", "redis"))
+                "mafia.game.timer", "redis", "mafia.game.activity", "redis"))
                 .isEmpty();
     }
 
@@ -41,18 +41,33 @@ class ServerSettingsCheckTest {
     }
 
     @Test
-    void multi에서_전부_redis여도_접속_기록은_아직_local이라고_경고한다() {
-        List<String> warnings = warnings("mafia.server.mode", "multi");
-
-        assertThat(warnings).containsExactly("multi 모드에 필요한 접속 기록(연결 끊김 판정)이 아직 서버 메모리(local)입니다. 서버는 1대만 띄우세요.");
+    void multi에서_전부_redis면_경고가_없다() {
+        // 3.5단계 전에는 접속 기록이 서버 메모리뿐이라 multi면 항상 "서버는 1대만" 경고를 냈다
+        assertThat(warnings("mafia.server.mode", "multi")).isEmpty();
     }
 
     @Test
     void multi에서_일부를_서버_메모리로_덮어쓰면_그_항목을_짚는다() {
         List<String> warnings = warnings("mafia.server.mode", "multi", "mafia.room.lock", "local");
 
-        assertThat(warnings).hasSize(2);
+        assertThat(warnings).hasSize(1);
         assertThat(warnings.get(0)).contains("multi 모드인데", "방 잠금=local").doesNotContain("게임 잠금");
+    }
+
+    @Test
+    void multi에서_접속_기록을_서버_메모리로_덮어쓰면_짚는다() {
+        List<String> warnings = warnings("mafia.server.mode", "multi", "mafia.game.activity", "local");
+
+        assertThat(warnings).hasSize(1);
+        assertThat(warnings.get(0)).contains("multi 모드인데", "접속 기록=local");
+    }
+
+    @Test
+    void single에서_접속_기록만_redis면_섞였다고_경고한다() {
+        List<String> warnings = warnings("mafia.game.activity", "redis");
+
+        assertThat(warnings).hasSize(1);
+        assertThat(warnings.get(0)).contains("접속 기록=redis", "게임 저장소=memory");
     }
 
     private static List<String> warnings(String... keyValues) {
