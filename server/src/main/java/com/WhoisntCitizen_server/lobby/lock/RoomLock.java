@@ -13,12 +13,18 @@ import java.util.function.Supplier;
  *    (방은 Redis에 있으므로 잠금 밖에서 읽은 Room은 이미 낡은 값일 수 있다)
  *  - 재진입이 된다. 잠금 안에서 같은 roomId로 다시 잠가도 막히지 않는다.
  *  - 잠금 순서는 "방 잠금 → 게임 잠금(GameLock)"만 허용한다. 게임 잠금 안에서 방 잠금을 잡지 않는다.
+ *  - 정해진 대기 시간 안에 잠금을 잡지 못하면 LockTimeoutException을 던진다. 이때 action은 실행되지 않는다.
+ *
+ * 모든 구현은 LockContractTest(테스트)가 정한 동작을 지켜야 한다.
  *
  * 구현: 지금은 서버 1대 기준인 LocalRoomLock. 서버를 여러 대로 늘리면 Redis 분산 락 구현으로 바꾼다.
  */
 public interface RoomLock {
 
-    /** roomId 잠금을 잡고 action을 실행한 뒤 결과를 돌려준다. */
+    /**
+     * roomId 잠금을 잡고 action을 실행한 뒤 결과를 돌려준다.
+     * @throws com.WhoisntCitizen_server.common.exception.LockTimeoutException 대기 시간 안에 잠금을 잡지 못했을 때
+     */
     <T> T withLock(Long roomId, Supplier<T> action);
 
     /** 반환값이 없는 작업용. */

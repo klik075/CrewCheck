@@ -11,10 +11,16 @@ import java.util.function.Supplier;
  *    (게임을 Redis에 두게 되면 잠금 밖에서 불러온 객체는 이미 낡은 값일 수 있다)
  *  - 재진입이 된다. 잠금 안에서 같은 gameId로 다시 잠가도 막히지 않는다.
  *  - 잠금 순서는 "방 잠금 → 게임 잠금"만 허용한다. 게임 잠금 안에서 방 잠금을 잡지 않는다.
+ *  - 정해진 대기 시간 안에 잠금을 잡지 못하면 LockTimeoutException을 던진다. 이때 action은 실행되지 않는다.
+ *
+ * 모든 구현은 LockContractTest(테스트)가 정한 동작을 지켜야 한다.
  */
 public interface GameLock {
 
-    /** gameId 잠금을 잡고 action을 실행한 뒤 결과를 돌려준다. */
+    /**
+     * gameId 잠금을 잡고 action을 실행한 뒤 결과를 돌려준다.
+     * @throws com.WhoisntCitizen_server.common.exception.LockTimeoutException 대기 시간 안에 잠금을 잡지 못했을 때
+     */
     <T> T withLock(String gameId, Supplier<T> action);
 
     /** 반환값이 없는 작업용. */
