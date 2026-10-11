@@ -9,6 +9,7 @@ import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.SetReadyRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.TransferHostRequestDto;
 import com.WhoisntCitizen_server.lobby.service.RoomService;
+import com.WhoisntCitizen_server.user.service.CurrentUserResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,9 +20,19 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
+ * 로비(방) API.
  * 모든 요청은 헤더에 Authorization: Bearer {로그인 때 받은 accessToken} 이 필요하다.
- * 요청 body가 아니라 토큰의 sub(memberId)로 로그인 유저를 식별하고,
- * 룸 안에서는 그 memberId로 찾은 User(프로필)의 id를 userId로 사용한다.
+ *
+ * "요청한 사람" 식별
+ *   - 요청 body가 아니라 토큰으로 식별한다. (다른 사람인 척 요청할 수 없도록)
+ *   - 토큰의 sub는 memberId(로그인 계정 id)이고, 방에서는 userId(User.id, 프로필 id)를 쓴다.
+ *   - 변환은 CurrentUserResolver.userId(jwt)가 맡고, 서비스(RoomService)에는 userId만 넘긴다.
+ *     게임·투표·밤 컨트롤러(GameController, VoteController, NightController)와 같은 방식이다.
+ *   - 이렇게 "토큰 → 나" 변환을 한 곳에 모아 두면, 변환 방식이 바뀌어도(캐시, 토큰에 userId 넣기 등)
+ *     Resolver만 고치면 되고, 로비 서비스는 계정(Member)을 전혀 몰라도 된다.
+ *
+ * 방 목록·방 단건·참가자 목록 조회는 "누가" 요청했는지 쓰지 않으므로 jwt 파라미터를 받지 않는다.
+ * (토큰 자체는 SecurityConfig에서 똑같이 검사한다)
  */
 @RestController
 @RequiredArgsConstructor
@@ -29,6 +40,8 @@ import java.util.List;
 public class RoomController {
 
     private final RoomService roomService;
+    // 토큰(sub = memberId) → userId 변환. 이 컨트롤러에서 "요청한 사람"은 항상 이걸로 구한다.
+    private final CurrentUserResolver currentUser;
 
     @PostMapping
     public ResponseEntity<RoomResponseDto> createRoom(
@@ -37,7 +50,7 @@ public class RoomController {
     ) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(roomService.createRoom(memberId(jwt), request));
+                .body(roomService.createRoom(currentUser.userId(jwt), request));
     }
 
     /**
@@ -62,7 +75,7 @@ public class RoomController {
             @RequestBody(required = false) JoinRoomRequestDto request
     ) {
         String password = request != null ? request.getPassword() : null;
-        return ResponseEntity.ok(roomService.joinRoom(roomId, memberId(jwt), password));
+        return ResponseEntity.ok(roomService.joinRoom(roomId, currentUser.userId(jwt), password));
     }
 
     @GetMapping("/{roomId}/players")
@@ -78,7 +91,7 @@ public class RoomController {
             @PathVariable Long roomId,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        roomService.leaveRoom(roomId, memberId(jwt));
+        roomService.leaveRoom(roomId, currentUser.userId(jwt));
         return ResponseEntity.noContent().build();
     }
 
@@ -95,7 +108,7 @@ public class RoomController {
     ) {
         if (request == null || request.getReady() == null) throw new IllegalArgumentException("ready 값(true/false)을 보내주세요.");
 
-        roomService.setReady(roomId, memberId(jwt), request.getReady());
+        roomService.setReady(roomId, currentUser.userId(jwt), request.getReady());
         return ResponseEntity.noContent().build();
     }
 
@@ -111,7 +124,7 @@ public class RoomController {
     ) {
         if (request == null || request.getUserId() == null) throw new IllegalArgumentException("위임할 플레이어(userId)를 보내주세요.");
 
-        roomService.transferHost(roomId, memberId(jwt), request.getUserId());
+        roomService.transferHost(roomId, currentUser.userId(jwt), request.getUserId());
         return ResponseEntity.noContent().build();
     }
 
@@ -126,7 +139,7 @@ public class RoomController {
             @PathVariable Long userId,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        roomService.kickPlayer(roomId, memberId(jwt), userId);
+        roomService.kickPlayer(roomId, currentUser.userId(jwt), userId);
         return ResponseEntity.noContent().build();
     }
 
@@ -142,7 +155,7 @@ public class RoomController {
     ) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(roomService.startGame(roomId, memberId(jwt)));
+                .body(roomService.startGame(roomId, currentUser.userId(jwt)));
     }
 
     /**
@@ -158,8 +171,4 @@ public class RoomController {
         return ResponseEntity.ok(roomService.getRooms(keyword));
     }
 
-    // 토큰 sub = memberId. User(프로필) 조회는 service에서 한다.
-    private static Long memberId(Jwt jwt) {
-        return Long.valueOf(jwt.getSubject());
-    }
 }
