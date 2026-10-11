@@ -37,7 +37,7 @@ ws://{서버}:8080/ws/v1?token={JWT}                                            
 | `subscribed` | `roomId` | 구독 완료. 이때 방·게임·채팅을 GET으로 한 번 가져옴 (구독 전 변경 보충) |
 | `game.changed` | `gameId`, `phaseVersion` | `GET /api/v1/games/{gameId}` (phaseVersion은 참고용, 항상 다시 조회) |
 | `room.changed` | `roomId` | `GET /api/v1/rooms/{roomId}` |
-| `chat.changed` | `roomId`, `lastMessageId` | 이미 받은 id보다 크면 `GET /api/v1/rooms/{roomId}/messages?afterId=...` |
+| `chat.changed` | `roomId`, `lastMessageId` | 이미 받은 id보다 크면 `GET /api/v1/rooms/{roomId}/messages?afterId=...` (사망자·해적·세이렌 전용 메시지는 볼 수 있는 사람에게만 옴) |
 | `error` | `code`, `message` | 로그. 연결은 유지됨 |
 
 ```json

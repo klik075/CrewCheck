@@ -68,6 +68,12 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
         return new RealtimeRoomListener(realtimeNotifier());
     }
 
+    /** 채팅 메시지가 저장되면 볼 수 있는 사람에게 chat.changed를 보낸다 (4-6) */
+    @Bean
+    public RealtimeChatListener realtimeChatListener() {
+        return new RealtimeChatListener(realtimeNotifier());
+    }
+
     @Bean
     public RoomMembership roomMembership() {
         return new LobbyRoomMembership(roomRepository);

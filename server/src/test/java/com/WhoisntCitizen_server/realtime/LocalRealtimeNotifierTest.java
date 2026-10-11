@@ -4,6 +4,8 @@ import com.WhoisntCitizen_server.realtime.protocol.RealtimeMessageCodec;
 import com.WhoisntCitizen_server.realtime.protocol.ServerMessage;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
@@ -49,6 +51,28 @@ class LocalRealtimeNotifierTest {
         assertThat(first.sent).hasSize(1);
         assertThat(second.sent).hasSize(1);
         assertThat(other.sent).isEmpty();
+    }
+
+    @Test
+    void 방_안의_정해진_사용자에게만_보낼_수_있다() {
+        FakeConnection pirate = connect("a", 1, 3L);
+        FakeConnection sailor = connect("b", 2, 3L);
+        FakeConnection pirateElsewhere = connect("c", 1, 4L); // 같은 사용자의 다른 방 연결
+
+        notifier.sendToUsersInRoom(3, List.of(1L), new ServerMessage.ChatChanged(3, 10));
+
+        assertThat(pirate.sent).hasSize(1);
+        assertThat(sailor.sent).isEmpty();
+        assertThat(pirateElsewhere.sent).as("그 방을 구독한 연결에만").isEmpty();
+    }
+
+    @Test
+    void 받을_사용자가_비어_있으면_아무에게도_보내지_않는다() {
+        FakeConnection a = connect("a", 1, 3L);
+
+        notifier.sendToUsersInRoom(3, List.of(), new ServerMessage.ChatChanged(3, 10));
+
+        assertThat(a.sent).isEmpty();
     }
 
     @Test

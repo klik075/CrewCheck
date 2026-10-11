@@ -5,7 +5,9 @@ import com.WhoisntCitizen_server.realtime.protocol.ServerMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.Objects;
 
 /**
@@ -27,6 +29,17 @@ public class LocalRealtimeNotifier implements RealtimeNotifier {
     @Override
     public void sendToRoom(long roomId, ServerMessage message) {
         sendAll(registry.connectionsOfRoom(roomId), message);
+    }
+
+    @Override
+    public void sendToUsersInRoom(long roomId, Collection<Long> userIds, ServerMessage message) {
+        if (userIds == null || userIds.isEmpty()) {
+            return;
+        }
+        Set<Long> targets = Set.copyOf(userIds);
+        sendAll(registry.connectionsOfRoom(roomId).stream()
+                .filter(connection -> targets.contains(connection.userId()))
+                .toList(), message);
     }
 
     @Override

@@ -67,7 +67,7 @@ public sealed interface ServerMessage {
     /**
      * 방 채팅에 새 메시지가 생겼다. lastMessageId는 새 메시지 중 가장 큰 id.
      * 클라이언트가 이미 그 id까지 받았다면 다시 가져오지 않아도 된다.
-     * (해적 전용·사망자 전용처럼 나에게 안 보이는 메시지일 수도 있다. 보이는 메시지만 GET 응답에 담긴다)
+     * 해적 전용·사망자 전용·세이렌 팀 전용 메시지는 볼 수 있는 사람에게만 이 신호가 간다. (못 보는 사람은 대화가 오갔다는 것도 모른다)
      */
     record ChatChanged(long roomId, long lastMessageId) implements ServerMessage {
         public static final String TYPE = "chat.changed";

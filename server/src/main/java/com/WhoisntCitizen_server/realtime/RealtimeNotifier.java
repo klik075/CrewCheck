@@ -2,6 +2,8 @@ package com.WhoisntCitizen_server.realtime;
 
 import com.WhoisntCitizen_server.realtime.protocol.ServerMessage;
 
+import java.util.Collection;
+
 /**
  * 다른 모듈(게임·로비·채팅)이 실시간 신호를 보낼 때 쓰는 입구. (4-4~4-6에서 사용)
  *
@@ -17,6 +19,12 @@ public interface RealtimeNotifier {
 
     /** 방을 구독 중인 모든 연결에 보낸다 */
     void sendToRoom(long roomId, ServerMessage message);
+
+    /**
+     * 방을 구독 중인 연결 중 userIds에 든 사용자의 연결에만 보낸다.
+     * 일부에게만 보이는 채팅(사망자·해적·세이렌)처럼 방 안에서도 받을 사람이 정해진 신호에 쓴다.
+     */
+    void sendToUsersInRoom(long roomId, Collection<Long> userIds, ServerMessage message);
 
     /** 사용자의 모든 연결에 보낸다 (방 구독과 상관없이) */
     void sendToUser(long userId, ServerMessage message);
