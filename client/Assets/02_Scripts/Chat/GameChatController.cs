@@ -309,7 +309,7 @@ namespace WhoisntCitizen.Chat
 
         /// <summary>
         /// 로비에서 들어온 방(RoomSession)일 때만 신호를 받는다. (단독 실행 [개발용] 방은 폴링만)
-        /// 방 구독(EnterRoom)과 연결은 Room·Game 화면이 맡지만, 같은 방이면 다시 불러도 아무것도 보내지 않으므로 여기서도 부른다.
+        /// 연결은 로그인할 때 RealtimeSession이 시작한다. 방 구독은 Room·Game 화면도 하지만 같은 방이면 다시 불러도 아무것도 보내지 않는다.
         /// </summary>
         void AttachRealtime()
         {
@@ -318,8 +318,6 @@ namespace WhoisntCitizen.Chat
             _realtime.ChatChanged += OnRealtimeChatChanged;
             _realtime.Resynced += OnRealtimeResynced;
             _realtime.StateChanged += OnRealtimeStateChanged;
-            if (!_realtime.WantsConnection && !_realtime.IsAuthExpired && AuthSession.IsAuthenticated)
-                _realtime.Connect();
             _realtime.EnterRoom(RoomSession.RoomId);
         }
 

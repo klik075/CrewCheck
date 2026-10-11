@@ -237,6 +237,16 @@ namespace WhoisntCitizen.Network
         }
 
         /// <summary>
+        /// 세션이 만료됐다고 다른 곳에서 알았을 때 부른다(예: 실시간 연결이 4401로 닫힘).
+        /// REST 응답이 401일 때와 똑같이 안내 → 세션 비우기 → 타이틀 이동을 한다. 이미 로그아웃 상태면 아무것도 하지 않는다.
+        /// </summary>
+        public static void ExpireSession()
+        {
+            if (!AuthSession.IsAuthenticated) return;
+            HandleUnauthorized();
+        }
+
+        /// <summary>
         /// 세션 만료 처리: 로그인/방 정보를 비우고 타이틀 씬으로 보낸다.
         /// 이미 타이틀 씬이면 씬 이동은 하지 않는다.
         /// </summary>

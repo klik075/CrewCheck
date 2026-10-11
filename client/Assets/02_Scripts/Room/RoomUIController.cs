@@ -660,7 +660,7 @@ namespace WhoisntCitizen.Lobby
 
         /// <summary>
         /// 이 방의 신호를 받기 시작한다. GameScene에서 돌아온 경우 이미 같은 방을 구독 중이라 EnterRoom은 아무것도 보내지 않는다.
-        /// 연결은 보통 로그인할 때 시작하지만, 아직이면 여기서 시작한다.
+        /// 연결은 로그인할 때 RealtimeSession이 시작한다. 여기서는 방만 알린다.
         /// 방을 나갈 때의 LeaveRoom은 RoomSession.Clear()가 한다(ReturnToLobby → Clear).
         /// </summary>
         private void AttachRealtime(long roomId)
@@ -674,10 +674,6 @@ namespace WhoisntCitizen.Lobby
             realtime.SubscribeRejected += OnRealtimeRoomChanged;  // 거절 → 조회해서 실제로 방에서 빠졌는지 확인
             realtime.StateChanged += OnRealtimeStateChanged;
 
-            if (!realtime.WantsConnection && !realtime.IsAuthExpired && AuthSession.IsAuthenticated)
-            {
-                realtime.Connect();
-            }
             realtime.EnterRoom(roomId);
         }
 

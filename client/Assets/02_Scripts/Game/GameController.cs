@@ -192,7 +192,7 @@ namespace WhoisntCitizen.Game
 
         /// <summary>
         /// 이 방의 신호를 받기 시작한다. 방은 Room 씬에서 이미 구독했을 수 있다 — 같은 방이면 EnterRoom은 아무것도 보내지 않는다.
-        /// 연결은 보통 로그인할 때 시작하지만, 아직이면 여기서 시작한다(이미 연결을 원하는 상태면 아무 일도 없다).
+        /// 연결은 로그인할 때 RealtimeSession이 시작한다. 여기서는 방만 알린다.
         /// </summary>
         private void AttachRealtime(long roomId)
         {
@@ -208,10 +208,6 @@ namespace WhoisntCitizen.Game
             realtime.Resynced += OnRealtimeResynced;
             realtime.StateChanged += OnRealtimeStateChanged;
 
-            if (!realtime.WantsConnection && !realtime.IsAuthExpired && AuthSession.IsAuthenticated)
-            {
-                realtime.Connect();
-            }
             realtime.EnterRoom(roomId);
             ApplyPollInterval();
         }
