@@ -20,4 +20,14 @@ public interface RealtimeNotifier {
 
     /** 사용자의 모든 연결에 보낸다 (방 구독과 상관없이) */
     void sendToUser(long userId, ServerMessage message);
+
+    /**
+     * 사용자의 연결들을 그 방 구독에서 뺀다. 퇴장·강퇴·연결 끊김으로 방에서 빠졌을 때.
+     * 보내기와 같은 인터페이스에 둔 이유: 서버가 여러 대면 그 사용자의 연결이 다른 서버에 있을 수 있어,
+     * 5단계에서 보내기와 똑같이 모든 서버에 전달해야 하기 때문이다.
+     */
+    void removeUserFromRoom(long roomId, long userId);
+
+    /** 그 방의 구독을 모두 푼다. 방이 삭제됐을 때. (모든 서버에 전달되는 이유는 위와 같다) */
+    void removeRoom(long roomId);
 }

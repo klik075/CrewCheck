@@ -62,6 +62,12 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
         return new RealtimeGameListener(realtimeNotifier());
     }
 
+    /** 방이 바뀌면 room.changed를 보내고, 방에서 빠진 사람·삭제된 방의 구독을 푼다 (4-5) */
+    @Bean
+    public RealtimeRoomListener realtimeRoomListener() {
+        return new RealtimeRoomListener(realtimeNotifier());
+    }
+
     @Bean
     public RoomMembership roomMembership() {
         return new LobbyRoomMembership(roomRepository);

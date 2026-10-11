@@ -111,6 +111,24 @@ class RealtimeSessionRegistryTest {
     }
 
     @Test
+    void 방을_지우면_그_방_구독이_모두_풀리고_연결은_남는다() {
+        connect("s1", 15);
+        connect("s2", 16);
+        connect("s3", 17);
+        registry.subscribe("s1", 3);
+        registry.subscribe("s2", 3);
+        registry.subscribe("s3", 4);
+
+        int removed = registry.removeRoom(3);
+
+        assertThat(removed).isEqualTo(2);
+        assertThat(registry.connectionsOfRoom(3)).isEmpty();
+        assertThat(registry.roomOf("s1")).isEmpty();
+        assertThat(registry.roomOf("s3")).hasValue(4);
+        assertThat(registry.connectionCount()).isEqualTo(3);
+    }
+
+    @Test
     void 조회_결과는_복사본이다() {
         connect("s1", 15);
         registry.subscribe("s1", 3);

@@ -34,6 +34,16 @@ public class LocalRealtimeNotifier implements RealtimeNotifier {
         sendAll(registry.connectionsOfUser(userId), message);
     }
 
+    @Override
+    public void removeUserFromRoom(long roomId, long userId) {
+        registry.removeUserFromRoom(roomId, userId);
+    }
+
+    @Override
+    public void removeRoom(long roomId) {
+        registry.removeRoom(roomId);
+    }
+
     private void sendAll(List<RealtimeConnection> connections, ServerMessage message) {
         if (connections.isEmpty()) {
             return;

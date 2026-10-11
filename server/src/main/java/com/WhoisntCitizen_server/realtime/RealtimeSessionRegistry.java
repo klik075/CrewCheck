@@ -97,6 +97,24 @@ public class RealtimeSessionRegistry {
         return removed;
     }
 
+    /**
+     * 그 방의 구독을 모두 푼다. 방이 삭제됐을 때 쓴다. (연결 자체는 유지)
+     * @return 구독을 푼 연결 수
+     */
+    public synchronized int removeRoom(long roomId) {
+        Set<String> ids = byRoom.remove(roomId);
+        if (ids == null) {
+            return 0;
+        }
+        for (String id : ids) {
+            Entry entry = byId.get(id);
+            if (entry != null) {
+                byId.put(id, entry.withRoom(null));
+            }
+        }
+        return ids.size();
+    }
+
     /** 방을 구독 중인 연결들 (복사본) */
     public synchronized List<RealtimeConnection> connectionsOfRoom(long roomId) {
         return connections(byRoom.get(roomId));

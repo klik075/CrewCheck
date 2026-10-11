@@ -57,6 +57,8 @@ ws://{서버}:8080/ws/v1?token={JWT}                                            
 | `room.subscribe` | `roomId` | 방 화면·게임 화면에 들어갈 때. 그 방 참가자면 `subscribed`, 아니면 `error(NOT_IN_ROOM)`. 연결 하나는 방 하나만 구독(새로 구독하면 이전 구독은 풀림) |
 | `room.unsubscribe` | `roomId` | 방에서 나갈 때 (답 없음) |
 
+퇴장·강퇴·게임 중 연결 끊김으로 방에서 빠지거나 방이 삭제되면 서버가 구독을 자동으로 풉니다. 그 직전에 `room.changed`를 한 번 받으니, GET 결과로 방에서 빠졌는지 확인하세요.
+
 ```json
 {"type":"ping"}
 {"type":"room.subscribe","roomId":3}
