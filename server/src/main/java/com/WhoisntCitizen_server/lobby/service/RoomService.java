@@ -30,10 +30,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -66,6 +68,7 @@ public class RoomService {
      */
 
     private final LobbyRoomRepository roomRepository;
+    // 닉네임이 필요한 방 생성·입장에서만 User(프로필)를 조회한다. (findUser 참고)
     private final UserRepository userRepository;
     private final RoomLock roomLock; // 방 단위 잠금. 잠금 순서: 방 잠금 → 게임 잠금
     private final GameService gameService;
@@ -73,12 +76,25 @@ public class RoomService {
     private final ApplicationEventPublisher eventPublisher;
 
     /*
-     * memberId = JWT의 sub (로그인 계정 id)
-     * 룸 안에서는 User(프로필)의 id를 userId로 사용한다.
+     * ── 이 서비스가 받는 userId ──────────────────────────────────────────────
+     * 모든 public 메서드는 "요청한 사람"을 userId(User.id, 프로필 id)로 받는다.
+     * 토큰(JWT)의 sub는 memberId(로그인 계정 id)이므로, 컨트롤러가 CurrentUserResolver로
+     * memberId → userId 변환을 끝낸 뒤 넘겨준다.
+     *
+     * 왜 서비스가 memberId를 받지 않나
+     *   - "토큰 → 나" 변환을 CurrentUserResolver 한 곳으로 모은다. (게임·투표·밤 컨트롤러와 같은 방식)
+     *     변환 방식이 바뀌어도(캐시, 토큰에 userId 넣기 등) Resolver 하나만 고치면 된다.
+     *   - 로비는 계정(Member)을 몰라도 된다. 방 참가자·방장·추방 목록·게임 참가자가 모두 userId 기준이기 때문.
+     *   - 나가기·준비·위임·추방·게임 시작은 userId만 있으면 되므로 DB를 읽지 않는다.
+     *     (이전에는 이 요청들도 매번 memberId로 User를 조회했다)
+     *
+     * 닉네임이 필요한 곳
+     *   - 방 생성·입장: 방 참가자 목록과 입장 알림에 닉네임이 들어가므로 findUser(userId)로 User를 조회한다.
+     *   - 나가기: 퇴장 알림 닉네임은 DB가 아니라 방 참가자 정보(RoomPlayer)에서 꺼낸다. 입장할 때 저장해 둔 값이다.
      */
 
     // 방 생성
-    public RoomResponseDto createRoom(Long memberId, CreateRoomRequestDto request) {
+    public RoomResponseDto createRoom(Long userId, CreateRoomRequestDto request) {
         if (request.getTitle() == null || request.getTitle().isBlank()) {
             throw new IllegalArgumentException("방 제목을 입력해주세요.");
         }
@@ -90,7 +106,8 @@ public class RoomService {
         boolean privateRoom = request.isPrivateRoom();
         if (privateRoom) validatePassword(request.getPassword());
 
-        User user = findUser(memberId);
+        // 방장 닉네임이 필요하므로 User(프로필)를 조회한다.
+        User user = findUser(userId);
 
         // 새로운 룸 생성 (공개방이면 Room 생성자가 password를 null로 저장한다)
         Long roomId = roomRepository.generateRoomId();
@@ -119,9 +136,10 @@ public class RoomService {
      *
      * @param password 비밀방 비밀번호. 공개방이면 null이어도 된다. (무시됨)
      */
-    public RoomResponseDto joinRoom(Long roomId, Long memberId, String password) {
-        // DB 조회(User)는 잠금 밖에서 먼저 해서 잠금을 쥐고 있는 시간을 줄인다.
-        User user = findUser(memberId);
+    public RoomResponseDto joinRoom(Long roomId, Long userId, String password) {
+        // 참가자 목록에 넣을 닉네임이 필요하므로 User(프로필)를 조회한다.
+        // DB 조회는 잠금 밖에서 먼저 해서 잠금을 쥐고 있는 시간을 줄인다.
+        User user = findUser(userId);
 
         // 읽기 → 검사 → 추가 → 저장을 같은 방 잠금 안에서 처리 (동시 입장 시 덮어쓰기 방지)
         RoomResponseDto joined = roomLock.withLock(roomId, () -> {
@@ -146,13 +164,14 @@ public class RoomService {
         return joined;
     }
 
-    // 방 나가기
-    public void leaveRoom(Long roomId, Long memberId) {
-        User user = findUser(memberId);
-        Long userId = user.getId();
-
-        // 반환값: 방이 남아 있으면 true, 마지막 사람이 나가 방이 삭제되면 false
-        boolean roomRemains = roomLock.withLock(roomId, () -> {
+    /**
+     * 방 나가기. DB를 읽지 않는다.
+     * 퇴장 알림에 쓸 닉네임은 방 참가자 정보(RoomPlayer)에서 꺼낸다. (입장할 때 User에서 복사해 둔 값)
+     * 방 안에 보이던 이름과 퇴장 알림의 이름이 항상 같다는 장점도 있다.
+     */
+    public void leaveRoom(Long roomId, Long userId) {
+        // 잠금 안에서 결과(방이 남았는지 + 나간 사람 닉네임)를 만들어 잠금 밖으로 가지고 나온다.
+        LeaveResult result = roomLock.withLock(roomId, () -> {
             Room room = findRoom(roomId);
             recoverIfOrphaned(room);
 
@@ -162,20 +181,22 @@ public class RoomService {
             // 게임 쪽(InactivePlayerMonitor)이 사망 처리한 뒤 removeDepartedPlayers로 방에서 뺀다.
             if (room.isInGame()) throw new IllegalStateException("게임 중에는 방을 나갈 수 없습니다.");
 
+            // 빼기 전에 닉네임을 꺼내 둔다. (위에서 containsPlayer를 확인했으므로 null이 아니다)
+            String nickname = room.findPlayer(userId).getNickname();
             room.removePlayer(userId); // 방장이면 다음 사람에게 위임
 
             // 아무도 없으면 방 삭제
             if (room.isEmpty()) {
                 roomRepository.delete(roomId);
-                return false;
+                return new LeaveResult(false, nickname);
             }
             roomRepository.save(room);
-            return true;
+            return new LeaveResult(true, nickname);
         });
 
         // 방이 삭제된 경우에는 볼 사람이 없으므로 퇴장 알림을 남기지 않고, 방 채팅을 지우도록 알린다.
-        if (roomRemains) {
-            eventPublisher.publishEvent(new RoomPlayerLeftEvent(roomId, userId, user.getNickname()));
+        if (result.roomRemains()) {
+            eventPublisher.publishEvent(new RoomPlayerLeftEvent(roomId, userId, result.nickname()));
         } else {
             eventPublisher.publishEvent(new RoomDeletedEvent(roomId));
         }
@@ -185,8 +206,7 @@ public class RoomService {
      * 방장 위임 (방장만). PUT /api/v1/rooms/{roomId}/host  body {"userId": 5}
      * 새 방장의 준비 상태는 해제되고, 이전 방장은 준비 안 한 일반 참가자가 된다.
      */
-    public void transferHost(Long roomId, Long memberId, Long targetUserId) {
-        Long userId = findUser(memberId).getId();
+    public void transferHost(Long roomId, Long userId, Long targetUserId) {
 
         String newHostNickname = roomLock.withLock(roomId, () -> {
             Room room = findRoom(roomId);
@@ -210,8 +230,7 @@ public class RoomService {
      * 검사 순서는 transferHost와 같다. (방장 아님 403 → 게임 중 409 → 본인 400 → 방에 없음 409)
      * 게임 중에는 추방할 수 없다: 게임 참가자 명단은 시작할 때 고정되기 때문 (leaveRoom과 같은 이유)
      */
-    public void kickPlayer(Long roomId, Long memberId, Long targetUserId) {
-        Long userId = findUser(memberId).getId();
+    public void kickPlayer(Long roomId, Long userId, Long targetUserId) {
 
         String kickedNickname = roomLock.withLock(roomId, () -> {
             Room room = findRoom(roomId);
@@ -267,6 +286,71 @@ public class RoomService {
     }
 
     /**
+     * 대기실에서 연결이 끊긴 참가자를 방에서 뺀다. RoomPresenceService가 주기적으로 호출한다.
+     *
+     * idleUserIds는 방 잠금 안에서 한 번 부른다. 잠금을 기다리는 사이 들어온 방 조회까지 반영한 최신 기록으로 판단하기 위해서다.
+     * (잠금 밖에서 판단한 목록을 그대로 쓰면, 그 사이 다시 조회한 사람을 빼 버릴 수 있다)
+     * 서버 여러 대가 같은 방을 동시에 검사해도, 먼저 잠금을 잡은 서버가 빼고 나머지는 이미 빠진 상태를 보게 된다.
+     *
+     * 처리 규칙
+     *  - 게임 중인 방은 건드리지 않는다. (게임 중 연결 끊김은 InactivePlayerMonitor → removeDepartedPlayers)
+     *  - 방장이 빠지면 남은 사람 중 가장 먼저 들어온 사람에게 위임된다. (Room.removePlayer)
+     *  - 나가기(leaveRoom)와 같은 이벤트를 발행한다: 방이 남으면 사람마다 RoomPlayerLeftEvent, 비면 방 삭제 + RoomDeletedEvent
+     *
+     * @param idleUserIds 연결이 끊긴 것으로 볼 userId 목록을 돌려준다. 방 잠금 안에서 호출된다.
+     * @return 실제로 뺀 userId 목록 (없으면 빈 목록)
+     */
+    public List<Long> removeIdlePlayers(Long roomId, Supplier<Set<Long>> idleUserIds) {
+        // 잠금 안에서 뺀 사람(닉네임 포함)을 담아 잠금 밖으로 가지고 나온다. (이벤트는 잠금 밖에서 발행)
+        List<RoomPlayer> removed = new ArrayList<>();
+
+        boolean deleted = roomLock.withLock(roomId, () -> {
+            Room room = roomRepository.findById(roomId);
+            if (room == null || room.isInGame()) return false;
+
+            Set<Long> idle = idleUserIds.get();
+            // 반복 중에 목록을 바꾸지 않도록 복사본을 돈다
+            for (RoomPlayer player : List.copyOf(room.getPlayers())) {
+                if (idle.contains(player.getUserId())) {
+                    room.removePlayer(player.getUserId()); // 방장이면 다음 사람에게 위임
+                    removed.add(player);
+                }
+            }
+            if (removed.isEmpty()) return false; // 그 사이 다시 조회했거나 이미 나간 경우
+
+            if (room.isEmpty()) {
+                roomRepository.delete(roomId);
+                return true;
+            }
+            roomRepository.save(room);
+            return false;
+        });
+
+        // 이벤트는 잠금 밖에서 발행한다. (채팅 저장 때문에 방 잠금을 오래 쥐지 않도록. leaveRoom과 같은 규칙)
+        // 방이 삭제된 경우에는 볼 사람이 없으므로 퇴장 알림을 남기지 않고, 방 채팅·접속 기록을 지우도록 알린다.
+        if (deleted) {
+            eventPublisher.publishEvent(new RoomDeletedEvent(roomId));
+        } else {
+            removed.forEach(p -> eventPublisher.publishEvent(new RoomPlayerLeftEvent(roomId, p.getUserId(), p.getNickname())));
+        }
+        return removed.stream().map(RoomPlayer::getUserId).toList();
+    }
+
+    /**
+     * 주기 검사용 방 읽기. 방이 없으면 null.
+     * 게임이 사라진 IN_GAME 방(서버 재시작으로 메모리 게임이 사라짐, 종료 이벤트 처리 실패 등)이면 WAITING으로 복구해서 돌려준다.
+     * 방 조회(getRoom)도 같은 복구를 하지만, 아무도 조회하지 않는 방(모두 떠난 방)은 여기서만 복구된다.
+     * 복구된 방은 이후 RoomPresenceService가 대기실 규칙으로 정리한다.
+     *
+     * 게임 중인 방이면 게임이 살아 있는지 확인하느라 게임 잠금을 잡는다. (GameService.keepsRoomInGame)
+     * 게임이 바쁘면 LockTimeoutException이 날 수 있고, 호출하는 쪽에서 이번 검사를 건너뛴다.
+     */
+    public Room loadRoomRecovered(Long roomId) {
+        Room room = roomRepository.findById(roomId);
+        return room == null ? null : recoverInListIfOrphaned(room);
+    }
+
+    /**
      * 취소된 게임의 방 삭제. 결과 조회 시간이 지나 게임을 메모리에서 지울 때
      * RoomGameListener가 CancelledGameExpiredEvent를 받아 호출한다.
      * 방이 이미 없거나 다른 게임으로 넘어간 경우는 무시한다.
@@ -291,8 +375,7 @@ public class RoomService {
      * 입장·나가기·게임 시작과 같은 방 잠금 안에서 처리한다.
      * 실패: 409 게임 중 / 참가 중이 아님 / 방장, 400 존재하지 않는 방
      */
-    public void setReady(Long roomId, Long memberId, boolean ready) {
-        Long userId = findUser(memberId).getId();
+    public void setReady(Long roomId, Long userId, boolean ready) {
 
         roomLock.runWithLock(roomId, () -> {
             Room room = findRoom(roomId);
@@ -308,8 +391,7 @@ public class RoomService {
     }
 
     // 게임 시작 (방장만)
-    public StartGameResponse startGame(Long roomId, Long memberId) {
-        Long userId = findUser(memberId).getId();
+    public StartGameResponse startGame(Long roomId, Long userId) {
 
         // 입장/나가기와 같은 방 잠금 안에서 처리: 시작 도중 누가 들어오거나 나가지 못한다.
         return roomLock.withLock(roomId, () -> {
@@ -492,8 +574,23 @@ public class RoomService {
         return room;
     }
 
-    private User findUser(Long memberId) {
-        return userRepository.findByMemberId(memberId)
+    /**
+     * userId(User.id)로 프로필을 찾는다. 닉네임이 필요한 방 생성·입장에서만 쓴다.
+     * 컨트롤러의 CurrentUserResolver가 이미 같은 유저를 찾았으므로 보통은 항상 있다.
+     * 그 사이 프로필이 지워진 경우 등을 대비해 없으면 400(IllegalArgumentException)으로 처리한다.
+     */
+    private User findUser(Long userId) {
+        return userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
+    }
+
+    /**
+     * leaveRoom에서 방 잠금 안의 결과를 잠금 밖으로 가지고 나오기 위한 값.
+     * 이벤트(퇴장 알림/방 삭제)는 채팅 저장 때문에 잠금 밖에서 발행하므로, 필요한 값만 담아 나온다.
+     *
+     * @param roomRemains 나간 뒤에도 방이 남아 있으면 true, 마지막 사람이 나가 방이 삭제됐으면 false
+     * @param nickname    나간 사람의 닉네임 (퇴장 알림용)
+     */
+    private record LeaveResult(boolean roomRemains, String nickname) {
     }
 }

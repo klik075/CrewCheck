@@ -1,6 +1,7 @@
 package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.config.GamePhaseProperties;
+import com.WhoisntCitizen_server.common.exception.LockTimeoutException;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +55,9 @@ public class InactivePlayerMonitor {
         for (String gameId : gameRepository.findActiveIds()) {
             try {
                 gameFlowService.checkInactivePlayers(gameId);
+            } catch (LockTimeoutException e) {
+                // 게임이 바빠 이번 검사를 건너뜀. 다음 검사(inactiveCheckSeconds 뒤)에서 다시 확인한다
+                log.debug("[{}] 게임 잠금이 바빠 이번 연결 끊김 검사를 건너뜁니다", gameId);
             } catch (RuntimeException e) {
                 log.error("[{}] 연결 끊김 검사 실패", gameId, e);
             }

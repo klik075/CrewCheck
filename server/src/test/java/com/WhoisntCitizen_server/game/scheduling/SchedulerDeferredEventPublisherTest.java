@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.game.scheduling;
 
+import com.WhoisntCitizen_server.game.lock.LocalGameLock;
 import com.WhoisntCitizen_server.support.ManualTaskScheduler;
 import com.WhoisntCitizen_server.support.MutableClock;
 import org.junit.jupiter.api.Test;
@@ -39,5 +40,21 @@ class SchedulerDeferredEventPublisherTest {
         publisher.publishAfterLock("game-ended");
 
         assertThatCode(scheduler::runDue).doesNotThrowAnyException();
+    }
+
+    @Test
+    void 게임_잠금_안에서_부르면_잠금이_풀린_뒤에야_스케줄러에_예약한다() {
+        List<Object> events = new ArrayList<>();
+        DeferredEventPublisher publisher = new SchedulerDeferredEventPublisher(scheduler, clock, events::add);
+        LocalGameLock lock = new LocalGameLock();
+
+        lock.runWithLock("game-1", () -> {
+            publisher.publishAfterLock("game-ended");
+            scheduler.runDue();                // 잠금 안에서는 아직 예약조차 되지 않음
+            assertThat(events).isEmpty();
+        });
+
+        scheduler.runDue();                    // 잠금이 풀린 뒤 예약된 것을 실행
+        assertThat(events).containsExactly("game-ended");
     }
 }
