@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.realtime;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
@@ -55,6 +56,15 @@ class WebSocketRealtimeConnection implements RealtimeConnection {
         } catch (IOException | RuntimeException e) {
             // 보내기 실패는 연결 문제다. 연결은 컨테이너가 정리하고 afterConnectionClosed에서 목록에서 빠진다
             log.debug("[ws] 보내기 실패: session={}, {}", session.getId(), e.toString());
+        }
+    }
+
+    @Override
+    public void close(int code, String reason) {
+        try {
+            session.close(new CloseStatus(code, reason));
+        } catch (IOException | RuntimeException e) {
+            log.debug("[ws] 닫기 실패: session={}, {}", session.getId(), e.toString());
         }
     }
 }

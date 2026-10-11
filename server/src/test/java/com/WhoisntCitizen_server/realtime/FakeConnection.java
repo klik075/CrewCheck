@@ -11,6 +11,8 @@ class FakeConnection implements RealtimeConnection {
     final List<String> sent = new ArrayList<>();
     boolean open = true;
     boolean failOnSend = false;
+    /** close로 닫혔으면 그 코드, 아니면 -1 */
+    int closedCode = -1;
 
     FakeConnection(String id, long userId) {
         this.id = id;
@@ -38,5 +40,11 @@ class FakeConnection implements RealtimeConnection {
             throw new IllegalStateException("보내기 실패 (테스트)");
         }
         sent.add(json);
+    }
+
+    @Override
+    public void close(int code, String reason) {
+        closedCode = code;
+        open = false;
     }
 }

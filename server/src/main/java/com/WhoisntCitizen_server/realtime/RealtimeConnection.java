@@ -19,4 +19,7 @@ public interface RealtimeConnection {
      * (한 연결의 실패 때문에 같은 방의 다른 연결에 못 보내는 일이 없게)
      */
     void send(String json);
+
+    /** 서버 쪽에서 연결을 닫는다. code는 WebSocket close code (예: 4408 무응답, 4401 토큰 만료) */
+    void close(int code, String reason);
 }
