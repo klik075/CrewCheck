@@ -16,7 +16,8 @@ public class InMemoryLobbyRoomRepository extends LobbyRoomRepository {
     private final AtomicLong seq = new AtomicLong();
 
     public InMemoryLobbyRoomRepository() {
-        super(null, null);
+        // Redis와 이벤트 발행은 쓰지 않는다. (save/delete를 모두 덮어쓰므로 RoomStateChangedEvent도 발행되지 않는다)
+        super(null, null, event -> { });
     }
 
     @Override
