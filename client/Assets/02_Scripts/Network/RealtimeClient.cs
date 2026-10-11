@@ -22,8 +22,11 @@ namespace WhoisntCitizen.Network
     ///
     /// 내용을 주고받지 않는다. 서버는 "바뀌었다"는 신호만 보내고, 화면이 기존 REST GET으로 가져간다.
     ///
-    /// 쓰는 쪽: RealtimeClient.Instance.Connect() / Disconnect(), StateChanged / MessageReceived 이벤트.
-    /// (방 입장·퇴장, 재동기화 이벤트, 종료 코드 처리는 4-8-6 ~ 4-8-8에서 붙인다)
+    /// 쓰는 쪽
+    ///  - 연결: Connect() / Disconnect()
+    ///  - 방: EnterRoom(roomId) / LeaveRoom() — 끊겨 있어도 기억했다가 연결되면 구독한다.
+    ///  - 이벤트: StateChanged, MessageReceived, Resynced(구독 확인 → GET 한 번)
+    /// (화면용 changed 이벤트, 종료 코드 처리는 4-8-7 ~ 4-8-8에서 붙인다)
     /// </summary>
     public sealed class RealtimeClient : MonoBehaviour
     {
@@ -85,6 +88,19 @@ namespace WhoisntCitizen.Network
 
         /// <summary>서버 메시지를 받을 때마다(해석에 성공한 것만). 메인 스레드에서 불린다.</summary>
         public event Action<RealtimeServerMessage> MessageReceived;
+
+        /// <summary>
+        /// 서버가 이 방의 구독을 확인했다(subscribed). 처음 구독할 때와 재연결 뒤 다시 구독할 때마다 한 번씩 온다.
+        /// 받은 화면은 방·게임·채팅을 GET으로 한 번 가져와야 한다.
+        /// 구독 전이나 끊긴 동안 생긴 변경은 신호로 오지 않았기 때문이다. 메인 스레드에서 불린다.
+        /// </summary>
+        public event Action<long> Resynced;
+
+        /// <summary>화면이 보고 있는 방(EnterRoom으로 알린 방). 방 밖이면 0.</summary>
+        public long CurrentRoomId => tracker.DesiredRoomId;
+
+        /// <summary>이 방의 신호를 지금 받고 있나. true면 폴링을 안전망(15초)으로 늦춰도 된다.</summary>
+        public bool ReceivesSignalsFor(long roomId) => tracker.ReceivesSignalsFor(roomId);
 
         /// <summary>Connect()를 불러 연결을 원하는 상태인가. Disconnect()하면 false.</summary>
         public bool WantsConnection => wantConnected;
@@ -197,6 +213,30 @@ namespace WhoisntCitizen.Network
             {
                 tracker.OnDisconnected();
             }
+        }
+
+        /// <summary>
+        /// 방에 들어갔다(방 화면·게임 화면 진입). 연결돼 있으면 바로 room.subscribe를 보내고,
+        /// 끊겨 있거나 연결 중이면 기억해 두었다가 connected를 받는 순간 보낸다.
+        /// 같은 방을 이미 구독 중이면 아무것도 보내지 않는다(Room → GameScene 전환).
+        /// </summary>
+        public void EnterRoom(long roomId)
+        {
+            if (roomId <= 0)
+            {
+                Debug.LogWarning("[Realtime] EnterRoom: 잘못된 방 번호라 무시합니다: " + roomId);
+                return;
+            }
+            Execute(tracker.EnterRoom(roomId));
+        }
+
+        /// <summary>
+        /// 방에서 나갔다(퇴장·강퇴·방 삭제·로비 복귀). 구독 중이면 room.unsubscribe를 보낸다.
+        /// 연결은 끊지 않는다. 방에 들어가 있지 않으면 아무 일도 없다.
+        /// </summary>
+        public void LeaveRoom()
+        {
+            Execute(tracker.LeaveRoom());
         }
 
         // ================================================================ 연결
@@ -369,8 +409,12 @@ namespace WhoisntCitizen.Network
                     break;
 
                 case SubscribedMessage subscribed:
-                    bool first = tracker.OnSubscribed(subscribed.RoomId);
-                    Log($"subscribed: room={subscribed.RoomId}" + (first ? "" : " (무시/중복)"));
+                    bool resync = tracker.OnSubscribed(subscribed.RoomId);
+                    Log($"subscribed: room={subscribed.RoomId}" + (resync ? " → 한 번 GET(Resynced)" : " (무시: 떠난 방이거나 중복)"));
+                    if (resync)
+                    {
+                        RaiseResynced(subscribed.RoomId);
+                    }
                     break;
 
                 case RealtimeErrorMessage err:
@@ -425,6 +469,18 @@ namespace WhoisntCitizen.Network
                     Log("room.unsubscribe " + action.RoomId);
                     Send(RealtimeMessageCodec.EncodeUnsubscribe(action.RoomId));
                     break;
+            }
+        }
+
+        private void RaiseResynced(long roomId)
+        {
+            try
+            {
+                Resynced?.Invoke(roomId);
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
             }
         }
 
