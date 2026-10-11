@@ -20,6 +20,8 @@ repositories {
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    // 실시간 알림(WebSocket, /ws/v1). 서버 → 클라이언트 "바뀌었어" 신호만 보낸다 (realtime 패키지)
+    implementation 'org.springframework.boot:spring-boot-starter-websocket'
     implementation "org.springframework.boot:spring-boot-starter-validation"
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
