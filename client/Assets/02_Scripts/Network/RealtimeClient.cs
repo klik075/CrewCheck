@@ -28,7 +28,8 @@ namespace WhoisntCitizen.Network
     ///  - 이벤트: Resynced(구독 확인 → 전부 GET 한 번)
     ///            RoomChanged / GameChanged / ChatChanged(그 부분만 GET) — 걸러지고 프레임당 종류별 한 번
     ///            StateChanged(폴링 주기 조정), MessageReceived(모든 메시지, 디버깅용)
-    /// (종료 코드 처리는 4-8-8에서 붙인다)
+    ///            AuthExpired(토큰 만료 → 재연결 멈춤, 다시 로그인 필요), SubscribeRejected(NOT_IN_ROOM)
+    ///  - 실패 처리 규칙은 RealtimeFailurePolicy (4401 멈춤, 4408·그 밖 재연결, NOT_IN_ROOM 거절, SERVER_ERROR 재시도)
     /// </summary>
     public sealed class RealtimeClient : MonoBehaviour
     {
@@ -111,6 +112,21 @@ namespace WhoisntCitizen.Network
         /// </summary>
         public event Action<long, long> ChatChanged;
 
+        /// <summary>
+        /// 토큰이 만료돼 서버가 연결을 거절했다(4401 또는 핸드셰이크 401). 재연결은 멈춘 상태다.
+        /// 받은 쪽은 다시 로그인하게 하고, 새 토큰을 받은 뒤 Connect()를 다시 부른다. 메인 스레드에서 불린다.
+        /// </summary>
+        public event Action AuthExpired;
+
+        /// <summary>
+        /// 서버가 방 구독을 거절했다(NOT_IN_ROOM) (거절된 roomId). 이 방의 신호는 오지 않고 빠른 폴링으로 돌아간다.
+        /// 방 화면은 바로 GET해서 실제로 방에서 나가졌는지(강퇴·방 삭제) 확인한다. 메인 스레드에서 불린다.
+        /// </summary>
+        public event Action<long> SubscribeRejected;
+
+        /// <summary>토큰 만료로 멈춘 상태인가. Connect()를 다시 부르면 false.</summary>
+        public bool IsAuthExpired { get; private set; }
+
         /// <summary>화면이 보고 있는 방(EnterRoom으로 알린 방). 방 밖이면 0.</summary>
         public long CurrentRoomId => tracker.DesiredRoomId;
 
@@ -134,6 +150,7 @@ namespace WhoisntCitizen.Network
         private double nextConnectAt;       // 이 시각(realtime) 이후 다음 연결 시도
         private double nextPingAt;
         private double lastReceivedAt;
+        private double nextResubscribeAt;   // SERVER_ERROR 뒤 구독 재시도 시각. 0이면 예약 없음.
 
         // 백그라운드 스레드 → 메인 스레드
         private readonly ConcurrentQueue<SocketEvent> inbox = new ConcurrentQueue<SocketEvent>();
@@ -147,6 +164,7 @@ namespace WhoisntCitizen.Network
             public string Text;          // Message
             public int? CloseCode;       // Closed: 서버가 보낸 종료 코드(4401, 4408 등). 네트워크 오류면 null.
             public string Reason;        // Closed: 종료 이유 또는 예외 메시지
+            public bool Unauthorized;    // Closed: 핸드셰이크에서 HTTP 401을 받았다
         }
 
         private static double Now => Time.realtimeSinceStartupAsDouble;
@@ -174,6 +192,16 @@ namespace WhoisntCitizen.Network
             if (wantConnected && socket == null && tracker.State == RealtimeState.Disconnected && now >= nextConnectAt)
             {
                 StartConnect();
+            }
+
+            if (nextResubscribeAt > 0 && now >= nextResubscribeAt)
+            {
+                nextResubscribeAt = 0;
+                if (tracker.State == RealtimeState.Connected && tracker.DesiredRoomId > 0)
+                {
+                    Log("구독 재시도: room " + tracker.DesiredRoomId);
+                    Execute(tracker.EnterRoom(tracker.DesiredRoomId));
+                }
             }
 
             if (socketOpen)
@@ -216,6 +244,7 @@ namespace WhoisntCitizen.Network
                 return;
             }
             wantConnected = true;
+            IsAuthExpired = false;
             backoff.Reset();
             nextConnectAt = 0; // 다음 Update에서 바로
         }
@@ -244,6 +273,7 @@ namespace WhoisntCitizen.Network
                 Debug.LogWarning("[Realtime] EnterRoom: 잘못된 방 번호라 무시합니다: " + roomId);
                 return;
             }
+            nextResubscribeAt = 0;
             Execute(tracker.EnterRoom(roomId));
         }
 
@@ -253,6 +283,7 @@ namespace WhoisntCitizen.Network
         /// </summary>
         public void LeaveRoom()
         {
+            nextResubscribeAt = 0;
             Execute(tracker.LeaveRoom());
             signalFilter.Clear();
         }
@@ -266,6 +297,12 @@ namespace WhoisntCitizen.Network
             {
                 // 로그인 전이면 시도해도 401이다. 1초 뒤 다시 확인한다. (실패가 아니므로 백오프는 늘리지 않는다)
                 nextConnectAt = Now + 1.0;
+                return;
+            }
+            if (RealtimeFailurePolicy.IsTokenExpired(AuthSession.TokenMinutesLeft))
+            {
+                // 연결해 봐야 401이다. 서버에 헛걸음하지 않고 바로 알린다.
+                StopForAuthExpired("토큰이 이미 만료됐습니다");
                 return;
             }
 
@@ -305,6 +342,8 @@ namespace WhoisntCitizen.Network
         {
             int? closeCode = null;
             string reason = null;
+            bool opened = false;
+            bool unauthorized = false;
             try
             {
                 using (var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
@@ -312,6 +351,7 @@ namespace WhoisntCitizen.Network
                     connectCts.CancelAfter(connectTimeoutMs);
                     await ws.ConnectAsync(uri, connectCts.Token).ConfigureAwait(false);
                 }
+                opened = true;
                 inbox.Enqueue(new SocketEvent { Kind = SocketEventKind.Opened, Seq = seq });
 
                 var buffer = new byte[4096];
@@ -355,6 +395,10 @@ namespace WhoisntCitizen.Network
             catch (Exception e)
             {
                 reason = e.GetBaseException().Message;
+                // 핸드셰이크 거절(401)은 상태 코드가 든 예외 메시지로만 알 수 있다.
+                unauthorized = !opened
+                    && (RealtimeFailurePolicy.IsUnauthorizedHandshake(e.Message)
+                        || RealtimeFailurePolicy.IsUnauthorizedHandshake(reason));
             }
             finally
             {
@@ -363,7 +407,10 @@ namespace WhoisntCitizen.Network
                     closeCode = (int)ws.CloseStatus.Value;
                     reason = reason ?? ws.CloseStatusDescription;
                 }
-                inbox.Enqueue(new SocketEvent { Kind = SocketEventKind.Closed, Seq = seq, CloseCode = closeCode, Reason = reason });
+                inbox.Enqueue(new SocketEvent
+                {
+                    Kind = SocketEventKind.Closed, Seq = seq, CloseCode = closeCode, Reason = reason, Unauthorized = unauthorized
+                });
                 ws.Dispose();
             }
         }
@@ -388,7 +435,7 @@ namespace WhoisntCitizen.Network
                         break;
                     case SocketEventKind.Closed:
                         ReleaseSocket();
-                        HandleClosed(e.CloseCode, e.Reason);
+                        HandleClosed(e.CloseCode, e.Reason, e.Unauthorized);
                         break;
                 }
             }
@@ -450,7 +497,7 @@ namespace WhoisntCitizen.Network
                     break;
 
                 case RealtimeErrorMessage err:
-                    Debug.LogWarning($"[Realtime] 서버 오류: {err.Code} {err.Message}");
+                    HandleServerError(err);
                     break;
 
                 case UnknownServerMessage unknown:
@@ -473,9 +520,10 @@ namespace WhoisntCitizen.Network
             }
         }
 
-        private void HandleClosed(int? closeCode, string reason)
+        private void HandleClosed(int? closeCode, string reason, bool handshakeUnauthorized = false)
         {
             socketOpen = false;
+            nextResubscribeAt = 0;
             signalFilter.Clear();
             tracker.OnDisconnected();
 
@@ -485,9 +533,70 @@ namespace WhoisntCitizen.Network
                 return;
             }
 
+            if (RealtimeFailurePolicy.ForClose(closeCode, handshakeUnauthorized) == CloseAction.StopAuthExpired)
+            {
+                StopForAuthExpired(handshakeUnauthorized ? "연결 거절(401)" : $"서버가 연결을 닫음({closeCode})");
+                return;
+            }
+
+            if (closeCode == RealtimeProtocol.CloseIdleTimeout)
+            {
+                // 보통 앱이 잠시 멈춰(창 비활성·디버거 정지) ping을 못 보낸 경우다. 평소처럼 다시 연결한다.
+                Log("서버가 응답 없음(4408)으로 연결을 닫았습니다. ping이 멈췄었는지 확인하세요(Run In Background).");
+            }
+
             double delay = backoff.NextDelaySeconds();
             nextConnectAt = Now + delay;
             Log($"연결 끊김 (code={closeCode?.ToString() ?? "-"}, {reason}) → {delay:0.0}초 뒤 다시 연결");
+        }
+
+        /// <summary>토큰 만료: 재연결을 멈추고 AuthExpired를 알린다. 다시 로그인한 뒤 Connect()로 재개한다.</summary>
+        private void StopForAuthExpired(string why)
+        {
+            wantConnected = false;
+            IsAuthExpired = true;
+            nextResubscribeAt = 0;
+            Debug.LogWarning($"[Realtime] 토큰이 만료돼 실시간 연결을 멈춥니다: {why}. 다시 로그인해야 합니다. (그동안 화면은 폴링으로만 동작)");
+            try
+            {
+                AuthExpired?.Invoke();
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+        }
+
+        private void HandleServerError(RealtimeErrorMessage err)
+        {
+            switch (RealtimeFailurePolicy.ForError(err.Code))
+            {
+                case ErrorAction.SubscribeRejected:
+                    long roomId = tracker.DesiredRoomId;
+                    nextResubscribeAt = 0;
+                    tracker.OnSubscribeRejected();
+                    signalFilter.Clear();
+                    Debug.LogWarning($"[Realtime] 방 {roomId} 구독이 거절됐습니다({err.Code}). 폴링으로 계속합니다. {err.Message}");
+                    if (roomId > 0)
+                    {
+                        Invoke(SubscribeRejected, roomId);
+                    }
+                    break;
+
+                case ErrorAction.RetrySubscribeLater:
+                    Debug.LogWarning($"[Realtime] 서버 오류({err.Code}): {err.Message}");
+                    if (tracker.State == RealtimeState.Connected && tracker.DesiredRoomId > 0)
+                    {
+                        nextResubscribeAt = Now + RealtimeFailurePolicy.RetrySubscribeDelaySeconds;
+                        Log($"{RealtimeFailurePolicy.RetrySubscribeDelaySeconds:0}초 뒤 방 {tracker.DesiredRoomId} 구독을 다시 시도합니다.");
+                    }
+                    break;
+
+                default:
+                    // BAD_MESSAGE·UNKNOWN_TYPE은 클라이언트가 잘못 보낸 것이다. 다시 보내도 같으니 기록만 한다.
+                    Debug.LogWarning($"[Realtime] 서버가 메시지를 처리하지 못했습니다({err.Code}): {err.Message}");
+                    break;
+            }
         }
 
         private void Execute(RealtimeAction action)
