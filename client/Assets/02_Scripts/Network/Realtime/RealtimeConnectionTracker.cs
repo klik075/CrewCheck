@@ -76,6 +76,12 @@ namespace WhoisntCitizen.Network.Realtime
         /// <summary>서버가 구독을 확인한 방. Subscribed 상태에서만 0이 아니다.</summary>
         public long SubscribedRoomId { get; private set; }
 
+        /// <summary>
+        /// room.subscribe를 보냈지만 아직 subscribed·거절 답을 못 받은 방. 없으면 0.
+        /// 같은 방에 대해 답을 기다리는 동안 EnterRoom이 또 불려도(방 화면과 채팅이 각각 부름) 다시 보내지 않기 위해 기억한다.
+        /// </summary>
+        public long PendingSubscribeRoomId { get; private set; }
+
         /// <summary>State가 바뀔 때마다 (이전, 이후). 화면이 폴링 주기를 다시 정할 때 쓴다.</summary>
         public event Action<RealtimeState, RealtimeState> StateChanged;
 
@@ -104,7 +110,7 @@ namespace WhoisntCitizen.Network.Realtime
             }
             UserId = userId;
             SetState(RealtimeState.Connected);
-            return DesiredRoomId > 0 ? RealtimeAction.Subscribe(DesiredRoomId) : RealtimeAction.None;
+            return DesiredRoomId > 0 ? SendSubscribe(DesiredRoomId) : RealtimeAction.None;
         }
 
         /// <summary>
@@ -120,6 +126,7 @@ namespace WhoisntCitizen.Network.Realtime
                 return false;
             }
             bool already = State == RealtimeState.Subscribed && SubscribedRoomId == roomId;
+            PendingSubscribeRoomId = 0;
             SubscribedRoomId = roomId;
             SetState(RealtimeState.Subscribed);
             return !already;
@@ -128,9 +135,11 @@ namespace WhoisntCitizen.Network.Realtime
         /// <summary>
         /// 서버가 구독을 거절했다(error NOT_IN_ROOM). 방 신호가 오지 않으니 Connected로 돌아가 빠른 폴링을 하게 한다.
         /// 보고 있는 방은 지우지 않는다. 방 화면의 GET이 실제로 방에서 나갔는지 판단해 LeaveRoom을 부른다.
+        /// 답을 기다리던 구독도 끝난 것으로 본다 → 이후 EnterRoom(같은 방)이 오면 다시 보낸다(SERVER_ERROR 재시도 등).
         /// </summary>
         public void OnSubscribeRejected()
         {
+            PendingSubscribeRoomId = 0;
             if (State == RealtimeState.Subscribed || State == RealtimeState.Connected)
             {
                 SubscribedRoomId = 0;
@@ -146,6 +155,7 @@ namespace WhoisntCitizen.Network.Realtime
         {
             UserId = 0;
             SubscribedRoomId = 0;
+            PendingSubscribeRoomId = 0; // 끊긴 소켓으로 보낸 요청의 답은 오지 않는다
             SetState(RealtimeState.Disconnected);
         }
 
@@ -169,8 +179,11 @@ namespace WhoisntCitizen.Network.Realtime
             switch (State)
             {
                 case RealtimeState.Connected:
-                    // 같은 방에 다시 들어와도(씬 전환 등) 구독 확인이 아직 없으면 다시 보낸다. 서버는 중복 구독을 문제 삼지 않는다.
-                    return RealtimeAction.Subscribe(roomId);
+                    if (PendingSubscribeRoomId == roomId)
+                    {
+                        return RealtimeAction.None; // 이 방의 구독 요청을 이미 보냈고 답을 기다리는 중
+                    }
+                    return SendSubscribe(roomId);
 
                 case RealtimeState.Subscribed:
                     if (sameRoom && SubscribedRoomId == roomId)
@@ -179,7 +192,7 @@ namespace WhoisntCitizen.Network.Realtime
                     }
                     SubscribedRoomId = 0;
                     SetState(RealtimeState.Connected); // 새 방의 subscribed가 올 때까지는 신호를 믿지 않는다
-                    return RealtimeAction.Subscribe(roomId);
+                    return SendSubscribe(roomId);
 
                 default:
                     return RealtimeAction.None;
@@ -194,6 +207,7 @@ namespace WhoisntCitizen.Network.Realtime
         {
             long previous = DesiredRoomId;
             DesiredRoomId = 0;
+            PendingSubscribeRoomId = 0;
             if (previous <= 0)
             {
                 return RealtimeAction.None;
@@ -222,6 +236,13 @@ namespace WhoisntCitizen.Network.Realtime
         public bool ReceivesSignalsFor(long roomId)
         {
             return roomId > 0 && State == RealtimeState.Subscribed && SubscribedRoomId == roomId;
+        }
+
+        /// <summary>room.subscribe를 보내기로 하고, 답을 기다리는 방으로 기억한다.</summary>
+        private RealtimeAction SendSubscribe(long roomId)
+        {
+            PendingSubscribeRoomId = roomId;
+            return RealtimeAction.Subscribe(roomId);
         }
 
         private void SetState(RealtimeState next)

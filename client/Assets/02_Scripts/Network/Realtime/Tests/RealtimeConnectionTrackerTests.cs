@@ -251,6 +251,69 @@ namespace WhoisntCitizen.Network.Realtime.Tests
             CollectionAssert.IsEmpty(changes);
         }
 
+        // ------------------------------------------------------------ 구독 요청 중복 방지
+
+        [Test]
+        public void 구독_답을_기다리는_중에_같은_방으로_또_들어와도_다시_보내지_않는다()
+        {
+            Connect();
+            Assert.AreEqual(RealtimeAction.Subscribe(3), tracker.EnterRoom(3)); // 방 화면
+            Assert.AreEqual(3L, tracker.PendingSubscribeRoomId);
+            Assert.AreEqual(RealtimeAction.None, tracker.EnterRoom(3));         // 채팅
+            Assert.IsTrue(tracker.OnSubscribed(3));
+            Assert.AreEqual(0L, tracker.PendingSubscribeRoomId);
+        }
+
+        [Test]
+        public void 끊긴_동안_여러_화면이_들어와도_connected때_한_번만_보낸다()
+        {
+            tracker.EnterRoom(3);
+            tracker.EnterRoom(3);
+            tracker.OnConnecting();
+            Assert.AreEqual(RealtimeAction.Subscribe(3), tracker.OnConnected(7));
+            Assert.AreEqual(RealtimeAction.None, tracker.EnterRoom(3));
+        }
+
+        [Test]
+        public void 답을_기다리는_중에_다른_방으로_옮기면_새_방은_보낸다()
+        {
+            Connect();
+            tracker.EnterRoom(3);
+            Assert.AreEqual(RealtimeAction.Subscribe(5), tracker.EnterRoom(5));
+            Assert.AreEqual(5L, tracker.PendingSubscribeRoomId);
+        }
+
+        [Test]
+        public void 거절되면_같은_방으로_다시_들어올_때_다시_보낸다()
+        {
+            Connect();
+            tracker.EnterRoom(3);
+            tracker.OnSubscribeRejected();
+            Assert.AreEqual(0L, tracker.PendingSubscribeRoomId);
+            Assert.AreEqual(RealtimeAction.Subscribe(3), tracker.EnterRoom(3));
+        }
+
+        [Test]
+        public void 끊기면_답_대기가_풀리고_재연결때_다시_보낸다()
+        {
+            Connect();
+            tracker.EnterRoom(3);
+            tracker.OnDisconnected();
+            Assert.AreEqual(0L, tracker.PendingSubscribeRoomId);
+            tracker.OnConnecting();
+            Assert.AreEqual(RealtimeAction.Subscribe(3), tracker.OnConnected(7));
+        }
+
+        [Test]
+        public void 나가면_답_대기도_풀린다()
+        {
+            Connect();
+            tracker.EnterRoom(3);
+            tracker.LeaveRoom();
+            Assert.AreEqual(0L, tracker.PendingSubscribeRoomId);
+            Assert.AreEqual(RealtimeAction.Subscribe(3), tracker.EnterRoom(3));
+        }
+
         // ------------------------------------------------------------ 신호 수신 여부
 
         [Test]

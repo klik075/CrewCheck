@@ -585,6 +585,8 @@ namespace WhoisntCitizen.Network
 
                 case ErrorAction.RetrySubscribeLater:
                     Debug.LogWarning($"[Realtime] 서버 오류({err.Code}): {err.Message}");
+                    // 기다리던 구독 요청은 실패했다 → 재시도 때 EnterRoom이 다시 보내도록 '답 대기'를 풀어 둔다.
+                    if (tracker.State == RealtimeState.Connected) tracker.OnSubscribeRejected();
                     if (tracker.State == RealtimeState.Connected && tracker.DesiredRoomId > 0)
                     {
                         nextResubscribeAt = Now + RealtimeFailurePolicy.RetrySubscribeDelaySeconds;
