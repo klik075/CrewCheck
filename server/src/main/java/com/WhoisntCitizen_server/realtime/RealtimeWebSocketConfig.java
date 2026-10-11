@@ -56,6 +56,12 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
         return new LocalRealtimeNotifier(realtimeSessionRegistry(), realtimeMessageCodec());
     }
 
+    /** 게임 상태가 저장되면 그 방에 game.changed를 보낸다 (4-4) */
+    @Bean
+    public RealtimeGameListener realtimeGameListener() {
+        return new RealtimeGameListener(realtimeNotifier());
+    }
+
     @Bean
     public RoomMembership roomMembership() {
         return new LobbyRoomMembership(roomRepository);
