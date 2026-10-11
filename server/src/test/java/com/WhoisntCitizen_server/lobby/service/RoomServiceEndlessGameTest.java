@@ -6,14 +6,12 @@ import com.WhoisntCitizen_server.lobby.domain.room.Room;
 import com.WhoisntCitizen_server.lobby.domain.room.RoomPlayer;
 import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
 import com.WhoisntCitizen_server.lobby.lock.LocalRoomLock;
-import com.WhoisntCitizen_server.user.entity.User;
 import com.WhoisntCitizen_server.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -132,9 +130,7 @@ class RoomServiceEndlessGameTest {
         Room room = new Room(ROOM_ID, "방", 10L, 8);
         room.addPlayer(new RoomPlayer(10L, "방장", false));
         rooms.save(room);
-        when(users.findByMemberId(100L)).thenReturn(Optional.of(User.builder().id(10L).nickname("방장").build()));
-
-        roomService.leaveRoom(ROOM_ID, 100L);
+        roomService.leaveRoom(ROOM_ID, 10L); // RoomService는 userId를 받는다 (memberId → userId 변환은 컨트롤러의 CurrentUserResolver)
 
         assertThat(rooms.findById(ROOM_ID)).isNull();
         assertThat(events).containsExactly(new RoomDeletedEvent(ROOM_ID));
