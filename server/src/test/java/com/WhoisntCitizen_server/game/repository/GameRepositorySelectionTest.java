@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.repository;
 
 import com.WhoisntCitizen_server.game.repository.redis.GameRedis;
 import com.WhoisntCitizen_server.game.repository.redis.GameRedisConfig;
+import com.WhoisntCitizen_server.game.repository.redis.GameRedisConnectionConfig;
 import com.WhoisntCitizen_server.game.repository.redis.RedisGameRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -17,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GameRepositorySelectionTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
-            .withUserConfiguration(InMemoryGameRepository.class, GameRedisConfig.class)
+            .withUserConfiguration(InMemoryGameRepository.class, GameRedisConfig.class, GameRedisConnectionConfig.class)
             .withBean(Clock.class, Clock::systemUTC);
 
     @Test

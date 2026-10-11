@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.config.GamePhaseProperties;
 import com.WhoisntCitizen_server.common.exception.GameNotFoundException;
+import com.WhoisntCitizen_server.common.exception.LockTimeoutException;
 import com.WhoisntCitizen_server.common.event.PirateNoticeEvent;
 import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
 import com.WhoisntCitizen_server.game.entity.DeathCause;
@@ -15,6 +16,7 @@ import com.WhoisntCitizen_server.game.event.GameEndedEvent;
 import com.WhoisntCitizen_server.game.event.PlayersDepartedEvent;
 import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
 import com.WhoisntCitizen_server.game.lock.GameLock;
+import com.WhoisntCitizen_server.game.lock.GameLockScope;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.game.scheduling.DeferredEventPublisher;
 import com.WhoisntCitizen_server.game.scheduling.GameTimeoutHandler;
@@ -30,6 +32,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -60,6 +63,9 @@ import java.util.stream.Collectors;
 public class GameFlowService implements GameTimeoutHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GameFlowService.class);
+
+    /** 타이머가 게임 잠금을 잡지 못했을 때 다시 시도하기까지 기다리는 시간 */
+    static final Duration LOCK_RETRY_DELAY = Duration.ofSeconds(1);
 
     private final GameRepository gameRepository;
     private final NightActionResolver nightActionResolver;
@@ -366,7 +372,7 @@ public class GameFlowService implements GameTimeoutHandler {
     }
 
     /**
-     * 10. 끝난 게임 정리. 결과를 조회할 시간(endedRetentionSeconds)을 준 뒤 메모리에서 삭제한다.
+     * 10. 끝난 게임 정리. 결과를 조회할 시간(endedRetentionSeconds)을 준 뒤 저장소(메모리 또는 Redis)에서 삭제한다.
      * 삭제 후에는 해당 gameId로 조회하면 404(GAME_NOT_FOUND)가 된다.
      * 이미 예약된 페이즈 타이머가 늦게 실행돼도 onPhaseTimeout이 게임을 못 찾으면 그냥 끝나므로 안전하다.
      * 취소된 게임이면 이때 방도 삭제하도록 알린다. (취소 직후에 지우면 클라이언트가 취소 안내와 결과를 보지 못한다)
@@ -380,9 +386,17 @@ public class GameFlowService implements GameTimeoutHandler {
     /** 결과 조회 시간이 끝났을 때 타이머가 호출한다. (scheduleCleanup 참고) */
     @Override
     public void onCleanup(String gameId) {
-        CleanupTarget target = gameLock.withLock(gameId, () -> gameRepository.findById(gameId)
-                .map(game -> new CleanupTarget(game.getRoomId(), game.isCancelled()))
-                .orElse(null));
+        CleanupTarget target;
+        try {
+            target = gameLock.withLock(gameId, () -> gameRepository.findById(gameId)
+                    .map(game -> new CleanupTarget(game.getRoomId(), game.isCancelled()))
+                    .orElse(null));
+        } catch (LockTimeoutException e) {
+            // 정리를 건너뛰면 게임과 (취소된 게임이면) 방이 지워지지 않으므로 조금 뒤 다시 시도한다
+            log.warn("[{}] 종료 게임 정리가 게임 잠금을 잡지 못해 {}초 뒤 다시 시도합니다", gameId, LOCK_RETRY_DELAY.toSeconds());
+            gameTimer.scheduleCleanup(gameId, clock.instant().plus(LOCK_RETRY_DELAY));
+            return;
+        }
         if (target == null) {
             return;
         }
@@ -392,7 +406,7 @@ public class GameFlowService implements GameTimeoutHandler {
         }
         gameRepository.delete(gameId);
         activityTracker.clear(gameId);
-        log.info("[{}] 종료된 게임을 메모리에서 삭제", gameId);
+        log.info("[{}] 종료된 게임을 저장소에서 삭제", gameId);
     }
 
     /** 정리할 때 필요한 값. 잠금 안에서 읽어 잠금 밖으로 가지고 나온다. */
@@ -439,33 +453,41 @@ public class GameFlowService implements GameTimeoutHandler {
     /** 페이즈 제한 시간이 끝났을 때 호출된다. 이미 다음 페이즈로 넘어갔으면(버전 불일치) 무시. */
     @Override
     public void onPhaseTimeout(String gameId, long expectedVersion) {
-        gameLock.runWithLock(gameId, () -> {
-            Optional<Game> found = gameRepository.findById(gameId);
-            if (found.isEmpty()) {
-                return;
-            }
-            Game game = found.get();
-            if (game.getPhaseVersion() != expectedVersion || game.isEnded()) {
-                return;
-            }
-            try {
-                log.info("[{}] {} 종료", game.getGameId(), game.getPhase());
-                // 전원이 제출하면 일찍 끝나는 밤/투표만 시간 초과를 알린다. (나머지 페이즈는 항상 시간으로 넘어감)
-                if (game.getPhase() == GamePhase.NIGHT || game.getPhase() == GamePhase.VOTE) {
-                    announce(game, "시간이 다 되어 다음 단계로 넘어갑니다.");
+        try {
+            gameLock.runWithLock(gameId, () -> {
+                Optional<Game> found = gameRepository.findById(gameId);
+                if (found.isEmpty()) {
+                    return;
                 }
-                switch (game.getPhase()) {
-                    case NIGHT -> doResolveNight(game);
-                    case NIGHT_RESULT -> enterDay(game);
-                    case DAY -> enterVote(game);
-                    case VOTE -> doResolveVote(game);
-                    case EXECUTION -> enterNight(game);
-                    default -> { }
+                Game game = found.get();
+                if (game.getPhaseVersion() != expectedVersion || game.isEnded()) {
+                    return;
                 }
-            } catch (RuntimeException | Error e) {
-                cancelAfterError(game, e);
-            }
-        });
+                try {
+                    log.info("[{}] {} 종료", game.getGameId(), game.getPhase());
+                    // 전원이 제출하면 일찍 끝나는 밤/투표만 시간 초과를 알린다. (나머지 페이즈는 항상 시간으로 넘어감)
+                    if (game.getPhase() == GamePhase.NIGHT || game.getPhase() == GamePhase.VOTE) {
+                        announce(game, "시간이 다 되어 다음 단계로 넘어갑니다.");
+                    }
+                    switch (game.getPhase()) {
+                        case NIGHT -> doResolveNight(game);
+                        case NIGHT_RESULT -> enterDay(game);
+                        case DAY -> enterVote(game);
+                        case VOTE -> doResolveVote(game);
+                        case EXECUTION -> enterNight(game);
+                        default -> { }
+                    }
+                } catch (RuntimeException | Error e) {
+                    cancelAfterError(game, e);
+                }
+            });
+        } catch (LockTimeoutException e) {
+            // 잠금을 못 잡았으니 아무것도 바뀌지 않았다. 그냥 끝내면 게임이 이 페이즈에 멈추므로 조금 뒤 다시 시도한다.
+            // 그사이 다른 경로(전원 제출 등)로 페이즈가 넘어갔으면 다시 시도했을 때 버전이 달라 무시된다.
+            log.warn("[{}] 페이즈 타이머(v{})가 게임 잠금을 잡지 못해 {}초 뒤 다시 시도합니다",
+                    gameId, expectedVersion, LOCK_RETRY_DELAY.toSeconds());
+            gameTimer.schedulePhaseTimeout(gameId, expectedVersion, clock.instant().plus(LOCK_RETRY_DELAY));
+        }
     }
 
     private Game findGame(String gameId) {
@@ -476,32 +498,43 @@ public class GameFlowService implements GameTimeoutHandler {
 
     /**
      * 방 채팅창에 시스템 메시지로 남길 안내 문장을 발행한다. 채팅 모듈(ChatNoticeEventListener)이 받아 저장한다.
+     * 게임 잠금 안에서 불려도 실제 발행(채팅 저장, 이후 WebSocket 전송)은 잠금이 풀린 직후 같은 스레드에서 한다.
+     * (GameLockScope.afterUnlock: 넣은 순서대로, API 응답 전에 실행된다) 안내 문장은 잠금 안에서 미리 만들어 둔다.
      * 안내가 실패해도 게임 진행은 계속되도록 예외를 삼킨다.
      */
     private void announce(Game game, String message) {
         if (message == null) {
             return;
         }
-        try {
-            eventPublisher.publishEvent(new RoomNoticeEvent(game.getRoomId(), message));
-        } catch (RuntimeException e) {
-            log.warn("[{}] 채팅 안내 발행 실패: {}", game.getGameId(), e.getMessage());
-        }
+        String gameId = game.getGameId();
+        RoomNoticeEvent event = new RoomNoticeEvent(game.getRoomId(), message);
+        GameLockScope.afterUnlock(() -> {
+            try {
+                eventPublisher.publishEvent(event);
+            } catch (RuntimeException e) {
+                log.warn("[{}] 채팅 안내 발행 실패: {}", gameId, e.getMessage());
+            }
+        });
     }
 
     /**
      * 같은 게임의 해적(접선한 앵무새 포함)에게만 보이는 시스템 메시지로 남길 안내를 발행한다.
      * (해적의 공격 대상 선택·넘기기, 앵무새 접선. NightService가 호출) 안내가 실패해도 게임 진행은 계속된다.
+     * announce와 같이 게임 잠금이 풀린 뒤에 발행한다.
      */
     public void announceToPirates(Game game, String message) {
         if (message == null) {
             return;
         }
-        try {
-            eventPublisher.publishEvent(new PirateNoticeEvent(game.getRoomId(), game.getGameId(), message));
-        } catch (RuntimeException e) {
-            log.warn("[{}] 해적 안내 발행 실패: {}", game.getGameId(), e.getMessage());
-        }
+        String gameId = game.getGameId();
+        PirateNoticeEvent event = new PirateNoticeEvent(game.getRoomId(), gameId, message);
+        GameLockScope.afterUnlock(() -> {
+            try {
+                eventPublisher.publishEvent(event);
+            } catch (RuntimeException e) {
+                log.warn("[{}] 해적 안내 발행 실패: {}", gameId, e.getMessage());
+            }
+        });
     }
 
     private static String phaseMessage(Game game, GamePhase phase, int seconds) {

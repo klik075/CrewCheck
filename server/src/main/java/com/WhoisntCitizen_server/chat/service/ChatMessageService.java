@@ -24,6 +24,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * 채팅 전송/조회.
@@ -124,14 +125,17 @@ public class ChatMessageService {
                 .findFirst()
                 .orElseThrow(() -> new ForbiddenException("현재 채팅할 수 없는 플레이어입니다. (방 참가자가 아님)"));
 
-        Game game = activeGame(room);
-        Rule rule = game == null ? Rule.PUBLIC : ruleOf(game, player.getUserId());
+        // 게임 잠금 안에서 게임을 읽고 규칙까지 정한다. 메시지 저장은 잠금 밖에서 한다
+        SendRule decided = withActiveGame(room, game -> game == null
+                ? new SendRule(Rule.PUBLIC, null)
+                : new SendRule(ruleOf(game, player.getUserId()), game.getGameId()));
+        Rule rule = decided.rule();
         if (rule == Rule.NIGHT_BLOCKED) {
             throw new ForbiddenException(NIGHT_BLOCKED_MESSAGE);
         }
 
         MessageType type = rule == Rule.DEAD ? MessageType.DEAD : MessageType.USER;
-        String gameId = rule == Rule.PUBLIC ? null : game.getGameId();
+        String gameId = rule == Rule.PUBLIC ? null : decided.gameId();
         ChatMessage saved = repository.save(roomId, type, player.getUserId(), player.getNickname(), message.trim(),
                 gameId, rule == Rule.NIGHT_PIRATE, rule == Rule.NIGHT_SIREN);
         return ChatMessageResponse.from(saved);
@@ -232,17 +236,18 @@ public class ChatMessageService {
             if (resolved) return;
             resolved = true;
             if (memberId == null) return;
-            Game game = activeGame(room);
-            if (game == null) return;
-            Long userId = userRepository.findByMemberId(memberId).map(User::getId).orElse(null);
+            if (!room.isInGame() || room.getGameId() == null) return; // 게임 중이 아니면 프로필 조회도 하지 않음
+            Long userId = userRepository.findByMemberId(memberId).map(User::getId).orElse(null); // DB 조회는 잠금 밖에서
             if (userId == null) return;
-            gameLock.runWithLock(game.getGameId(), () -> {
+            withActiveGame(room, game -> {
+                if (game == null) return null;
                 GamePlayer me = findPlayer(game, userId);
-                if (me == null) return; // 게임 참가자가 아님 (관전자 등)
+                if (me == null) return null; // 게임 참가자가 아님 (관전자 등)
                 gameId = game.getGameId();
                 if (!me.isAlive()) diedAt = me.getDiedAt() != null ? me.getDiedAt() : Instant.EPOCH;
                 pirateSince = pirateChatSince(me);
                 sirenSince = sirenChatSince(me);
+                return null;
             });
         }
     }
@@ -254,12 +259,23 @@ public class ChatMessageService {
 
     // ---------- 게임 상태 ----------
 
-    /** 방에서 진행 중인 게임. 대기 중이거나 이미 끝난 게임이면 null */
-    private Game activeGame(Room room) {
-        if (!room.isInGame() || room.getGameId() == null) return null;
-        Game game = gameRepository.findById(room.getGameId()).orElse(null);
-        if (game == null) return null;
-        return gameLock.withLock(game.getGameId(), () -> game.isEnded() ? null : game);
+    /**
+     * 방에서 진행 중인 게임을 게임 잠금 안에서 읽어 action에 넘깁니다. 대기 중이거나 이미 끝난 게임이면 null을 넘깁니다.
+     *
+     * 게임은 반드시 잠금을 잡은 뒤 저장소에서 읽습니다. Redis 저장소는 읽을 때마다 JSON에서 새 복사본을 만들기 때문에,
+     * 잠금 밖에서 읽은 게임은 그사이 밤이 시작되거나 플레이어가 죽어도 알 수 없습니다.
+     * 게임 진행(페이즈 전환, 사망 처리)도 같은 잠금을 쓰므로, action이 판단하는 동안에는 게임 상태가 바뀌지 않습니다.
+     * action 안에서 판단까지 끝내고 결과 값만 밖으로 가지고 나갑니다. (Game 객체를 잠금 밖으로 가지고 나가지 않습니다)
+     */
+    private <T> T withActiveGame(Room room, Function<Game, T> action) {
+        String gameId = room.getGameId();
+        if (!room.isInGame() || gameId == null) return action.apply(null);
+        return gameLock.withLock(gameId, () -> action.apply(
+                gameRepository.findById(gameId).filter(game -> !game.isEnded()).orElse(null)));
+    }
+
+    /** 전송 규칙과 그 규칙을 정한 게임 id. 게임 잠금 안에서 정해 잠금 밖으로 가지고 나옵니다. */
+    private record SendRule(Rule rule, String gameId) {
     }
 
     /**
@@ -267,18 +283,17 @@ public class ChatMessageService {
      *  - 사망자 → DEAD (밤에도 가능)
      *  - 밤: 해적 → NIGHT_PIRATE, 세이렌 → NIGHT_SIREN, 그 밖(유혹당한 팀원, 게임 참가자가 아닌 사람 포함) → NIGHT_BLOCKED
      *  - 그 밖 → PUBLIC
+     * withActiveGame 안(게임 잠금 안)에서만 부릅니다.
      */
-    private Rule ruleOf(Game game, Long userId) {
-        return gameLock.withLock(game.getGameId(), () -> {
-            GamePlayer p = findPlayer(game, userId);
-            if (p != null && !p.isAlive()) return Rule.DEAD;
-            if (game.getPhase() == GamePhase.NIGHT) {
-                if (p != null && pirateChatSince(p) != null) return Rule.NIGHT_PIRATE;
-                if (p != null && p.isSiren()) return Rule.NIGHT_SIREN;
-                return Rule.NIGHT_BLOCKED;
-            }
-            return Rule.PUBLIC;
-        });
+    private static Rule ruleOf(Game game, Long userId) {
+        GamePlayer p = findPlayer(game, userId);
+        if (p != null && !p.isAlive()) return Rule.DEAD;
+        if (game.getPhase() == GamePhase.NIGHT) {
+            if (p != null && pirateChatSince(p) != null) return Rule.NIGHT_PIRATE;
+            if (p != null && p.isSiren()) return Rule.NIGHT_SIREN;
+            return Rule.NIGHT_BLOCKED;
+        }
+        return Rule.PUBLIC;
     }
 
     /**
