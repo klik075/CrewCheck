@@ -358,16 +358,26 @@ namespace WhoisntCitizen.Lobby
                 return;
             }
 
+            OpenPasswordPopup(room, $"'{room.title}' 방은 비밀방입니다. 비밀번호를 입력하세요.");
+        }
+
+        /// <summary>
+        /// 비밀번호 팝업을 열고, 확인하면 비밀번호와 함께 입장을 요청한다.
+        /// 목록에서 비밀방을 눌렀을 때와, 공개방으로 보였는데 그사이 방장이 비밀방으로 바꾼 경우(403 WRONG_ROOM_PASSWORD)에 쓴다.
+        /// </summary>
+        private void OpenPasswordPopup(RoomResponse room, string guide)
+        {
             if (roomPasswordPopup == null)
             {
                 Debug.LogError("[Lobby] roomPasswordPopup이 연결되지 않아 비밀방에 입장할 수 없습니다.");
+                SetJoining(false);
                 statusMessage?.ShowError("비밀번호 입력 창을 열 수 없습니다.");
                 return;
             }
 
             // 팝업이 열려 있는 동안은 입장 중으로 보고 목록 갱신/다른 방 입장/방 만들기를 막는다.
             SetJoining(true);
-            statusMessage?.ShowInfo($"'{room.title}' 방은 비밀방입니다. 비밀번호를 입력하세요.", keep: true);
+            statusMessage?.ShowInfo(guide, keep: true);
             roomPasswordPopup.Open(
                 submit: password => RequestJoin(room, password),
                 cancel: () =>
@@ -405,6 +415,13 @@ namespace WhoisntCitizen.Lobby
                 if (result.errorCode == RoomErrorCode.WrongRoomPassword && roomPasswordPopup != null && roomPasswordPopup.IsOpen)
                 {
                     roomPasswordPopup.ShowWrongPassword(result.message); // 에러 문구는 팝업 안에 표시
+                    return;
+                }
+
+                // 목록에서는 공개방이었는데 그사이 방장이 비밀방으로 바꾼 경우: 비밀번호 없이 보내 403이 왔다 → 비밀번호를 묻는다.
+                if (result.errorCode == RoomErrorCode.WrongRoomPassword && password == null)
+                {
+                    OpenPasswordPopup(room, $"'{room.title}' 방이 비밀방으로 바뀌었습니다. 비밀번호를 입력하세요.");
                     return;
                 }
 
