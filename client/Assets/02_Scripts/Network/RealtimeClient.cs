@@ -25,8 +25,10 @@ namespace WhoisntCitizen.Network
     /// 쓰는 쪽
     ///  - 연결: Connect() / Disconnect()
     ///  - 방: EnterRoom(roomId) / LeaveRoom() — 끊겨 있어도 기억했다가 연결되면 구독한다.
-    ///  - 이벤트: StateChanged, MessageReceived, Resynced(구독 확인 → GET 한 번)
-    /// (화면용 changed 이벤트, 종료 코드 처리는 4-8-7 ~ 4-8-8에서 붙인다)
+    ///  - 이벤트: Resynced(구독 확인 → 전부 GET 한 번)
+    ///            RoomChanged / GameChanged / ChatChanged(그 부분만 GET) — 걸러지고 프레임당 종류별 한 번
+    ///            StateChanged(폴링 주기 조정), MessageReceived(모든 메시지, 디버깅용)
+    /// (종료 코드 처리는 4-8-8에서 붙인다)
     /// </summary>
     public sealed class RealtimeClient : MonoBehaviour
     {
@@ -77,6 +79,7 @@ namespace WhoisntCitizen.Network
 
         private readonly RealtimeConnectionTracker tracker = new RealtimeConnectionTracker();
         private readonly ReconnectBackoff backoff = new ReconnectBackoff();
+        private readonly RealtimeSignalFilter signalFilter = new RealtimeSignalFilter();
 
         /// <summary>연결 상태와 구독 중인 방. 화면은 읽기만 한다.</summary>
         public RealtimeConnectionTracker Tracker => tracker;
@@ -95,6 +98,18 @@ namespace WhoisntCitizen.Network
         /// 구독 전이나 끊긴 동안 생긴 변경은 신호로 오지 않았기 때문이다. 메인 스레드에서 불린다.
         /// </summary>
         public event Action<long> Resynced;
+
+        /// <summary>방 정보가 바뀌었다 (roomId) → GET /api/v1/rooms/{roomId}. 메인 스레드, 프레임당 최대 한 번.</summary>
+        public event Action<long> RoomChanged;
+
+        /// <summary>게임 상태가 바뀌었다 (gameId, phaseVersion) → GET /api/v1/games/{gameId}. 메인 스레드, 프레임당 최대 한 번.</summary>
+        public event Action<string, long> GameChanged;
+
+        /// <summary>
+        /// 새 채팅이 생겼다 (roomId, lastMessageId) → GET messages?afterId=(내가 가진 마지막 id).
+        /// 화면이 이미 lastMessageId까지 갖고 있으면 무시해도 된다. 메인 스레드, 프레임당 최대 한 번.
+        /// </summary>
+        public event Action<long, long> ChatChanged;
 
         /// <summary>화면이 보고 있는 방(EnterRoom으로 알린 방). 방 밖이면 0.</summary>
         public long CurrentRoomId => tracker.DesiredRoomId;
@@ -152,6 +167,7 @@ namespace WhoisntCitizen.Network
         private void Update()
         {
             DrainInbox();
+            RaiseSignals();
 
             double now = Now;
 
@@ -209,6 +225,7 @@ namespace WhoisntCitizen.Network
         {
             wantConnected = false;
             CloseSocketGracefully();
+            signalFilter.Clear();
             if (tracker.State != RealtimeState.Disconnected)
             {
                 tracker.OnDisconnected();
@@ -237,6 +254,7 @@ namespace WhoisntCitizen.Network
         public void LeaveRoom()
         {
             Execute(tracker.LeaveRoom());
+            signalFilter.Clear();
         }
 
         // ================================================================ 연결
@@ -413,7 +431,21 @@ namespace WhoisntCitizen.Network
                     Log($"subscribed: room={subscribed.RoomId}" + (resync ? " → 한 번 GET(Resynced)" : " (무시: 떠난 방이거나 중복)"));
                     if (resync)
                     {
+                        signalFilter.OnResubscribed(); // 어차피 전부 GET하므로 모아 둔 신호는 버린다
                         RaiseResynced(subscribed.RoomId);
+                    }
+                    break;
+
+                case RoomChangedMessage _:
+                case GameChangedMessage _:
+                case ChatChangedMessage _:
+                    if (!signalFilter.Offer(message, tracker.SubscribedRoomId))
+                    {
+                        Log("신호 무시(구독 전·다른 방·이미 받은 채팅): " + Describe(message));
+                    }
+                    else
+                    {
+                        Log("신호: " + Describe(message));
                     }
                     break;
 
@@ -444,6 +476,7 @@ namespace WhoisntCitizen.Network
         private void HandleClosed(int? closeCode, string reason)
         {
             socketOpen = false;
+            signalFilter.Clear();
             tracker.OnDisconnected();
 
             if (!wantConnected)
@@ -469,6 +502,47 @@ namespace WhoisntCitizen.Network
                     Log("room.unsubscribe " + action.RoomId);
                     Send(RealtimeMessageCodec.EncodeUnsubscribe(action.RoomId));
                     break;
+            }
+        }
+
+        /// <summary>이번 프레임에 모인 신호를 종류별로 한 번씩 알린다. 순서: 방 → 게임 → 채팅.</summary>
+        private void RaiseSignals()
+        {
+            RealtimeSignals signals = signalFilter.TakePending();
+            if (signals.IsEmpty)
+            {
+                return;
+            }
+            if (signals.RoomChanged)
+            {
+                Invoke(RoomChanged, signals.RoomId);
+            }
+            if (signals.Game != null)
+            {
+                try { GameChanged?.Invoke(signals.Game.GameId, signals.Game.PhaseVersion); }
+                catch (Exception e) { Debug.LogException(e); }
+            }
+            if (signals.Chat != null)
+            {
+                try { ChatChanged?.Invoke(signals.Chat.RoomId, signals.Chat.LastMessageId); }
+                catch (Exception e) { Debug.LogException(e); }
+            }
+        }
+
+        private static void Invoke(Action<long> handler, long value)
+        {
+            try { handler?.Invoke(value); }
+            catch (Exception e) { Debug.LogException(e); }
+        }
+
+        private static string Describe(RealtimeServerMessage message)
+        {
+            switch (message)
+            {
+                case RoomChangedMessage r: return $"room.changed room={r.RoomId}";
+                case GameChangedMessage g: return $"game.changed game={g.GameId} v={g.PhaseVersion}";
+                case ChatChangedMessage c: return $"chat.changed room={c.RoomId} last={c.LastMessageId}";
+                default: return message.Type;
             }
         }
 
