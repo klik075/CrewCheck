@@ -17,6 +17,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonSubTypes({
         @JsonSubTypes.Type(value = ServerMessage.Connected.class, name = ServerMessage.Connected.TYPE),
         @JsonSubTypes.Type(value = ServerMessage.Pong.class, name = ServerMessage.Pong.TYPE),
+        @JsonSubTypes.Type(value = ServerMessage.Subscribed.class, name = ServerMessage.Subscribed.TYPE),
         @JsonSubTypes.Type(value = ServerMessage.GameChanged.class, name = ServerMessage.GameChanged.TYPE),
         @JsonSubTypes.Type(value = ServerMessage.RoomChanged.class, name = ServerMessage.RoomChanged.TYPE),
         @JsonSubTypes.Type(value = ServerMessage.ChatChanged.class, name = ServerMessage.ChatChanged.TYPE),
@@ -40,6 +41,14 @@ public sealed interface ServerMessage {
     /** ping에 대한 답. serverTime(epoch ms)은 클라이언트가 서버 시계와의 차이를 잴 때 쓸 수 있다 */
     record Pong(long serverTime) implements ServerMessage {
         public static final String TYPE = "pong";
+    }
+
+    /**
+     * room.subscribe가 받아들여졌다. 이 순간부터 그 방의 신호가 온다.
+     * 클라이언트는 이 메시지를 받은 뒤 방·게임·채팅을 GET으로 한 번 가져온다. (구독 전에 일어난 변경을 놓치지 않게)
+     */
+    record Subscribed(long roomId) implements ServerMessage {
+        public static final String TYPE = "subscribed";
     }
 
     /**

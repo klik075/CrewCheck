@@ -1,6 +1,7 @@
 package com.WhoisntCitizen_server.realtime;
 
 import com.WhoisntCitizen_server.realtime.protocol.ClientMessage;
+import com.WhoisntCitizen_server.realtime.protocol.RealtimeErrorCode;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeMessageCodec;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeMessageException;
 import com.WhoisntCitizen_server.realtime.protocol.ServerMessage;
@@ -9,73 +10,94 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
-import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
-import java.io.IOException;
 import java.time.Clock;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * /ws/v1 연결 하나하나를 처리한다. (4-2: 연결·ping만. 방 구독은 4-3)
+ * /ws/v1 연결 하나하나를 처리한다.
  *
- *  - 연결되면: connected(userId, ping 간격)를 보낸다
+ *  - 연결되면: 연결 목록(RealtimeSessionRegistry)에 넣고 connected를 보낸다
  *  - ping → pong(서버 시각)
+ *  - room.subscribe → 그 방 참가자인지 확인(RoomMembership) → 맞으면 구독하고 subscribed, 아니면 error(NOT_IN_ROOM)
+ *  - room.unsubscribe → 구독 해제 (답 없음)
  *  - 잘못된 메시지 → error(code)로 답하고 연결은 유지한다
+ *  - 끊기면: 연결 목록에서 뺀다
  *  - 바이너리 메시지는 TextWebSocketHandler가 거절하고 연결을 닫는다
  *
- * 보내기는 ConcurrentWebSocketSessionDecorator로 감싼 세션으로 한다.
- * WebSocket 세션은 동시에 두 스레드가 보내면 안 되는데, 앞으로는 요청 스레드·타이머 스레드 등 여러 곳에서
- * 같은 연결로 신호를 보내게 된다(4-4~4-6). 감싼 세션은 보내기를 한 줄로 세우고, 상대가 너무 느리면 연결을 닫는다.
+ * 한 연결의 메시지는 컨테이너가 차례로 넘겨주므로, 같은 연결의 subscribe·unsubscribe가 뒤섞이지 않는다.
  */
 public class RealtimeWebSocketHandler extends TextWebSocketHandler {
-
-    /** 메시지 하나를 보내는 데 이보다 오래 걸리면(상대가 받지 않음) 연결을 닫는다 */
-    static final int SEND_TIME_LIMIT_MILLIS = 5_000;
-    /** 아직 못 보낸 메시지가 이만큼 쌓이면 연결을 닫는다 */
-    static final int SEND_BUFFER_LIMIT_BYTES = 64 * 1024;
 
     private static final Logger log = LoggerFactory.getLogger(RealtimeWebSocketHandler.class);
 
     private final RealtimeMessageCodec codec;
     private final Clock clock;
-    /** 세션 id → 보내기용으로 감싼 세션 */
-    private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
+    private final RealtimeSessionRegistry registry;
+    private final RoomMembership membership;
+    /** 세션 id → 보내기용 연결. 이 핸들러 안에서 답장을 보낼 때 쓴다 */
+    private final Map<String, RealtimeConnection> connections = new ConcurrentHashMap<>();
 
-    public RealtimeWebSocketHandler(RealtimeMessageCodec codec, Clock clock) {
+    public RealtimeWebSocketHandler(RealtimeMessageCodec codec, Clock clock,
+                                    RealtimeSessionRegistry registry, RoomMembership membership) {
         this.codec = Objects.requireNonNull(codec, "codec");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.registry = Objects.requireNonNull(registry, "registry");
+        this.membership = Objects.requireNonNull(membership, "membership");
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        WebSocketSession safe = new ConcurrentWebSocketSessionDecorator(session, SEND_TIME_LIMIT_MILLIS, SEND_BUFFER_LIMIT_BYTES);
-        sessions.put(session.getId(), safe);
         long userId = RealtimeHandshakeInterceptor.userId(session);
-        log.info("[ws] 연결: userId={}, session={}, 현재 연결 수={}", userId, session.getId(), sessions.size());
-        send(safe, ServerMessage.Connected.of(userId));
+        RealtimeConnection connection = new WebSocketRealtimeConnection(session, userId);
+        connections.put(session.getId(), connection);
+        registry.register(connection);
+        log.info("[ws] 연결: userId={}, session={}, 현재 연결 수={}", userId, session.getId(), registry.connectionCount());
+        reply(connection, ServerMessage.Connected.of(userId));
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
-        WebSocketSession safe = sessions.getOrDefault(session.getId(), session);
+        RealtimeConnection connection = connections.get(session.getId());
+        if (connection == null) {
+            return; // 이미 끊긴 연결
+        }
         ClientMessage clientMessage;
         try {
             clientMessage = codec.decode(message.getPayload());
         } catch (RealtimeMessageException e) {
             log.debug("[ws] 잘못된 메시지: session={}, code={}", session.getId(), e.code());
-            send(safe, e.toMessage());
+            reply(connection, e.toMessage());
             return;
         }
         switch (clientMessage) {
-            case ClientMessage.Ping ping -> send(safe, new ServerMessage.Pong(clock.millis()));
-            // 방 구독은 4-3에서 연결 목록(방 → 연결)과 함께 처리한다
-            case ClientMessage.RoomSubscribe subscribe ->
-                    log.debug("[ws] 방 구독 요청(아직 처리 안 함): session={}, roomId={}", session.getId(), subscribe.roomId());
-            case ClientMessage.RoomUnsubscribe unsubscribe ->
-                    log.debug("[ws] 방 구독 해제 요청(아직 처리 안 함): session={}, roomId={}", session.getId(), unsubscribe.roomId());
+            case ClientMessage.Ping ping -> reply(connection, new ServerMessage.Pong(clock.millis()));
+            case ClientMessage.RoomSubscribe subscribe -> subscribe(connection, subscribe.roomId());
+            case ClientMessage.RoomUnsubscribe unsubscribe -> registry.unsubscribe(connection.id(), unsubscribe.roomId());
+        }
+    }
+
+    private void subscribe(RealtimeConnection connection, long roomId) {
+        boolean member;
+        try {
+            member = membership.isMember(roomId, connection.userId());
+        } catch (RuntimeException e) {
+            log.warn("[ws] 방 참가자 확인 실패: roomId={}, userId={}, {}", roomId, connection.userId(), e.toString());
+            reply(connection, new ServerMessage.ErrorMessage(RealtimeErrorCode.SERVER_ERROR,
+                    "방 정보를 확인하지 못했습니다. 잠시 뒤 다시 구독해 주세요"));
+            return;
+        }
+        if (!member) {
+            log.debug("[ws] 구독 거절: roomId={}, userId={} (방에 없음)", roomId, connection.userId());
+            reply(connection, new ServerMessage.ErrorMessage(RealtimeErrorCode.NOT_IN_ROOM,
+                    "방 " + roomId + "에 들어 있지 않습니다"));
+            return;
+        }
+        if (registry.subscribe(connection.id(), roomId)) {
+            reply(connection, new ServerMessage.Subscribed(roomId));
         }
     }
 
@@ -87,26 +109,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        sessions.remove(session.getId());
+        connections.remove(session.getId());
+        registry.unregister(session.getId());
         Object userId = session.getAttributes().get(RealtimeHandshakeInterceptor.ATTR_USER_ID);
         log.info("[ws] 연결 끊김: userId={}, session={}, code={}, 현재 연결 수={}",
-                userId, session.getId(), status.getCode(), sessions.size());
+                userId, session.getId(), status.getCode(), registry.connectionCount());
     }
 
-    /** 지금 열려 있는 연결 수 (확인·테스트용) */
-    public int connectionCount() {
-        return sessions.size();
-    }
-
-    private void send(WebSocketSession session, ServerMessage message) {
-        if (!session.isOpen()) {
-            return;
-        }
-        try {
-            session.sendMessage(new TextMessage(codec.encode(message)));
-        } catch (IOException | RuntimeException e) {
-            // 보내기 실패는 연결 문제다. 연결은 컨테이너가 정리하고 afterConnectionClosed가 불린다
-            log.debug("[ws] 보내기 실패: session={}, {}", session.getId(), e.toString());
-        }
+    private void reply(RealtimeConnection connection, ServerMessage message) {
+        connection.send(codec.encode(message));
     }
 }

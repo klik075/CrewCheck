@@ -7,5 +7,7 @@ public enum RealtimeErrorCode {
     /** 모르는 type */
     UNKNOWN_TYPE,
     /** 들어 있지 않은 방을 구독하려 했다 */
-    NOT_IN_ROOM
+    NOT_IN_ROOM,
+    /** 서버 쪽 문제(저장소 연결 실패 등)로 처리하지 못했다. 잠시 뒤 다시 보내면 된다 */
+    SERVER_ERROR
 }

@@ -56,6 +56,13 @@ class RealtimeMessageCodecTest {
     }
 
     @Test
+    void 구독_확인() {
+        String text = codec.encode(new ServerMessage.Subscribed(3));
+
+        assertThat(json(text)).isEqualTo(Map.of("type", "subscribed", "roomId", 3));
+    }
+
+    @Test
     void pong에는_서버_시각이_들어간다() {
         String text = codec.encode(new ServerMessage.Pong(1791631095000L));
 

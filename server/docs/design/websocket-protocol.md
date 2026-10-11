@@ -34,6 +34,7 @@ ws://{서버}:8080/ws/v1?token={JWT}                                            
 |---|---|---|
 | `connected` | `userId`, `heartbeatSeconds`(10), `idleTimeoutSeconds`(30) | 보고 있는 방을 `room.subscribe`로 알림. ping 시작 |
 | `pong` | `serverTime`(epoch ms) | 없음 (서버 시계 차이 계산에 써도 됨) |
+| `subscribed` | `roomId` | 구독 완료. 이때 방·게임·채팅을 GET으로 한 번 가져옴 (구독 전 변경 보충) |
 | `game.changed` | `gameId`, `phaseVersion` | `GET /api/v1/games/{gameId}` (phaseVersion은 참고용, 항상 다시 조회) |
 | `room.changed` | `roomId` | `GET /api/v1/rooms/{roomId}` |
 | `chat.changed` | `roomId`, `lastMessageId` | 이미 받은 id보다 크면 `GET /api/v1/rooms/{roomId}/messages?afterId=...` |
@@ -41,6 +42,7 @@ ws://{서버}:8080/ws/v1?token={JWT}                                            
 
 ```json
 {"type":"connected","userId":15,"heartbeatSeconds":10,"idleTimeoutSeconds":30}
+{"type":"subscribed","roomId":3}
 {"type":"game.changed","gameId":"abc","phaseVersion":7}
 {"type":"room.changed","roomId":3}
 {"type":"chat.changed","roomId":3,"lastMessageId":42}
@@ -52,8 +54,8 @@ ws://{서버}:8080/ws/v1?token={JWT}                                            
 | type | 필드 | 언제 |
 |---|---|---|
 | `ping` | 없음 | 10초마다. 서버는 `pong`으로 답하고 접속 기록을 남김 |
-| `room.subscribe` | `roomId` | 방 화면·게임 화면에 들어갈 때. 연결 하나는 방 하나만 구독(새로 구독하면 이전 구독은 풀림) |
-| `room.unsubscribe` | `roomId` | 방에서 나갈 때 |
+| `room.subscribe` | `roomId` | 방 화면·게임 화면에 들어갈 때. 그 방 참가자면 `subscribed`, 아니면 `error(NOT_IN_ROOM)`. 연결 하나는 방 하나만 구독(새로 구독하면 이전 구독은 풀림) |
+| `room.unsubscribe` | `roomId` | 방에서 나갈 때 (답 없음) |
 
 ```json
 {"type":"ping"}
@@ -67,6 +69,7 @@ ws://{서버}:8080/ws/v1?token={JWT}                                            
 | `BAD_MESSAGE` | JSON이 아님, type 없음, roomId 없음, 4096자 초과 |
 | `UNKNOWN_TYPE` | 모르는 type |
 | `NOT_IN_ROOM` | 들어 있지 않은 방을 구독하려 함 |
+| `SERVER_ERROR` | 서버 쪽 문제로 처리 못 함. 잠시 뒤 다시 보내면 됨 |
 
 ## 4. 연결 유지와 끊김
 

@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.realtime;
 
+import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeMessageCodec;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeProtocol;
 import org.springframework.context.annotation.Bean;
@@ -12,7 +13,13 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import java.time.Clock;
 
 /**
- * 실시간 알림 WebSocket(/ws/v1) 등록. 규칙은 Claude ouputs/websocket-protocol.md.
+ * 실시간 알림 WebSocket(/ws/v1) 등록. 규칙은 Claude outputs/websocket-protocol.md.
+ *
+ * 구성
+ *  - RealtimeWebSocketHandler: 연결·메시지 처리
+ *  - RealtimeSessionRegistry: 이 서버의 연결 목록 (사용자 → 연결, 방 → 연결)
+ *  - RealtimeNotifier: 다른 모듈이 신호를 보내는 입구. 지금은 LocalRealtimeNotifier(서버 1대), 5단계에서 Redis Pub/Sub 구현으로 바꾼다
+ *  - RoomMembership: 구독할 때 방 참가자인지 확인 (로비 저장소)
  *
  * Origin은 모두 허용한다. 인증을 쿠키가 아니라 JWT(헤더·쿼리)로 하므로 다른 사이트가 사용자 몰래 연결해도 토큰이 없어 열리지 않는다.
  * (Unity 데스크톱·모바일은 Origin 헤더를 보내지 않고, WebGL 빌드는 게임 서버와 다른 주소에서 열릴 수 있다)
@@ -26,10 +33,12 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
 
     private final JwtDecoder jwtDecoder;
     private final Clock clock;
+    private final LobbyRoomRepository roomRepository;
 
-    public RealtimeWebSocketConfig(JwtDecoder jwtDecoder, Clock clock) {
+    public RealtimeWebSocketConfig(JwtDecoder jwtDecoder, Clock clock, LobbyRoomRepository roomRepository) {
         this.jwtDecoder = jwtDecoder;
         this.clock = clock;
+        this.roomRepository = roomRepository;
     }
 
     @Bean
@@ -38,8 +47,23 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
     }
 
     @Bean
+    public RealtimeSessionRegistry realtimeSessionRegistry() {
+        return new RealtimeSessionRegistry();
+    }
+
+    @Bean
+    public RealtimeNotifier realtimeNotifier() {
+        return new LocalRealtimeNotifier(realtimeSessionRegistry(), realtimeMessageCodec());
+    }
+
+    @Bean
+    public RoomMembership roomMembership() {
+        return new LobbyRoomMembership(roomRepository);
+    }
+
+    @Bean
     public RealtimeWebSocketHandler realtimeWebSocketHandler() {
-        return new RealtimeWebSocketHandler(realtimeMessageCodec(), clock);
+        return new RealtimeWebSocketHandler(realtimeMessageCodec(), clock, realtimeSessionRegistry(), roomMembership());
     }
 
     @Override

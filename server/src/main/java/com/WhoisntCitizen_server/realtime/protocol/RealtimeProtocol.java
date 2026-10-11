@@ -3,7 +3,7 @@ package com.WhoisntCitizen_server.realtime.protocol;
 import java.time.Duration;
 
 /**
- * WebSocket(실시간 알림) 규칙의 고정 값. 자세한 설명은 docs/websocket-protocol.md.
+ * WebSocket(실시간 알림) 규칙의 고정 값. 자세한 설명은 Claude outputs/websocket-protocol.md.
  *
  * 역할 나누기
  *  - WebSocket: 서버 → 클라이언트 "바뀌었어" 신호만 보낸다. (내용 없음)

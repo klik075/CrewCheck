@@ -17,7 +17,7 @@ public sealed interface ClientMessage {
 
     /**
      * 이 방의 알림(room/game/chat.changed)을 받겠다. 방 화면·게임 화면에 들어갈 때 보낸다.
-     * 서버는 실제로 그 방에 들어 있는 사람인지 확인하고, 아니면 error(NOT_IN_ROOM)로 답한다.
+     * 서버는 실제로 그 방에 들어 있는 사람인지 확인하고, 맞으면 subscribed, 아니면 error(NOT_IN_ROOM)로 답한다.
      * 연결 하나는 방 하나만 구독한다. 다른 방을 구독하면 이전 구독은 풀린다.
      */
     record RoomSubscribe(long roomId) implements ClientMessage {
