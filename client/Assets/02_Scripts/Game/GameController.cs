@@ -1,5 +1,8 @@
 using System;
 using UnityEngine;
+using WhoisntCitizen.Lobby;
+using WhoisntCitizen.Network;
+using WhoisntCitizen.Network.Realtime;
 
 namespace WhoisntCitizen.Game
 {
@@ -9,6 +12,9 @@ namespace WhoisntCitizen.Game
     /// - 가짜 서버(useFakeServer): 로그인·방 없이 BeginFakeGame()으로 바로 시작한다(Play만 누르면 된다).
     /// - UI(G 단계)는 IGameView를 구현해 gameView에 넣고, 버튼은 SubmitNightAction·SkipNightAction·SkipDay·Vote를 부른다.
     ///   gameView가 비어 있으면 같은 오브젝트·자식에서 IGameView를 찾고, 그래도 없으면 Console 로그(LogGameView)로 대신한다.
+    /// - 실시간 신호(실제 서버 게임만): 시작하면 RealtimeClient에 방을 알리고(EnterRoom),
+    ///   game.changed·Resynced가 오면 바로 GET(RequestPollNow), 신호를 받는 동안은 폴링을 15초 안전망으로 늦춘다.
+    ///   끊기면 pollIntervalSeconds(1초)로 돌아가므로 신호가 없어도 지금처럼 진행된다.
     /// </summary>
     public sealed class GameController : MonoBehaviour
     {
@@ -28,6 +34,8 @@ namespace WhoisntCitizen.Game
         private IGameView view;
         private FakeGameApi fakeApi;
         private bool closedRaised;
+        private RealtimeClient realtime;    // 실제 서버 게임에서 신호를 받는 동안만
+        private long realtimeRoomId;
 
         /// <summary>진행 중인 게임. 대기실에 있으면 null.</summary>
         public GameSession Session { get; private set; }
@@ -97,6 +105,7 @@ namespace WhoisntCitizen.Game
         {
             EndGame();
             Session = new GameSession(new RealGameApi(), gameId, view, Clock, pollIntervalSeconds);
+            AttachRealtime(RoomSession.RoomId);
         }
 
         /// <summary>가짜 서버로 한 판을 시작한다 (개발용).</summary>
@@ -111,6 +120,7 @@ namespace WhoisntCitizen.Game
         /// <summary>진행 중인 게임을 닫는다. 늦게 온 응답은 무시된다.</summary>
         public void EndGame()
         {
+            DetachRealtime();
             if (Session != null)
             {
                 Session.Close();
@@ -176,6 +186,86 @@ namespace WhoisntCitizen.Game
             {
                 fakeApi.CancelGame(EndReasons.CancelledNoDeaths);
             }
+        }
+
+        // ================================================================ 실시간 신호
+
+        /// <summary>
+        /// 이 방의 신호를 받기 시작한다. 방은 Room 씬에서 이미 구독했을 수 있다 — 같은 방이면 EnterRoom은 아무것도 보내지 않는다.
+        /// 연결은 보통 로그인할 때 시작하지만, 아직이면 여기서 시작한다(이미 연결을 원하는 상태면 아무 일도 없다).
+        /// </summary>
+        private void AttachRealtime(long roomId)
+        {
+            if (roomId <= 0)
+            {
+                Debug.LogWarning("[Game] 방 번호가 없어 실시간 신호 없이 폴링으로만 진행합니다.");
+                return;
+            }
+
+            realtime = RealtimeClient.Instance;
+            realtimeRoomId = roomId;
+            realtime.GameChanged += OnRealtimeGameChanged;
+            realtime.Resynced += OnRealtimeResynced;
+            realtime.StateChanged += OnRealtimeStateChanged;
+
+            if (!realtime.WantsConnection && !realtime.IsAuthExpired && AuthSession.IsAuthenticated)
+            {
+                realtime.Connect();
+            }
+            realtime.EnterRoom(roomId);
+            ApplyPollInterval();
+        }
+
+        /// <summary>
+        /// 신호 받기를 그만둔다. 방 구독은 풀지 않는다 — 게임이 끝나면 같은 방의 Room 씬으로 돌아가기 때문이다.
+        /// (방을 나가는 경우의 LeaveRoom은 방 화면이 맡는다)
+        /// </summary>
+        private void DetachRealtime()
+        {
+            // 씬을 정리하는 중에 클라이언트를 새로 만들지 않도록 이미 만든 것만 쓴다.
+            RealtimeClient rt = realtime != null ? RealtimeClient.ExistingInstance : null;
+            if (rt != null)
+            {
+                rt.GameChanged -= OnRealtimeGameChanged;
+                rt.Resynced -= OnRealtimeResynced;
+                rt.StateChanged -= OnRealtimeStateChanged;
+            }
+            realtime = null;
+            realtimeRoomId = 0;
+        }
+
+        /// <summary>게임 상태가 바뀌었다는 신호 → 기다리지 않고 바로 GET. 다른 게임의 신호(이전 판 등)는 무시한다.</summary>
+        private void OnRealtimeGameChanged(string gameId, long phaseVersion)
+        {
+            if (Session != null && gameId == Session.GameId)
+            {
+                Session.RequestPollNow();
+            }
+        }
+
+        /// <summary>구독이 (다시) 확인됐다 → 구독 전·끊긴 동안 놓친 변경을 메우려고 한 번 GET.</summary>
+        private void OnRealtimeResynced(long roomId)
+        {
+            if (Session != null && roomId == realtimeRoomId)
+            {
+                Session.RequestPollNow();
+            }
+        }
+
+        private void OnRealtimeStateChanged(RealtimeState previous, RealtimeState next)
+        {
+            ApplyPollInterval();
+        }
+
+        /// <summary>이 방의 신호를 받는 중이면 15초(안전망), 아니면 원래 간격(pollIntervalSeconds).</summary>
+        private void ApplyPollInterval()
+        {
+            if (Session == null)
+            {
+                return;
+            }
+            bool signals = realtime != null && realtime.ReceivesSignalsFor(realtimeRoomId);
+            Session.SetPollInterval(RealtimePolling.IntervalSeconds(signals, pollIntervalSeconds));
         }
 
         private static double Clock()
