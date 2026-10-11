@@ -1,10 +1,13 @@
 package com.WhoisntCitizen_server.realtime;
 
+import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
 import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeMessageCodec;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeProtocol;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -34,11 +37,17 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
     private final JwtDecoder jwtDecoder;
     private final Clock clock;
     private final LobbyRoomRepository roomRepository;
+    private final PlayerActivityTracker activityTracker;
+    private final TaskScheduler scheduler;
 
-    public RealtimeWebSocketConfig(JwtDecoder jwtDecoder, Clock clock, LobbyRoomRepository roomRepository) {
+    public RealtimeWebSocketConfig(JwtDecoder jwtDecoder, Clock clock, LobbyRoomRepository roomRepository,
+                                   PlayerActivityTracker activityTracker,
+                                   @Qualifier("gamePhaseScheduler") TaskScheduler scheduler) {
         this.jwtDecoder = jwtDecoder;
         this.clock = clock;
         this.roomRepository = roomRepository;
+        this.activityTracker = activityTracker;
+        this.scheduler = scheduler;
     }
 
     @Bean
@@ -79,9 +88,22 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
         return new LobbyRoomMembership(roomRepository);
     }
 
+    /** 30초 동안 메시지가 없거나 토큰이 만료된 연결을 닫는다 (4-7) */
+    @Bean
+    public RealtimeConnectionMonitor realtimeConnectionMonitor() {
+        return new RealtimeConnectionMonitor(scheduler, clock);
+    }
+
+    /** ping을 받으면 접속 기록(연결 끊김 판정)에 남긴다 (4-7) */
+    @Bean
+    public RealtimeActivityRecorder realtimeActivityRecorder() {
+        return new GameActivityRecorder(roomRepository, activityTracker, clock);
+    }
+
     @Bean
     public RealtimeWebSocketHandler realtimeWebSocketHandler() {
-        return new RealtimeWebSocketHandler(realtimeMessageCodec(), clock, realtimeSessionRegistry(), roomMembership());
+        return new RealtimeWebSocketHandler(realtimeMessageCodec(), clock, realtimeSessionRegistry(), roomMembership(),
+                realtimeConnectionMonitor(), realtimeActivityRecorder());
     }
 
     @Override

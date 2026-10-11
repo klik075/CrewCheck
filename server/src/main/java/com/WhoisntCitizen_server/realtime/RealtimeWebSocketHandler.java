@@ -13,6 +13,7 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,7 +22,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * /ws/v1 연결 하나하나를 처리한다.
  *
  *  - 연결되면: 연결 목록(RealtimeSessionRegistry)에 넣고 connected를 보낸다
- *  - ping → pong(서버 시각)
+ *  - ping → pong(서버 시각) + 구독 중인 방에 진행 중인 게임이 있으면 접속 기록(touch)
+ *  - 어떤 메시지든 받으면 "살아 있음"으로 표시 (30초 동안 없으면 RealtimeConnectionMonitor가 닫는다)
  *  - room.subscribe → 그 방 참가자인지 확인(RoomMembership) → 맞으면 구독하고 subscribed, 아니면 error(NOT_IN_ROOM)
  *  - room.unsubscribe → 구독 해제 (답 없음)
  *  - 잘못된 메시지 → error(code)로 답하고 연결은 유지한다
@@ -38,15 +40,20 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final Clock clock;
     private final RealtimeSessionRegistry registry;
     private final RoomMembership membership;
+    private final RealtimeConnectionMonitor monitor;
+    private final RealtimeActivityRecorder activityRecorder;
     /** 세션 id → 보내기용 연결. 이 핸들러 안에서 답장을 보낼 때 쓴다 */
     private final Map<String, RealtimeConnection> connections = new ConcurrentHashMap<>();
 
     public RealtimeWebSocketHandler(RealtimeMessageCodec codec, Clock clock,
-                                    RealtimeSessionRegistry registry, RoomMembership membership) {
+                                    RealtimeSessionRegistry registry, RoomMembership membership,
+                                    RealtimeConnectionMonitor monitor, RealtimeActivityRecorder activityRecorder) {
         this.codec = Objects.requireNonNull(codec, "codec");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.membership = Objects.requireNonNull(membership, "membership");
+        this.monitor = Objects.requireNonNull(monitor, "monitor");
+        this.activityRecorder = Objects.requireNonNull(activityRecorder, "activityRecorder");
     }
 
     @Override
@@ -55,6 +62,8 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         RealtimeConnection connection = new WebSocketRealtimeConnection(session, userId);
         connections.put(session.getId(), connection);
         registry.register(connection);
+        Object expiresAt = session.getAttributes().get(RealtimeHandshakeInterceptor.ATTR_TOKEN_EXPIRES_AT);
+        monitor.register(connection, expiresAt instanceof Instant instant ? instant : null);
         log.info("[ws] 연결: userId={}, session={}, 현재 연결 수={}", userId, session.getId(), registry.connectionCount());
         reply(connection, ServerMessage.Connected.of(userId));
     }
@@ -65,6 +74,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         if (connection == null) {
             return; // 이미 끊긴 연결
         }
+        monitor.markActive(connection.id()); // 잘못된 메시지라도 연결은 살아 있다
         ClientMessage clientMessage;
         try {
             clientMessage = codec.decode(message.getPayload());
@@ -74,7 +84,10 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         switch (clientMessage) {
-            case ClientMessage.Ping ping -> reply(connection, new ServerMessage.Pong(clock.millis()));
+            case ClientMessage.Ping ping -> {
+                reply(connection, new ServerMessage.Pong(clock.millis())); // 답을 먼저 보내고
+                recordAlive(connection);                                   // 접속 기록은 그 뒤에 (저장소가 느려도 pong은 늦지 않게)
+            }
             case ClientMessage.RoomSubscribe subscribe -> subscribe(connection, subscribe.roomId());
             case ClientMessage.RoomUnsubscribe unsubscribe -> registry.unsubscribe(connection.id(), unsubscribe.roomId());
         }
@@ -101,6 +114,17 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    /** 구독 중인 방이 있으면 접속 기록을 남긴다. 실패해도 연결에는 영향이 없다 */
+    private void recordAlive(RealtimeConnection connection) {
+        registry.roomOf(connection.id()).ifPresent(roomId -> {
+            try {
+                activityRecorder.recordAlive(roomId, connection.userId());
+            } catch (RuntimeException e) {
+                log.debug("[ws] 접속 기록 실패: roomId={}, userId={}, {}", roomId, connection.userId(), e.toString());
+            }
+        });
+    }
+
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
         // 상대가 갑자기 끊는 등. 이 뒤에 afterConnectionClosed가 불린다
@@ -111,6 +135,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         connections.remove(session.getId());
         registry.unregister(session.getId());
+        monitor.unregister(session.getId());
         Object userId = session.getAttributes().get(RealtimeHandshakeInterceptor.ATTR_USER_ID);
         log.info("[ws] 연결 끊김: userId={}, session={}, code={}, 현재 연결 수={}",
                 userId, session.getId(), status.getCode(), registry.connectionCount());

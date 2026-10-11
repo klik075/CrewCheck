@@ -26,6 +26,9 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -55,6 +58,9 @@ class RealtimeRoomSubscriptionTest {
 
     @MockitoBean
     RoomMembership membership;
+
+    @MockitoBean
+    RealtimeActivityRecorder activityRecorder;
 
     private final StandardWebSocketClient client = new StandardWebSocketClient();
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
@@ -150,6 +156,30 @@ class RealtimeRoomSubscriptionTest {
 
         notifier.sendToRoom(ROOM, new ServerMessage.RoomChanged(ROOM));
         assertNoMessage(recorder);
+    }
+
+    @Test
+    void 방을_구독한_채로_ping을_보내면_접속_기록을_남긴다() throws Exception {
+        Recorder recorder = new Recorder();
+        WebSocketSession session = connect(recorder, MEMBER);
+        session.sendMessage(subscribe(ROOM));
+        next(recorder); // subscribed
+
+        session.sendMessage(new TextMessage("{\"type\":\"ping\"}"));
+
+        assertThat(next(recorder)).containsEntry("type", "pong");
+        verify(activityRecorder, timeout(2_000)).recordAlive(ROOM, MEMBER);
+    }
+
+    @Test
+    void 구독하지_않은_연결의_ping은_접속_기록을_남기지_않는다() throws Exception {
+        Recorder recorder = new Recorder();
+        WebSocketSession session = connect(recorder, STRANGER);
+
+        session.sendMessage(new TextMessage("{\"type\":\"ping\"}"));
+
+        assertThat(next(recorder)).containsEntry("type", "pong");
+        verify(activityRecorder, never()).recordAlive(anyLong(), anyLong());
     }
 
     @Test
