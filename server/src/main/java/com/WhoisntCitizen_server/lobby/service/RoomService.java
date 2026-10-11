@@ -28,10 +28,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -279,6 +281,71 @@ public class RoomService {
         if (deleted) {
             eventPublisher.publishEvent(new RoomDeletedEvent(roomId));
         }
+    }
+
+    /**
+     * 대기실에서 연결이 끊긴 참가자를 방에서 뺀다. RoomPresenceService가 주기적으로 호출한다.
+     *
+     * idleUserIds는 방 잠금 안에서 한 번 부른다. 잠금을 기다리는 사이 들어온 방 조회까지 반영한 최신 기록으로 판단하기 위해서다.
+     * (잠금 밖에서 판단한 목록을 그대로 쓰면, 그 사이 다시 조회한 사람을 빼 버릴 수 있다)
+     * 서버 여러 대가 같은 방을 동시에 검사해도, 먼저 잠금을 잡은 서버가 빼고 나머지는 이미 빠진 상태를 보게 된다.
+     *
+     * 처리 규칙
+     *  - 게임 중인 방은 건드리지 않는다. (게임 중 연결 끊김은 InactivePlayerMonitor → removeDepartedPlayers)
+     *  - 방장이 빠지면 남은 사람 중 가장 먼저 들어온 사람에게 위임된다. (Room.removePlayer)
+     *  - 나가기(leaveRoom)와 같은 이벤트를 발행한다: 방이 남으면 사람마다 RoomPlayerLeftEvent, 비면 방 삭제 + RoomDeletedEvent
+     *
+     * @param idleUserIds 연결이 끊긴 것으로 볼 userId 목록을 돌려준다. 방 잠금 안에서 호출된다.
+     * @return 실제로 뺀 userId 목록 (없으면 빈 목록)
+     */
+    public List<Long> removeIdlePlayers(Long roomId, Supplier<Set<Long>> idleUserIds) {
+        // 잠금 안에서 뺀 사람(닉네임 포함)을 담아 잠금 밖으로 가지고 나온다. (이벤트는 잠금 밖에서 발행)
+        List<RoomPlayer> removed = new ArrayList<>();
+
+        boolean deleted = roomLock.withLock(roomId, () -> {
+            Room room = roomRepository.findById(roomId);
+            if (room == null || room.isInGame()) return false;
+
+            Set<Long> idle = idleUserIds.get();
+            // 반복 중에 목록을 바꾸지 않도록 복사본을 돈다
+            for (RoomPlayer player : List.copyOf(room.getPlayers())) {
+                if (idle.contains(player.getUserId())) {
+                    room.removePlayer(player.getUserId()); // 방장이면 다음 사람에게 위임
+                    removed.add(player);
+                }
+            }
+            if (removed.isEmpty()) return false; // 그 사이 다시 조회했거나 이미 나간 경우
+
+            if (room.isEmpty()) {
+                roomRepository.delete(roomId);
+                return true;
+            }
+            roomRepository.save(room);
+            return false;
+        });
+
+        // 이벤트는 잠금 밖에서 발행한다. (채팅 저장 때문에 방 잠금을 오래 쥐지 않도록. leaveRoom과 같은 규칙)
+        // 방이 삭제된 경우에는 볼 사람이 없으므로 퇴장 알림을 남기지 않고, 방 채팅·접속 기록을 지우도록 알린다.
+        if (deleted) {
+            eventPublisher.publishEvent(new RoomDeletedEvent(roomId));
+        } else {
+            removed.forEach(p -> eventPublisher.publishEvent(new RoomPlayerLeftEvent(roomId, p.getUserId(), p.getNickname())));
+        }
+        return removed.stream().map(RoomPlayer::getUserId).toList();
+    }
+
+    /**
+     * 주기 검사용 방 읽기. 방이 없으면 null.
+     * 게임이 사라진 IN_GAME 방(서버 재시작으로 메모리 게임이 사라짐, 종료 이벤트 처리 실패 등)이면 WAITING으로 복구해서 돌려준다.
+     * 방 조회(getRoom)도 같은 복구를 하지만, 아무도 조회하지 않는 방(모두 떠난 방)은 여기서만 복구된다.
+     * 복구된 방은 이후 RoomPresenceService가 대기실 규칙으로 정리한다.
+     *
+     * 게임 중인 방이면 게임이 살아 있는지 확인하느라 게임 잠금을 잡는다. (GameService.keepsRoomInGame)
+     * 게임이 바쁘면 LockTimeoutException이 날 수 있고, 호출하는 쪽에서 이번 검사를 건너뛴다.
+     */
+    public Room loadRoomRecovered(Long roomId) {
+        Room room = roomRepository.findById(roomId);
+        return room == null ? null : recoverInListIfOrphaned(room);
     }
 
     /**

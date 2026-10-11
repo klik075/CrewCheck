@@ -8,6 +8,7 @@ import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.SetReadyRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.TransferHostRequestDto;
+import com.WhoisntCitizen_server.lobby.presence.RoomPresenceService;
 import com.WhoisntCitizen_server.lobby.service.RoomService;
 import com.WhoisntCitizen_server.user.service.CurrentUserResolver;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +32,8 @@ import java.util.List;
  *   - 이렇게 "토큰 → 나" 변환을 한 곳에 모아 두면, 변환 방식이 바뀌어도(캐시, 토큰에 userId 넣기 등)
  *     Resolver만 고치면 되고, 로비 서비스는 계정(Member)을 전혀 몰라도 된다.
  *
- * 방 목록·방 단건·참가자 목록 조회는 "누가" 요청했는지 쓰지 않으므로 jwt 파라미터를 받지 않는다.
+ * 방 목록·참가자 목록 조회는 "누가" 요청했는지 쓰지 않으므로 jwt 파라미터를 받지 않는다.
+ * 방 단건 조회는 대기실 접속 기록을 남기기 위해 jwt로 요청한 사람을 구한다.
  * (토큰 자체는 SecurityConfig에서 똑같이 검사한다)
  */
 @RestController
@@ -42,6 +44,8 @@ public class RoomController {
     private final RoomService roomService;
     // 토큰(sub = memberId) → userId 변환. 이 컨트롤러에서 "요청한 사람"은 항상 이걸로 구한다.
     private final CurrentUserResolver currentUser;
+    // 대기실 접속 기록 (방 조회가 30초 넘게 끊기면 방에서 뺀다)
+    private final RoomPresenceService roomPresenceService;
 
     @PostMapping
     public ResponseEntity<RoomResponseDto> createRoom(
@@ -56,9 +60,18 @@ public class RoomController {
     /**
      * 방 단건 조회: 방 정보 + 상태(WAITING/IN_GAME) + gameId + 참가자 목록.
      * 대기 화면에서 주기적으로 호출해, status가 IN_GAME이 되면 gameId로 게임 화면에 들어간다.
+     *
+     * 대기실은 이 API를 1초마다 부르므로 "아직 접속 중"이라는 신호(대기실 접속 기록)로도 쓴다.
+     *  - 기록이 idleTimeout(기본 30초) 넘게 끊기면 RoomPresenceService가 이 사람을 방에서 뺀다.
+     *  - 조회보다 먼저 기록한다: 조회를 처리하는 사이 검사가 돌아도 방금 요청한 사람이 빠지지 않도록.
+     *  - 참가자인지는 여기서 확인하지 않는다. (참가자가 아닌 사람의 기록은 다음 검사에서 지워진다)
      */
     @GetMapping("/{roomId}")
-    public ResponseEntity<RoomDetailResponseDto> getRoom(@PathVariable Long roomId) {
+    public ResponseEntity<RoomDetailResponseDto> getRoom(
+            @PathVariable Long roomId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        roomPresenceService.touch(roomId, currentUser.userId(jwt));
         return ResponseEntity.ok(roomService.getRoom(roomId));
     }
 
