@@ -31,6 +31,8 @@ namespace WhoisntCitizen.Lobby
     ///      방장을 넘기거나 내보낼 수 있다.
     ///      위임받은 사람은 다음 polling에서 방장이 되어 시작 버튼이 보이고, 이전 방장에게는 준비 버튼이 보인다.
     ///      추방된 사람은 다음 polling에서 목록에 자신이 없음을 보고 로비로 돌아간다. (그 방에는 다시 들어갈 수 없음)
+    ///   7) 방장은 Button_RoomSettings → 방 설정 팝업에서 제목 / 최대 인원 / 공개·비밀 / 비밀번호를 바꿀 수 있다.
+    ///      (PUT /api/v1/rooms/{roomId}/settings) 준비 상태는 유지되고, 다른 참가자는 다음 polling에서 바뀐 제목·인원을 본다.
     ///
     /// 진입 조건
     ///   로그인 안 됨 → Title, 방 정보 없음 → Lobby
@@ -50,6 +52,8 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private Button startGameButton; // Buttons/Button_StartGame (방장만 보임)
         [SerializeField] private Button exitRoomButton;  // Buttons/Button_ExitRoom
         [SerializeField] private Button readyButton;     // Buttons/Button_Ready (방장이 아닌 참가자만 보임)
+        [Tooltip("방 설정 버튼 (방장에게만 보임). 비워 두면 방 설정 기능이 꺼진다.")]
+        [SerializeField] private Button settingsButton;  // Buttons/Button_RoomSettings
         [Tooltip("준비 버튼 문구. 비워 두면 readyButton 자식의 첫 번째 TMP_Text를 사용한다.")]
         [SerializeField] private TMP_Text readyButtonLabel;
         [SerializeField] private string readyLabel = "준비";
@@ -60,6 +64,8 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private PlayerManageMenu playerManageMenu;
         [Tooltip("위임/추방 확인 팝업(Popup_Confirm). 비워 두면 묻지 않고 바로 요청한다.")]
         [SerializeField] private RoomConfirmPopup confirmPopup;
+        [Tooltip("방 설정 팝업(Popup_RoomSettings). settingsButton으로 연다.")]
+        [SerializeField] private RoomSettingsPopup roomSettingsPopup;
 
         [Header("Status (선택)")]
         [SerializeField] private StatusMessageView statusMessage;
@@ -85,6 +91,7 @@ namespace WhoisntCitizen.Lobby
         private bool lastAllGuestsReady; // 방장을 뺀 모든 참가자가 준비했는지
         private bool myReady;            // 내 준비 상태
         private int readySeq;            // 준비 요청마다 증가. 요청 전에 보낸 방 조회 응답(이전 준비 상태)을 무시하기 위한 값
+        private RoomDetailResponse lastRoom; // 마지막으로 화면에 그린 방 (설정 팝업에 현재 값을 채울 때 사용)
 
         private bool isFetching;      // GET /rooms/{id} 요청 중
         private bool isStarting;      // POST /rooms/{id}/games 요청 중
@@ -108,6 +115,7 @@ namespace WhoisntCitizen.Lobby
             BindIfEmpty(startGameButton, OnStartGameClicked);
             BindIfEmpty(exitRoomButton, OnExitRoomClicked);
             BindIfEmpty(readyButton, OnReadyClicked);
+            BindIfEmpty(settingsButton, OnSettingsClicked);
             if (readyButtonLabel == null && readyButton != null) readyButtonLabel = readyButton.GetComponentInChildren<TMP_Text>(true);
         }
 
@@ -157,6 +165,7 @@ namespace WhoisntCitizen.Lobby
             if (startGameButton != null) startGameButton.onClick.RemoveListener(OnStartGameClicked);
             if (exitRoomButton != null) exitRoomButton.onClick.RemoveListener(OnExitRoomClicked);
             if (readyButton != null) readyButton.onClick.RemoveListener(OnReadyClicked);
+            if (settingsButton != null) settingsButton.onClick.RemoveListener(OnSettingsClicked);
             DetachRealtime();
         }
 
@@ -277,6 +286,26 @@ namespace WhoisntCitizen.Lobby
             });
         }
 
+        /// <summary>Button_RoomSettings: 방 설정 팝업을 연다 (방장만, 대기 중일 때만)</summary>
+        public void OnSettingsClicked()
+        {
+            if (isStarting || isLeaving || isReadying || isManaging || isTransitioning || SceneLoader.IsLoading) return;
+            if (!RoomSession.IsHost || lastInGame || lastRoom == null) return;
+
+            if (roomSettingsPopup == null)
+            {
+                Debug.LogWarning("[Room] roomSettingsPopup이 연결되지 않아 방 설정 팝업을 열 수 없습니다.");
+                return;
+            }
+
+            roomSettingsPopup.Open(lastRoom, message =>
+            {
+                if (this == null || isTransitioning) return;
+                statusMessage?.ShowSuccess(message);
+                if (!isFetching) FetchRoom(); // 다음 polling을 기다리지 않고 바뀐 제목·인원을 바로 반영
+            });
+        }
+
         /// <summary>참가자 줄의 [관리] 버튼 (방장에게만, 내 줄 제외) → 플레이어 관리 메뉴를 연다.</summary>
         private void OnManageClicked(RoomPlayerView target)
         {
@@ -348,6 +377,20 @@ namespace WhoisntCitizen.Lobby
                 confirmPopup.Close();
                 statusMessage?.ShowInfo("방 상태가 바뀌어 요청을 취소했습니다.");
             }
+
+            // 방 설정 팝업: 방장이 아니게 됐거나 게임이 시작되면 닫는다. (요청 중이면 응답을 기다린다 - 서버가 403/409로 막음)
+            if (roomSettingsPopup != null && roomSettingsPopup.IsOpen)
+            {
+                if (!canManage && !roomSettingsPopup.IsRequesting)
+                {
+                    roomSettingsPopup.Close();
+                    statusMessage?.ShowInfo("방 상태가 바뀌어 방 설정 창을 닫았습니다.");
+                }
+                else
+                {
+                    roomSettingsPopup.OnRoomUpdated(room); // 최대 인원 하한(현재 인원) 갱신
+                }
+            }
         }
 
         /// <summary>씬을 떠날 때 열려 있는 관리 메뉴·확인 팝업을 닫는다.</summary>
@@ -355,6 +398,7 @@ namespace WhoisntCitizen.Lobby
         {
             if (playerManageMenu != null && playerManageMenu.IsOpen) playerManageMenu.Close();
             if (confirmPopup != null && confirmPopup.IsOpen) confirmPopup.Close();
+            if (roomSettingsPopup != null && roomSettingsPopup.IsOpen) roomSettingsPopup.Close();
         }
 
         /// <summary>
@@ -506,6 +550,7 @@ namespace WhoisntCitizen.Lobby
         private void Render(RoomDetailResponse room)
         {
             List<RoomPlayerResponse> players = room.players ?? new List<RoomPlayerResponse>();
+            lastRoom = room;
             lastPlayerCount = players.Count;
             lastInGame = room.IsInGame;
             lastAllGuestsReady = room.AllGuestsReady();
@@ -561,6 +606,7 @@ namespace WhoisntCitizen.Lobby
         /// <summary>시작 버튼: 방장에게만 보이고, 인원이 충분하고 모두 준비했고 다른 요청 중이 아닐 때만 누를 수 있다.</summary>
         private void UpdateStartButton()
         {
+            UpdateSettingsButton(); // 같은 방장 전용 버튼이라 같은 시점에 갱신한다
             if (startGameButton == null) return;
 
             bool isHost = RoomSession.IsHost;
@@ -570,6 +616,19 @@ namespace WhoisntCitizen.Lobby
                                            && lastAllGuestsReady
                                            && !lastInGame
                                            && !isStarting && !isLeaving && !isManaging && !isTransitioning;
+        }
+
+        /// <summary>방 설정 버튼: 방장에게만 보이고, 대기 중이며 다른 요청 중이 아닐 때만 누를 수 있다.</summary>
+        private void UpdateSettingsButton()
+        {
+            if (settingsButton == null) return;
+
+            bool isHost = RoomSession.IsHost;
+            settingsButton.gameObject.SetActive(isHost);
+            settingsButton.interactable = isHost
+                                          && lastRoom != null
+                                          && !lastInGame
+                                          && !isStarting && !isLeaving && !isManaging && !isTransitioning;
         }
 
         /// <summary>준비 버튼: 방장이 아닌 참가자에게만 보이고, 내 상태에 따라 "준비" / "준비 취소"를 표시한다.</summary>
@@ -590,6 +649,7 @@ namespace WhoisntCitizen.Lobby
             if (startGameButton != null) startGameButton.interactable = value;
             if (exitRoomButton != null) exitRoomButton.interactable = value;
             if (readyButton != null) readyButton.interactable = value;
+            if (settingsButton != null) settingsButton.interactable = value;
         }
 
         private static string BuildSignature(long hostUserId, List<RoomPlayerResponse> players)
