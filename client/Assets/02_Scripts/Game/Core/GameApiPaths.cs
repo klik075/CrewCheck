@@ -52,5 +52,8 @@ namespace WhoisntCitizen.Game
         {
             return State(gameId) + "/result";
         }
+
+        /// <summary>직업 목록과 인원수별 추천 구성 (서버 RoleSetupController.options)</summary>
+        public const string RoleSetupOptions = "/api/v1/role-setup/options";
     }
 }

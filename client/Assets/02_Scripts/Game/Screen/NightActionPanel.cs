@@ -33,6 +33,47 @@ namespace WhoisntCitizen.Game
         private bool usable;
         private long selectedId;  // 화면에서 고른 대상 (0 = 없음)
         private long chosenId;    // 서버가 받아 준 대상 (0 = 없음)
+        private GameSession lastSession;
+
+        /// <summary>화면에 고른 것으로 보이는 대상: 지금 고른 대상, 없으면 서버가 받아 준 대상 (0 = 없음).</summary>
+        public long ShownTarget
+        {
+            get { return selectedId != 0 ? selectedId : chosenId; }
+        }
+
+        /// <summary>지금 능력을 쓸 수 있고 이 플레이어가 대상이 될 수 있는지.</summary>
+        public bool CanTarget(long playerId)
+        {
+            return usable && targetable.Contains(playerId);
+        }
+
+        /// <summary>[확정]을 누를 수 있는지: 능력을 쓸 수 있고, 서버가 받은 대상과 다른 대상을 골랐다.</summary>
+        public bool CanConfirm
+        {
+            get { return usable && selectedId != 0 && selectedId != chosenId; }
+        }
+
+        /// <summary>[확정]을 누른 것과 같다 (패널 대신 다른 화면의 버튼에서).</summary>
+        public void Confirm()
+        {
+            OnConfirmClicked();
+        }
+
+        /// <summary>[넘기기]를 누른 것과 같다.</summary>
+        public void Skip()
+        {
+            OnSkipClicked();
+        }
+
+        /// <summary>격자 대신 다른 화면(플레이어 명단)에서 대상을 고를 때. 카드를 누른 것과 같다(같은 대상이면 선택 해제).</summary>
+        public void Select(long playerId)
+        {
+            OnItemClicked(playerId);
+            if (lastSession != null)
+            {
+                Refresh(lastSession); // 안내 문구도 고른 대상에 맞춘다
+            }
+        }
 
         /// <summary>확정한 대상 playerId</summary>
         public event Action<long> Confirmed;
@@ -81,6 +122,7 @@ namespace WhoisntCitizen.Game
             {
                 return;
             }
+            lastSession = session;
             GameStateDto state = session.State;
             MyRoleDto me = session.Me;
             AbilityBlock block = session.NightAbility;

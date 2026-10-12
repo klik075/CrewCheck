@@ -49,6 +49,8 @@ namespace WhoisntCitizen.Game
         private bool voteConfirmed;         // "투표 완료"를 서버가 받았는지
         private long daySkipVersion = -1;   // 토론을 넘긴 낮의 phaseVersion
         private DaySkipResultDto daySkipResult;
+        private RoleSetupOptionsDto roleSetupOptions; // 직업 목록·추천 구성 (서버가 켜져 있는 동안 바뀌지 않아 한 번만 받는다)
+        private readonly List<Action<RoleSetupOptionsDto>> roleSetupWaiters = new List<Action<RoleSetupOptionsDto>>();
 
         /// <param name="clock">단조 증가 시간(초). Unity에서는 () => Time.realtimeSinceStartupAsDouble</param>
         public GameSession(IGameApi api, string gameId, IGameView view, Func<double> clock, double pollIntervalSeconds)
@@ -284,6 +286,46 @@ namespace WhoisntCitizen.Game
         public void Close()
         {
             closed = true;
+        }
+
+        /// <summary>
+        /// 직업 목록과 인원수별 추천 구성 (지도 버튼의 직업 정보 화면). 처음 한 번만 받고 그다음은 바로 돌려준다.
+        /// 실패하면 null로 부르고, 다음 호출 때 다시 받는다. 닫힌 세션이면 부르지 않는다.
+        /// </summary>
+        public void LoadRoleSetupOptions(Action<RoleSetupOptionsDto> onLoaded)
+        {
+            if (onLoaded == null || closed)
+            {
+                return;
+            }
+            if (roleSetupOptions != null)
+            {
+                onLoaded(roleSetupOptions);
+                return;
+            }
+            roleSetupWaiters.Add(onLoaded);
+            if (roleSetupWaiters.Count > 1)
+            {
+                return; // 이미 받는 중
+            }
+            api.GetRoleSetupOptions(r =>
+            {
+                if (closed)
+                {
+                    roleSetupWaiters.Clear();
+                    return;
+                }
+                if (r.Success)
+                {
+                    roleSetupOptions = r.Data;
+                }
+                var waiters = new List<Action<RoleSetupOptionsDto>>(roleSetupWaiters);
+                roleSetupWaiters.Clear();
+                foreach (Action<RoleSetupOptionsDto> waiter in waiters)
+                {
+                    waiter(roleSetupOptions);
+                }
+            });
         }
 
         // ================================================================ 내 입력

@@ -14,12 +14,12 @@ namespace WhoisntCitizen.GameUI
     /// Characters are skins: any <see cref="ChibiCharacterSkin"/> fits any seat at the same size and spot, because every
     /// pose sprite is trimmed to the character with its pivot under it (Tools/ChibiSkinFit/FitSkins.ps1). A seat places
     /// that pivot on its chair and scales the sprite to one height, so swapping skins never moves or resizes anyone.
+    /// <see cref="UseSnugLayout"/> (GameScene3): as many chairs as players, characters bigger and right against the table.
     /// </summary>
     public sealed class DayRoundTableView : MonoBehaviour
     {
         private const int SeatCount = 12;
         private const float TableHeight = 850f;
-        private const float ChatTop = -1080f;
         private const float ArrivalDuration = 0.45f;
         private const float BreathingAmount = 0.006f;
         // Chair floor point (bottom centre of the chair), clockwise from 12 o'clock, in table coordinates (y up).
@@ -79,6 +79,8 @@ namespace WhoisntCitizen.GameUI
         {
             public Image avatar;
             public TextMeshProUGUI name;
+            public GameObject nameRoot;     // the label, or its pill (snug)
+            public Image nameBack;          // snug: the dark pill behind the name
             public ChibiPose pose;
             public Vector2 anchor;          // chair floor point in table coordinates
             public float figureHeight;      // every skin is drawn this tall here
@@ -108,7 +110,6 @@ namespace WhoisntCitizen.GameUI
         private Func<long, int> skinIndexFor;
         private RectTransform tableRoot;
         private RectTransform chatRect;
-        private Vector2 originalChatMax;
         private Image background;
         private Sprite originalBackground;
         private Color originalBackgroundColor;
@@ -120,6 +121,29 @@ namespace WhoisntCitizen.GameUI
         private readonly int[] seatOrder = new int[SeatCount];
         public int Capacity => capacity;
         private GameChatController gameChat;
+        private TMP_FontAsset labelFont;
+        private Sprite tableSprite;
+        private Vector2 tableSize, tableOffset;
+        private float depthTopY, depthBottomY;   // the farthest and nearest seat rows (depth scale 0.9 to 1.1)
+
+        // Snug (GameScene3): as many chairs as players, evenly spaced around the table and right against it. Sizes and
+        // places come from RoundTableLayout (tuned in the Inspector, live while playing) and the painted table
+        // (TableTopCenterPx/RadiusPx, SkirtBottomPx), not from SeatPositions.
+        private bool snug, relayingOut;
+        private const float SkirtBottomPx = 940f; // the bottom of the table's base in RoundTable.png (y down)
+        private static readonly Color NameBack = new Color(0.03f, 0.07f, 0.09f, 0.8f);
+        private static RoundTableLayout Snug => RoundTableLayout.Current;
+        private float SnugChairHeight => Snug.chairSize * Mathf.Lerp(Snug.fewPlayersScale, 1f, (capacity - 4f) / 8f);
+        private readonly float[] seatDepth = new float[SeatCount]; // snug: depth scale of each seat (0.9 far to 1.1 near)
+
+        /// <summary>The seats and card spots are about to be made again (snug layout, the player count changed).</summary>
+        public event Action Rebuilding;
+
+        /// <summary>Before Initialize: the snug table (chairs follow the player count, characters right against the table).</summary>
+        public void UseSnugLayout()
+        {
+            if (!initialized) snug = true;
+        }
 
         public void Initialize(Image backgroundImage, RectTransform chat, TMP_FontAsset font, ChibiCharacterSkin[] availableSkins, int maxPlayers = SeatCount)
         {
@@ -127,17 +151,18 @@ namespace WhoisntCitizen.GameUI
             initialized = true;
             background = backgroundImage;
             chatRect = chat;
+            labelFont = font;
             skins = availableSkins != null && availableSkins.Length > 0 ? availableSkins : Resources.LoadAll<ChibiCharacterSkin>("DayTable/Skins");
             if (availableSkins == null) Array.Sort(skins, (a, b) => string.CompareOrdinal(a.name, b.name));
+            tableSprite = Resources.Load<Sprite>("DayTable/RoundTable");
+            previewSprite = Resources.Load<Sprite>("DayTable/PreviewCharacter");
             capacity = Mathf.Clamp(maxPlayers, 4, SeatCount);
-            characterScale = Mathf.Lerp(1.25f, 1f, (capacity - 4f) / 8f);
             ConfigureLayout();
             if (background != null)
             {
                 originalBackground = background.sprite;
                 originalBackgroundColor = background.color;
             }
-            if (chatRect != null) originalChatMax = chatRect.offsetMax;
 
             var root = new GameObject("DayRoundTable", typeof(RectTransform));
             root.layer = gameObject.layer;
@@ -146,40 +171,81 @@ namespace WhoisntCitizen.GameUI
             tableRoot.anchorMin = new Vector2(0f, 1f);
             tableRoot.anchorMax = new Vector2(1f, 1f);
             tableRoot.pivot = new Vector2(0.5f, 1f);
-            tableRoot.anchoredPosition = new Vector2(0f, -230f);
             tableRoot.sizeDelta = new Vector2(0f, TableHeight);
+            PlaceRoot();
             if (chatRect != null) tableRoot.SetSiblingIndex(chatRect.GetSiblingIndex() + 1);
 
-            Sprite table = Resources.Load<Sprite>("DayTable/RoundTable");
-            previewSprite = Resources.Load<Sprite>("DayTable/PreviewCharacter");
+            BuildTable();
+            SetVisible(true);
+            ShowPreview();
+            BindChat();
+            if (snug) RoundTableLayout.Changed += OnLayoutChanged;
+        }
 
+        private void OnDestroy()
+        {
+            RoundTableLayout.Changed -= OnLayoutChanged;
+        }
+
+        // On the HUD's stage (below the top HUD, above the chat), scaled from the height it is laid out for.
+        private void PlaceRoot()
+        {
+            tableRoot.anchoredPosition = new Vector2(0f, -GameHudMetrics.StageTop);
+            tableRoot.localScale = Vector3.one * GameHudMetrics.StageScale;
+        }
+
+        // A value changed in the Inspector while playing: the stage and the table are laid out again with everyone seated.
+        private void OnLayoutChanged()
+        {
+            if (!initialized || !snug || tableRoot == null) return;
+            GameHudMetrics.Use(GameHudMetrics.Layout);
+            PlaceRoot();
+            relayingOut = true;
+            Rebuild(capacity);
+            Refresh();
+            relayingOut = false;
+        }
+
+        // The chairs, characters, table and card spots of the current capacity (ConfigureLayout first).
+        private void BuildTable()
+        {
             // Far and side seats sit behind the table. Near seats sit in front of its rim. Each group is drawn back to front.
             var farSeats = new List<int>();
             for (int i = 0; i < capacity; i++) if (IsFarSeat(i)) farSeats.Add(i);
             farSeats.Sort((a, b) => layoutPositions[b].y.CompareTo(layoutPositions[a].y));
-            foreach (int i in farSeats) CreateSeat(i, font);
-            Vector2 tableSize = new Vector2(Mathf.Lerp(840f, 900f, (capacity - 4f) / 8f), 600f);
-            CreateImage("RoundTable", tableRoot, table, tableSize, new Vector2(0f, -75f));
+            foreach (int i in farSeats) CreateSeat(i, labelFont);
+            CreateImage("RoundTable", tableRoot, tableSprite, tableSize, tableOffset);
             // The revised table includes its front rim. The old overlay would restore coins over the clear card band.
-            CreateCardSpots(table, tableSize, new Vector2(0f, -75f));
+            CreateCardSpots(tableSprite, tableSize, tableOffset);
             // Draw the near seats from farthest to closest, on both sides symmetrically.
             var nearSeats = new List<int>();
             for (int i = 0; i < capacity; i++) if (!IsFarSeat(i)) nearSeats.Add(i);
             nearSeats.Sort((a, b) => layoutPositions[b].y.CompareTo(layoutPositions[a].y));
-            foreach (int i in nearSeats) CreateSeat(i, font);
-            for (int i = 0; i < capacity; i++) CreateSpeech(i, font);
+            foreach (int i in nearSeats) CreateSeat(i, labelFont);
+            for (int i = 0; i < capacity; i++) CreateSpeech(i, labelFont);
+        }
 
-            SetVisible(true, true);
-            ShowPreview();
-            BindChat();
+        // Snug: the table made again for this many chairs. Who sits where comes back with the next Refresh.
+        private void Rebuild(int seatCount)
+        {
+            Rebuilding?.Invoke();
+            for (int i = tableRoot.childCount - 1; i >= 0; i--)
+            {
+                GameObject child = tableRoot.GetChild(i).gameObject;
+                child.SetActive(false); // gone this frame (Destroy waits for the frame's end)
+                Destroy(child);
+            }
+            Array.Clear(seats, 0, SeatCount);
+            Array.Clear(cardSpots, 0, SeatCount);
+            capacity = seatCount;
+            ConfigureLayout();
+            BuildTable();
         }
 
         public void SetPhase(string phase)
         {
             // Execution too: the vote tally stays on the table while the result is shown (DayTableVoteCards).
-            bool table = phase == GamePhases.Day || phase == GamePhases.Vote || phase == GamePhases.Execution;
-            // The night room (NightRoomView) stands on the same stage, so the chat stays below it at night too.
-            SetVisible(table, table || phase == GamePhases.Night || phase == GamePhases.NightResult);
+            SetVisible(phase == GamePhases.Day || phase == GamePhases.Vote || phase == GamePhases.Execution);
         }
 
         /// <summary>
@@ -205,10 +271,10 @@ namespace WhoisntCitizen.GameUI
             Vector2 imageSize = table != null ? table.rect.size : new Vector2(1536f, 1024f);
             float scale = Mathf.Min(tableSize.x / imageSize.x, tableSize.y / imageSize.y); // preserveAspect fit
             Vector2 center = tableOffset + new Vector2(TableTopCenterPx.x - imageSize.x * 0.5f, imageSize.y * 0.5f - TableTopCenterPx.y) * scale;
-            Vector2 radius = TableTopRadiusPx * scale * CardSpotRadius;
+            Vector2 radius = TableTopRadiusPx * scale * (snug ? Snug.cardSpotRadius : CardSpotRadius); // snug: clear of the near row's heads
             for (int i = 0; i < capacity; i++)
             {
-                float angle = (90f - i * 360f / capacity) * Mathf.Deg2Rad; // 12 o'clock = straight back, clockwise
+                float angle = (90f - ClockOf(i) * 30f) * Mathf.Deg2Rad; // 12 o'clock = straight back, clockwise
                 float cos = Mathf.Cos(angle), sin = Mathf.Sin(angle);
                 var spot = new GameObject("CardSpot_" + (i + 1), typeof(RectTransform));
                 spot.layer = gameObject.layer;
@@ -226,6 +292,11 @@ namespace WhoisntCitizen.GameUI
         {
             seatOrdinalFor = seatOrdinalResolver;
             skinIndexFor = skinIndexResolver;
+            if (snug && initialized && currentPlayers != null && currentPlayers.Count > 0)
+            {
+                int seatCount = Mathf.Clamp(currentPlayers.Count, 4, SeatCount);
+                if (seatCount != capacity) Rebuild(seatCount);
+            }
             players.Clear();
             if (currentPlayers != null)
             {
@@ -277,8 +348,7 @@ namespace WhoisntCitizen.GameUI
             Refresh();
         }
 
-        /// <param name="stage">Keep the chat below the stage (the table or the night room is on it).</param>
-        private void SetVisible(bool visible, bool stage)
+        private void SetVisible(bool visible)
         {
             if (!initialized || tableRoot == null) return;
             if (!visible) ClearSpeech();
@@ -290,24 +360,18 @@ namespace WhoisntCitizen.GameUI
                 background.color = visible && deck != null ? Color.white : originalBackgroundColor;
                 background.preserveAspect = false;
             }
-            if (chatRect != null)
-            {
-                Vector2 max = originalChatMax;
-                if (stage) max.y = ChatTop;
-                chatRect.offsetMax = max;
-            }
         }
 
         private void CreateSeat(int index, TMP_FontAsset font)
         {
             Vector2 position = layoutPositions[index];
-            float clock = index * 12f / capacity;
+            float clock = ClockOf(index);
             ChibiPose pose = PoseAtClock(clock);
             PoseLayout layout = LayoutFor(pose);
-            float depth = Mathf.Lerp(FarDepth, NearDepth, Mathf.InverseLerp(SeatPositions[0].y, SeatPositions[6].y, position.y));
+            float depth = snug ? seatDepth[index] : Mathf.Lerp(FarDepth, NearDepth, Mathf.InverseLerp(depthTopY, depthBottomY, position.y));
             // Fewer players: the seats behind the table grow; the near row keeps its size so its heads stay below
-            // the rim (and below the card spots in front of everyone).
-            float chairHeight = ChairHeight * (layout.behindChair ? 1f : characterScale) * depth;
+            // the rim (and below the card spots in front of everyone). Snug places the near row by its height instead.
+            float chairHeight = (snug ? SnugChairHeight : ChairHeight * (layout.behindChair ? 1f : characterScale)) * depth;
             bool mirrorChair = pose == ChibiPose.Seated11OClock || pose == ChibiPose.Seated5OClock || (pose == ChibiPose.SeatedSide && position.x > 0f);
             var holder = new GameObject("Seat_" + (index + 1), typeof(RectTransform));
             holder.layer = gameObject.layer;
@@ -339,9 +403,27 @@ namespace WhoisntCitizen.GameUI
             labelRect.sizeDelta = new Vector2(150f, 32f);
             // Above the head; for the near row (seen from behind) under the chair, where the deck is free.
             labelRect.anchoredPosition = layout.behindChair ? new Vector2(0f, -18f) : foot + new Vector2(0f, figureHeight + 20f);
+            Image nameBack = null;
+            if (snug)
+            {
+                // On the busy deck the name sits on a dark pill (sized to the name in Refresh).
+                RectTransform tag = (RectTransform)new GameObject("NameTag", typeof(RectTransform)).transform;
+                tag.gameObject.layer = gameObject.layer;
+                tag.SetParent(anchor, false);
+                tag.anchorMin = tag.anchorMax = new Vector2(0.5f, 0.5f);
+                float tagHeight = Snug.nameSize * 1.46f;
+                tag.sizeDelta = new Vector2(120f, tagHeight);
+                tag.anchoredPosition = labelRect.anchoredPosition + (layout.behindChair ? new Vector2(0f, -4f) : new Vector2(0f, 2f));
+                nameBack = HudShapes.Panel(tag, NameBack, new Color(0f, 0f, 0f, 0f), tagHeight * 0.5f);
+                labelRect.SetParent(tag, false);
+                labelRect.anchorMin = Vector2.zero;
+                labelRect.anchorMax = Vector2.one;
+                labelRect.offsetMin = labelRect.offsetMax = Vector2.zero;
+            }
             TextMeshProUGUI label = labelObject.GetComponent<TextMeshProUGUI>();
             if (font != null) label.font = font;
-            label.fontSize = 22f;
+            label.fontSize = snug ? Snug.nameSize : 22f;
+            if (snug) label.fontStyle = FontStyles.Bold;
             label.alignment = TextAlignmentOptions.Center;
             label.overflowMode = TextOverflowModes.Ellipsis;
             label.color = Color.white;
@@ -352,12 +434,15 @@ namespace WhoisntCitizen.GameUI
             }
             label.raycastTarget = false;
             avatar.gameObject.SetActive(false);
-            label.gameObject.SetActive(false);
+            GameObject nameRoot = nameBack != null ? nameBack.gameObject : label.gameObject;
+            nameRoot.SetActive(false);
 
             seats[index] = new Seat
             {
                 avatar = avatar,
                 name = label,
+                nameRoot = nameRoot,
+                nameBack = nameBack,
                 pose = pose,
                 anchor = position,
                 figureHeight = figureHeight,
@@ -402,7 +487,7 @@ namespace WhoisntCitizen.GameUI
                 // Polling the same roster must not restart the arrival or breathing motion.
                 if (!seat.occupied || seat.playerId != players[i].playerId)
                 {
-                    seat.arrivedAt = Time.unscaledTime;
+                    seat.arrivedAt = relayingOut ? -10f : Time.unscaledTime; // a layout change only moves people, no arrival
                     HideSpeech(seat);
                 }
                 seat.occupied = true;
@@ -410,7 +495,7 @@ namespace WhoisntCitizen.GameUI
                 seat.alive = players[i].alive;
                 if (!seat.alive) HideSpeech(seat);
                 seat.avatar.gameObject.SetActive(true);
-                seat.name.gameObject.SetActive(true);
+                seat.nameRoot.SetActive(true);
 
                 ChibiCharacterSkin skin;
                 if (!skinOverrides.TryGetValue(players[i].playerId, out skin) || skin == null)
@@ -423,6 +508,11 @@ namespace WhoisntCitizen.GameUI
                 ApplySprite(seat, SpriteFor(skin, seat.pose) ?? previewSprite);
                 seat.restingColor = seat.alive ? Color.white : new Color(0.55f, 0.6f, 0.65f, 0.6f);
                 seat.name.text = players[i].nickname;
+                if (seat.nameBack != null)
+                {
+                    float width = Mathf.Clamp(seat.name.GetPreferredValues(seat.name.text).x + 28f, 64f, 220f);
+                    seat.nameBack.rectTransform.sizeDelta = new Vector2(width, seat.nameBack.rectTransform.sizeDelta.y);
+                }
                 ApplySeatVisual(seat, Time.unscaledTime, Application.isPlaying);
             }
             for (int ordinal = 0; ordinal < capacity; ordinal++)
@@ -435,7 +525,7 @@ namespace WhoisntCitizen.GameUI
                 seat.avatar.rectTransform.anchoredPosition = seat.restingPosition;
                 seat.avatar.rectTransform.localScale = seat.restingScale;
                 seat.avatar.gameObject.SetActive(false);
-                seat.name.gameObject.SetActive(false);
+                seat.nameRoot.SetActive(false);
             }
         }
 
@@ -613,6 +703,7 @@ namespace WhoisntCitizen.GameUI
             color.a *= arrival;
             seat.avatar.color = color;
             seat.name.alpha = arrival;
+            if (seat.nameBack != null) seat.nameBack.color = new Color(NameBack.r, NameBack.g, NameBack.b, NameBack.a * arrival);
 
             float stretch = animate && seat.alive
                 ? Mathf.Sin(now * 1.7f + seat.breathingPhase) * BreathingAmount * arrival
@@ -643,7 +734,19 @@ namespace WhoisntCitizen.GameUI
         }
 
         // Drawn before the table: the far row and the 3/9 o'clock side seats, whose laps the table rim hides.
-        private bool IsFarSeat(int index) => index * 12f / capacity < 3.5f || index * 12f / capacity > 8.5f;
+        private bool IsFarSeat(int index)
+        {
+            float clock = ClockOf(index);
+            return clock < 3.5f || clock > 8.5f;
+        }
+
+        // Where a seat is around the table, in hours clockwise from 12 o'clock (snug: turned by seatRotation).
+        private float ClockOf(int index)
+        {
+            float clock = index * 12f / capacity + (snug ? Snug.seatRotation / 30f : 0f);
+            clock %= 12f;
+            return clock < 0f ? clock + 12f : clock;
+        }
 
         private static ChibiPose PoseAtClock(float clock)
         {
@@ -659,12 +762,29 @@ namespace WhoisntCitizen.GameUI
 
         private void ConfigureLayout()
         {
-            for (int i = 0; i < capacity; i++)
+            characterScale = Mathf.Lerp(1.25f, 1f, (capacity - 4f) / 8f);
+            if (snug)
             {
-                float clock = i * 12f / capacity;
-                int start = Mathf.FloorToInt(clock);
-                layoutPositions[i] = Vector2.Lerp(SeatPositions[start], SeatPositions[(start + 1) % SeatCount], clock - start);
-                if (capacity < 12) layoutPositions[i] *= Mathf.Lerp(0.97f, 1f, (capacity - 4f) / 8f);
+                tableSize = new Vector2(Snug.tableWidth, Snug.tableWidth / 1.5f);
+                tableOffset = new Vector2(0f, Snug.tableY);
+                SnugPositions();
+                // Every chair is taken: players sit clockwise in the server's order (the same on every screen).
+                for (int i = 0; i < capacity; i++) seatOrder[i] = i;
+                return;
+            }
+            else
+            {
+                tableSize = new Vector2(Mathf.Lerp(840f, 900f, (capacity - 4f) / 8f), 600f);
+                tableOffset = new Vector2(0f, -75f);
+                for (int i = 0; i < capacity; i++)
+                {
+                    float clock = i * 12f / capacity;
+                    int start = Mathf.FloorToInt(clock);
+                    layoutPositions[i] = Vector2.Lerp(SeatPositions[start], SeatPositions[(start + 1) % SeatCount], clock - start);
+                    if (capacity < 12) layoutPositions[i] *= Mathf.Lerp(0.97f, 1f, (capacity - 4f) / 8f);
+                }
+                depthTopY = SeatPositions[0].y;
+                depthBottomY = SeatPositions[6].y;
             }
             var used = new bool[capacity];
             for (int ordinal = 0; ordinal < capacity; ordinal++)
@@ -682,6 +802,36 @@ namespace WhoisntCitizen.GameUI
                     if (gap > largestGap) { largestGap = gap; best = candidate; }
                 }
                 seatOrder[ordinal] = best; used[best] = true;
+            }
+        }
+
+        // Snug seats, evenly spaced: a ring (ellipse) around the whole painted table, its middle halfway between the table
+        // top's back rim and the bottom of the base, its radii the table's half width and half height plus the padding.
+        // Each character's body middle sits on the ring at equal angles, so the far row shows above the table top, the
+        // sides overlap its rim and the near row (seen from behind) stands against its base, whatever the count.
+        // The chair's floor point is the body middle minus the pose's height to it (feet on the cushion + half a figure).
+        private void SnugPositions()
+        {
+            RoundTableLayout l = Snug;
+            Vector2 imageSize = tableSprite != null ? tableSprite.rect.size : new Vector2(1536f, 1024f);
+            float scale = Mathf.Min(tableSize.x / imageSize.x, tableSize.y / imageSize.y);
+            Vector2 center = tableOffset + new Vector2(TableTopCenterPx.x - imageSize.x * 0.5f, imageSize.y * 0.5f - TableTopCenterPx.y) * scale;
+            Vector2 radius = TableTopRadiusPx * scale;
+            float backRim = center.y + radius.y;
+            float baseBottom = tableOffset.y + (imageSize.y * 0.5f - SkirtBottomPx) * scale;
+            var ringCenter = new Vector2(center.x, (backRim + baseBottom) * 0.5f + l.ringOffsetY);
+            var ring = new Vector2(radius.x + l.ringPaddingX, (backRim - baseBottom) * 0.5f + l.ringPaddingY);
+            float chair = SnugChairHeight;
+            for (int i = 0; i < capacity; i++)
+            {
+                float clock = ClockOf(i);
+                float angle = clock * 30f * Mathf.Deg2Rad;
+                float sin = Mathf.Sin(angle), cos = Mathf.Cos(angle);
+                Vector2 middle = ringCenter + new Vector2(ring.x * sin, ring.y * cos);
+                PoseLayout layout = LayoutFor(PoseAtClock(clock));
+                seatDepth[i] = Mathf.Lerp(FarDepth, NearDepth, (1f - cos) * 0.5f); // farther back, a little smaller
+                float body = (layout.foot.y + layout.height * 0.5f) * chair * seatDepth[i];
+                layoutPositions[i] = new Vector2(middle.x, middle.y - body);
             }
         }
 

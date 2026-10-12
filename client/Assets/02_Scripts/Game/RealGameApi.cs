@@ -58,6 +58,11 @@ namespace WhoisntCitizen.Game
             ApiClient.Get<GameResultDto>(GameApiPaths.Result(gameId), r => Reply(onDone, r));
         }
 
+        public void GetRoleSetupOptions(Action<GameApiResult<RoleSetupOptionsDto>> onDone)
+        {
+            ApiClient.Get<RoleSetupOptionsDto>(GameApiPaths.RoleSetupOptions, r => Reply(onDone, r));
+        }
+
         /// <summary>ApiResult&lt;T&gt; → GameApiResult&lt;T&gt;. ApiResult는 성공인데 본문을 못 읽으면 이미 실패로 바꿔 둔다.</summary>
         private static void Reply<T>(Action<GameApiResult<T>> onDone, ApiResult<T> r) where T : class
         {

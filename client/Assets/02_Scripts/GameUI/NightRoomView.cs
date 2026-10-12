@@ -10,7 +10,7 @@ namespace WhoisntCitizen.GameUI
 {
     /// <summary>
     /// The night scene: the room of my role (<see cref="NightSceneBackgroundCatalog"/>) with my character standing in it,
-    /// on the stage the day table uses (below the role card, above the chat). Pirates who know each other stand
+    /// on the stage the day table uses (<see cref="GameHudMetrics"/>: below the top HUD, above the chat). Pirates who know each other stand
     /// together in the pirates' room; who is in the room comes from <see cref="NightRoomRules"/>.
     /// - The room changes with a crossfade (the parrot's room turns into the pirates' room when it makes contact) and a
     ///   member who joins a room already on screen walks in from the side (the pirates see the parrot arrive).
@@ -20,10 +20,12 @@ namespace WhoisntCitizen.GameUI
     /// </summary>
     public sealed class NightRoomView : MonoBehaviour
     {
-        // The stage (canvas units from the top): the same strip the day table uses. The open night drawer covers its
-        // bottom 100 px, so feet stand above that.
-        private const float StageTop = 230f, StageHeight = 850f;
-        // Feet in stage coordinates (centre origin, y up): me in front, the others a little behind.
+        // The stage (GameHudMetrics): the strip the day table uses. The room is laid out for DesignStageHeight and
+        // scaled to the stage, like the table.
+        private static float StageTop => GameHudMetrics.StageTop;
+        private static float StageHeight => GameHudMetrics.StageHeight;
+        private static float StageScale => GameHudMetrics.StageScale;
+        // Feet in design coordinates (stage centre origin, y up): me in front, the others a little behind.
         private const float FrontFeetY = -255f, BackFeetY = -205f;
         // The night art is drawn full width and moved up so that its deck (about 60% down the picture) is under the feet.
         private const float DeckRow = 0.6f;
@@ -117,6 +119,7 @@ namespace WhoisntCitizen.GameUI
             stage.sizeDelta = new Vector2(0f, StageHeight);
             if (chat != null) stage.SetSiblingIndex(chat.GetSiblingIndex() + 1);
             content = NewCentred("Content", stage);
+            content.localScale = Vector3.one * StageScale;
             backFx = NewCentred("EffectsBehind", content);
             figureLayer = NewCentred("Figures", content);
             frontFx = NewCentred("EffectsFront", content);
@@ -418,7 +421,7 @@ namespace WhoisntCitizen.GameUI
             if (sprite == null) return;
             float width = canvas.rect.width;
             float height = width * sprite.rect.height / sprite.rect.width;
-            float feetFromTop = StageTop + StageHeight * 0.5f - FrontFeetY;
+            float feetFromTop = StageTop + StageHeight * 0.5f - FrontFeetY * StageScale;
             image.rectTransform.sizeDelta = new Vector2(0f, height);
             image.rectTransform.anchoredPosition = new Vector2(0f, DeckRow * height - feetFromTop);
         }

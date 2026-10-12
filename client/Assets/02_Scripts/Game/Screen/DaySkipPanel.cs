@@ -127,6 +127,12 @@ namespace WhoisntCitizen.Game
             }
         }
 
+        /// <summary>[토론 넘기기]를 누른 것과 같다 (패널 대신 다른 화면의 버튼에서).</summary>
+        public void Skip()
+        {
+            OnSkipClicked();
+        }
+
         private void OnSkipClicked()
         {
             if (canSkip && Skipped != null)

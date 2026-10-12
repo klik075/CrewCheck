@@ -9,7 +9,7 @@ namespace WhoisntCitizen.GameUI
     /// </summary>
     internal static class NightFxSprites
     {
-        private static Sprite dot, ring, streak, cone, fade;
+        private static Sprite dot, ring, streak, cone, fade, circle;
 
         /// <summary>Soft round glow, brightest in the middle.</summary>
         public static Sprite Dot => dot != null ? dot : (dot = Make("FxDot", 64, 64, new Vector2(0.5f, 0.5f), (u, v) =>
@@ -38,6 +38,13 @@ namespace WhoisntCitizen.GameUI
         {
             float across = Mathf.Abs(v - 0.5f) * 2f / Mathf.Max(0.02f, u);
             return across >= 1f ? 0f : (1f - across * across) * Mathf.Pow(1f - u, 0.7f) * Mathf.Clamp01(u * 8f);
+        }));
+
+        /// <summary>Solid disc with a one-pixel soft edge (round masks, e.g. the role panel portrait).</summary>
+        public static Sprite Circle => circle != null ? circle : (circle = Make("FxCircle", 128, 128, new Vector2(0.5f, 0.5f), (u, v) =>
+        {
+            float x = u * 2f - 1f, y = v * 2f - 1f;
+            return (1f - Mathf.Sqrt(x * x + y * y)) * 64f;
         }));
 
         /// <summary>Vertical fade: clear at the top, solid at the bottom.</summary>

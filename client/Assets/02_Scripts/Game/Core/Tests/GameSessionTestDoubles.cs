@@ -89,6 +89,11 @@ namespace WhoisntCitizen.Game.Tests
             Handle("GetResult", onDone, cb => inner.GetResult(gameId, cb));
         }
 
+        public void GetRoleSetupOptions(Action<GameApiResult<RoleSetupOptionsDto>> onDone)
+        {
+            Handle("GetRoleSetupOptions", onDone, cb => inner.GetRoleSetupOptions(cb));
+        }
+
         private void Handle<T>(string method, Action<GameApiResult<T>> onDone, Action<Action<GameApiResult<T>>> forward) where T : class
         {
             calls[method] = Calls(method) + 1;

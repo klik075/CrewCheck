@@ -101,8 +101,13 @@ namespace WhoisntCitizen.Chat
         {
             public long seq;
             public long anchor;
-            public string rich;
+            public string text;
+            public bool error;
+            public DateTime time;
         }
+
+        // 메시지를 처음 받은 시각 (조회 응답에는 보낸 시각이 없다). 입장할 때 받아 온 이전 대화는 넣지 않는다
+        readonly Dictionary<string, DateTime> _receivedAt = new Dictionary<string, DateTime>();
         const long UnresolvedAnchor = long.MinValue;
         readonly List<LocalLine> _locals = new List<LocalLine>();
         long _localSeq;
@@ -161,7 +166,7 @@ namespace WhoisntCitizen.Chat
                 enabled = false;
                 return;
             }
-            foreach (var text in ChatNotice.TakePending()) AddLocal(Colored(localNoticePrefix + text, localNoticeColor));
+            foreach (var text in ChatNotice.TakePending()) AddLocal(text, false);
             Render();
             AttachRealtime();
             StartCoroutine(Connect());
@@ -482,7 +487,10 @@ namespace WhoisntCitizen.Chat
             if (notifyLive)
                 foreach (var message in sorted)
                     if (long.TryParse(message.id, out long id) && id > previousId)
+                    {
+                        MarkReceived(message);
                         LiveMessageReceived?.Invoke(message);
+                    }
             ResolveAnchors();
             LogNewSystemMessages();
             Render();
@@ -498,6 +506,7 @@ namespace WhoisntCitizen.Chat
                 bool hasId = long.TryParse(m.id, out id);
                 if (hasId && id <= _lastId) continue;
                 _messages.Add(m);
+                MarkReceived(m);
                 if (hasId) LiveMessageReceived?.Invoke(m);
                 if (hasId && id > _lastId) _lastId = id;
                 added = true;
@@ -527,15 +536,25 @@ namespace WhoisntCitizen.Chat
 
         void OnChatNotice(string text)
         {
-            AddLocal(Colored(localNoticePrefix + text, localNoticeColor));
+            AddLocal(text, false);
             _stickToBottom = true;
             Render();
         }
 
-        void AddLocal(string rich)
+        void AddLocal(string text, bool error)
         {
-            _locals.Add(new LocalLine { seq = ++_localSeq, anchor = _lastId >= 0 ? _lastId : UnresolvedAnchor, rich = rich });
+            _locals.Add(new LocalLine
+            {
+                seq = ++_localSeq, anchor = _lastId >= 0 ? _lastId : UnresolvedAnchor, text = text, error = error, time = DateTime.Now
+            });
             if (_locals.Count > maxMessages) _locals.RemoveRange(0, _locals.Count - maxMessages);
+        }
+
+        void MarkReceived(ChatMessage m)
+        {
+            if (m.id == null || _receivedAt.ContainsKey(m.id)) return;
+            DateTime sent;
+            _receivedAt[m.id] = DateTime.TryParse(m.createdAt, CultureInfo.InvariantCulture, DateTimeStyles.None, out sent) ? sent : DateTime.Now;
         }
 
         void ResolveAnchors()
@@ -550,7 +569,7 @@ namespace WhoisntCitizen.Chat
             if (text == _lastStatus) return;
             _lastStatus = text;
             Debug.LogWarning("[Chat] " + text + (string.IsNullOrEmpty(detail) || detail == text ? "" : "  (" + detail + ")"));
-            AddLocal(Colored(text, errorColor));
+            AddLocal(text, true);
             _stickToBottom = true;
             Render();
         }
@@ -580,12 +599,13 @@ namespace WhoisntCitizen.Chat
 
         /// 메시지와 내 화면 전용 줄을 순서대로 합친 목록에서 아직 그리지 않은 줄만 ChatLogView 뒤에 붙입니다.
         /// (ChatLogView는 GameScreen과 함께 쓰므로 지우지 않음. 오래된 줄은 ChatLogView가 maxItems로 정리)
+        /// 줄은 ChatEntry로 넘깁니다: 게임 화면은 보낸 사람·시각으로 줄 모양을 그리고, 그 밖에는 Rich 한 줄을 씁니다.
         void Render()
         {
             if (chatLog == null) return;
 
             var keys = new List<string>();
-            var lines = new List<string>();
+            var lines = new List<ChatEntry>();
             string myHex = ColorUtility.ToHtmlStringRGB(myNameColor);
             string otherHex = ColorUtility.ToHtmlStringRGB(otherNameColor);
             string myId = myUserId >= 0 ? myUserId.ToString(CultureInfo.InvariantCulture) : null;
@@ -597,20 +617,30 @@ namespace WhoisntCitizen.Chat
                 if (long.TryParse(m.id, out mid))
                     while (li < _locals.Count && _locals[li].anchor != UnresolvedAnchor && _locals[li].anchor < mid)
                     {
-                        keys.Add("l" + _locals[li].seq); lines.Add(_locals[li].rich); li++;
+                        keys.Add("l" + _locals[li].seq); lines.Add(LocalEntry(_locals[li])); li++;
                     }
 
                 keys.Add("m" + m.id);
+                DateTime received;
+                var entry = new ChatEntry { Text = m.content, Time = m.id != null && _receivedAt.TryGetValue(m.id, out received) ? received : (DateTime?)null };
+                string nickname = string.IsNullOrEmpty(m.nickname) ? "?" : m.nickname;
                 if (m.IsSystem)
                 {
-                    lines.Add(Colored(systemPrefix + m.content, systemColor));
+                    entry.Kind = ChatEntryKind.System;
+                    entry.Nickname = "시스템";
+                    entry.TextColor = systemColor;
+                    entry.Rich = Colored(systemPrefix + m.content, systemColor);
                 }
                 else if (m.IsDead)
                 {
                     // 사망자 채팅: 서버가 사망자에게만 보내 준다. 내 것·남의 것 구분 없이 전부 회색
-                    lines.Add("<color=#" + ColorUtility.ToHtmlStringRGB(deadColor) + "><b>"
-                              + NoParse(string.IsNullOrEmpty(m.nickname) ? "?" : m.nickname)
-                              + "</b>: " + NoParse(m.content) + "</color>");
+                    entry.Kind = ChatEntryKind.Player;
+                    entry.Nickname = nickname;
+                    entry.SenderId = ParseId(m.userId);
+                    entry.Dead = true;
+                    entry.TextColor = deadColor;
+                    entry.Rich = "<color=#" + ColorUtility.ToHtmlStringRGB(deadColor) + "><b>"
+                              + NoParse(nickname) + "</b>: " + NoParse(m.content) + "</color>";
                 }
                 else
                 {
@@ -619,12 +649,17 @@ namespace WhoisntCitizen.Chat
                     string body = m.nightChat
                         ? "<color=#" + ColorUtility.ToHtmlStringRGB(nightChatColor) + ">" + NoParse(m.content) + "</color>"
                         : NoParse(m.content);
-                    lines.Add("<color=#" + (mine ? myHex : otherHex) + "><b>"
-                              + NoParse(string.IsNullOrEmpty(m.nickname) ? "?" : m.nickname)
-                              + "</b></color>: " + body);
+                    entry.Kind = ChatEntryKind.Player;
+                    entry.Nickname = nickname;
+                    entry.SenderId = ParseId(m.userId);
+                    entry.Mine = mine;
+                    entry.Night = m.nightChat;
+                    if (m.nightChat) entry.TextColor = nightChatColor;
+                    entry.Rich = "<color=#" + (mine ? myHex : otherHex) + "><b>" + NoParse(nickname) + "</b></color>: " + body;
                 }
+                lines.Add(entry);
             }
-            for (; li < _locals.Count; li++) { keys.Add("l" + _locals[li].seq); lines.Add(_locals[li].rich); }
+            for (; li < _locals.Count; li++) { keys.Add("l" + _locals[li].seq); lines.Add(LocalEntry(_locals[li])); }
 
             bool atBottom = _scroll == null || _scroll.verticalNormalizedPosition <= 0.01f
                             || _scroll.content == null || _scroll.viewport == null
@@ -633,11 +668,25 @@ namespace WhoisntCitizen.Chat
             for (int i = 0; i < keys.Count; i++)
             {
                 if (!_renderedKeys.Add(keys[i])) continue; // 이미 그린 줄
-                chatLog.AddLine(lines[i]);
+                chatLog.AddEntry(lines[i]);
             }
 
             if (atBottom || _stickToBottom) chatLog.ScrollToLatest();
             _stickToBottom = false;
+        }
+
+        ChatEntry LocalEntry(LocalLine l)
+        {
+            Color color = l.error ? errorColor : localNoticeColor;
+            return new ChatEntry
+            {
+                Kind = ChatEntryKind.Notice,
+                Nickname = l.error ? "알림" : "안내",
+                Text = l.text,
+                TextColor = color,
+                Time = l.time,
+                Rich = Colored((l.error ? "" : localNoticePrefix) + l.text, color),
+            };
         }
 
         // ================= 유틸 =================
@@ -645,6 +694,17 @@ namespace WhoisntCitizen.Chat
         void TrimToMax()
         {
             if (_messages.Count > maxMessages) _messages.RemoveRange(0, _messages.Count - maxMessages);
+            if (_receivedAt.Count > maxMessages * 2)
+            {
+                var kept = new HashSet<string>(_messages.Select(m => m.id));
+                foreach (string id in _receivedAt.Keys.Where(k => !kept.Contains(k)).ToList()) _receivedAt.Remove(id);
+            }
+        }
+
+        static long ParseId(string id)
+        {
+            long value;
+            return long.TryParse(id, out value) ? value : -1;
         }
 
         static long MaxId(List<ChatMessage> list)

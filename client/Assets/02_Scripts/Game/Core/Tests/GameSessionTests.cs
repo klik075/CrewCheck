@@ -41,6 +41,26 @@ namespace WhoisntCitizen.Game.Tests
             Assert.AreEqual(phase, session.State.phase);
         }
 
+        // ---------------------------------------------------------------- 직업 구성 (지도 버튼)
+
+        [Test]
+        public void 직업_구성은_한_번만_받고_이_판의_구성과_같다()
+        {
+            Start(RoleCodes.CrewCaptain, false);
+            session.Tick();
+            RoleSetupOptionsDto first = null, second = null;
+
+            session.LoadRoleSetupOptions(o => first = o);
+            session.LoadRoleSetupOptions(o => second = o);
+
+            Assert.IsNotNull(first);
+            Assert.AreSame(first, second);
+            Assert.AreEqual(1, api.Calls("GetRoleSetupOptions"));
+            var lineup = RoleInfoText.Lineup(first, session.State.players.Count);
+            Assert.AreEqual(8, lineup.Sum(l => l.Count)); // 8명 전원의 직업
+            Assert.IsTrue(lineup.Any(l => l.Role.code == RoleCodes.PirateRaider && l.Role.name == "해적"));
+        }
+
         // ---------------------------------------------------------------- 폴링
 
         [Test]
