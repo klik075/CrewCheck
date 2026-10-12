@@ -153,6 +153,7 @@ namespace WhoisntCitizen.Lobby
     [Serializable]
     public class RoomDetailResponse : RoomResponse
     {
+        public WhoisntCitizen.Game.RoleSetupDto roleSetup; // 서버가 저장한 직업 구성. 구버전 서버는 null.
         public List<RoomPlayerResponse> players = new List<RoomPlayerResponse>(); // 입장 순서대로
         public List<long> kickedUserIds = new List<long>(); // 방장에게 추방된 userId (이 방에 다시 들어올 수 없음)
 

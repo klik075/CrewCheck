@@ -34,9 +34,67 @@ namespace WhoisntCitizen.Lobby
         private Toggle randomToggle;
         private RoomHelmGraphic switchBack, switchKnob, validity;
         private CanvasGroup applyGroup;
+        private CanvasGroup controls;
         private Color32 muted = new Color32(119, 93, 63, 255);
         private static readonly Color Good = new Color32(41, 100, 70, 255);
         private static readonly Color Bad = new Color32(147, 45, 32, 255);
+
+        /// <summary>로비/룸 설정의 기존 모드 탭을 항해일지 진입 버튼 하나로 교체한다.</summary>
+        internal static Button BindEntry(Transform background, Action open, out TMP_Text modeInfo)
+        {
+            modeInfo = background?.Find("ModeInfoText")?.GetComponent<TMP_Text>();
+            Transform modeBar = background?.Find("GameMode");
+            Button entry = background?.Find("Items/Button_Custom")?.GetComponent<Button>();
+            if (entry == null) return null;
+            for (int i = 0; i < entry.onClick.GetPersistentEventCount(); i++)
+                entry.onClick.SetPersistentListenerState(i, UnityEngine.Events.UnityEventCallState.Off);
+            entry.onClick.AddListener(() => open());
+            if (modeBar != null)
+            {
+                foreach (Transform child in modeBar) child.gameObject.SetActive(false);
+                modeBar.gameObject.SetActive(true);
+                var group = modeBar.GetComponent<LayoutGroup>();
+                if (group != null) group.enabled = false;
+                var size = modeBar.GetComponent<LayoutElement>();
+                if (size == null) size = modeBar.gameObject.AddComponent<LayoutElement>();
+                size.preferredWidth = 520;
+                size.minHeight = size.preferredHeight = 100;
+                entry.transform.SetParent(modeBar, false);
+                var rect = (RectTransform)entry.transform;
+                rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(.5f, .5f);
+                rect.anchoredPosition = Vector2.zero;
+                rect.sizeDelta = new Vector2(520, 90);
+                rect.localScale = Vector3.one;
+            }
+            entry.gameObject.SetActive(true);
+            Sprite art = Art("Button");
+            var entryImage = entry.GetComponent<Image>();
+            if (entryImage != null && art != null)
+            {
+                entryImage.sprite = art;
+                entryImage.type = Image.Type.Sliced;
+                entryImage.color = Color.white;
+            }
+            var label = entry.GetComponentInChildren<TMP_Text>(true);
+            if (label != null)
+            {
+                label.text = "직업 구성 수정하기";
+                label.font = Resources.Load<TMP_FontAsset>("RoomLobby/CabinFont");
+                label.color = Cream;
+                label.fontSize = 32;
+                label.alignment = TextAlignmentOptions.Center;
+                Fill(label.rectTransform);
+            }
+            if (modeInfo != null)
+            {
+                modeInfo.gameObject.SetActive(true);
+                modeInfo.rectTransform.sizeDelta = new Vector2(560, 60);
+                modeInfo.fontSize = 24;
+                modeInfo.alignment = TextAlignmentOptions.Center;
+                modeInfo.textWrappingMode = TextWrappingModes.Normal;
+            }
+            return entry;
+        }
 
         public void Build(Canvas parent, Action<int> changeCount, Action recommend,
             Action<bool> randomChanged, Action cancel, Action confirm)
@@ -60,6 +118,7 @@ namespace WhoisntCitizen.Lobby
             aspect.aspectRatio = cabin != null ? cabin.rect.width / cabin.rect.height : 9f / 16f;
             safeArea = Rect("SafeArea", transform); Fill(safeArea);
             root = Rect("VoyageLog", safeArea);
+            controls = root.gameObject.AddComponent<CanvasGroup>();
             root.anchorMin = root.anchorMax = root.pivot = new Vector2(.5f, .5f);
             root.sizeDelta = new Vector2(1080, 1920);
             Panel("Logbook", root, 28, 142, 1024, 1560, Art("VoyageLogbook"), Color.white);
@@ -143,6 +202,22 @@ namespace WhoisntCitizen.Lobby
             apply.onClick.AddListener(() => confirm());
             applyGroup = apply.gameObject.AddComponent<CanvasGroup>();
             Fit();
+        }
+
+        public void SetSaving(bool saving)
+        {
+            controls.interactable = !saving;
+            if (saving)
+            {
+                notice.color = muted;
+                notice.text = "직업 구성을 방에 저장하는 중...";
+            }
+        }
+
+        public void ShowSaveError(string message)
+        {
+            notice.color = Bad;
+            notice.text = message;
         }
 
         public void BindRoles(RoleSetupOptionsDto options, Action<string, int> quantityChanged, Action<string, bool> candidateChanged)
