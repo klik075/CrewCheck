@@ -5,6 +5,7 @@ import com.WhoisntCitizen_server.chat.dto.ChatMessageSummary;
 import com.WhoisntCitizen_server.chat.entity.ChatMessage;
 import com.WhoisntCitizen_server.chat.entity.MessageType;
 import com.WhoisntCitizen_server.chat.event.ChatMessageSavedEvent;
+import com.WhoisntCitizen_server.chat.filter.ProfanityFilter;
 import com.WhoisntCitizen_server.chat.repository.ChatMessageRepository;
 import com.WhoisntCitizen_server.common.exception.ForbiddenException;
 import com.WhoisntCitizen_server.common.exception.NotFoundException;
@@ -50,6 +51,9 @@ import java.util.function.Predicate;
  *  - 세이렌 팀 채팅: 밤에 살아 있는 세이렌이 입력한 채팅(sirenOnly)은 세이렌 팀에게만 보입니다. 유혹당한 팀원은 밤에 입력할 수 없고
  *    읽기만 하며(해적이 아니므로 403), 유혹당한 뒤에 오간 메시지만 볼 수 있습니다. 사망한 뒤에도 읽을 수 있습니다.
  *  - 사망자 규칙이 먼저입니다: 사망자는 밤에도 사망자 채팅을 할 수 있고, 사망한 해적이 밤에 보내면 사망자 채팅이 됩니다.
+ *
+ * 욕설 검열: 사용자가 보낸 메시지는 저장하기 전에 ProfanityFilter로 욕설 부분을 순화 단어(땡큐, 좋아요…)로 바꿉니다. (사망자·해적·세이렌 채팅 포함)
+ * 저장소(Redis)와 다른 사람의 화면에는 바뀐 문장만 남습니다. 시스템 메시지는 서버가 만든 문장이라 검사하지 않습니다.
  */
 @Service
 public class ChatMessageService {
@@ -85,6 +89,8 @@ public class ChatMessageService {
     private final GameLock gameLock;
     // 메시지를 저장할 때마다 ChatMessageSavedEvent 발행 (실시간 모듈이 받아 볼 수 있는 사람에게 chat.changed를 보낸다)
     private final ApplicationEventPublisher eventPublisher;
+    // 사용자 메시지의 욕설을 저장 전에 순화 단어로 바꾼다 (ProfanityFilterConfig가 만든 빈)
+    private final ProfanityFilter profanityFilter;
 
     @Autowired
     public ChatMessageService(ChatMessageRepository repository,
@@ -92,13 +98,26 @@ public class ChatMessageService {
                               UserRepository userRepository,
                               GameRepository gameRepository,
                               GameLock gameLock,
-                              ApplicationEventPublisher eventPublisher) {
+                              ApplicationEventPublisher eventPublisher,
+                              ProfanityFilter profanityFilter) {
         this.repository = repository;
         this.roomRepository = roomRepository;
         this.userRepository = userRepository;
         this.gameRepository = gameRepository;
         this.gameLock = gameLock;
         this.eventPublisher = eventPublisher;
+        this.profanityFilter = profanityFilter == null ? ProfanityFilter.disabled() : profanityFilter;
+    }
+
+    /** 욕설 검열 없이 만드는 생성자 (검열과 관계없는 테스트용) */
+    public ChatMessageService(ChatMessageRepository repository,
+                              LobbyRoomRepository roomRepository,
+                              UserRepository userRepository,
+                              GameRepository gameRepository,
+                              GameLock gameLock,
+                              ApplicationEventPublisher eventPublisher) {
+        this(repository, roomRepository, userRepository, gameRepository, gameLock, eventPublisher,
+                ProfanityFilter.disabled());
     }
 
     /** 이벤트를 발행하지 않는 생성자 (실시간 알림이 필요 없는 테스트용) */
@@ -135,6 +154,7 @@ public class ChatMessageService {
      * 403: 밤에는 해적과 세이렌만 채팅할 수 있음 (사망자는 밤에도 사망자 채팅 가능)
      * 게임 중이면 보낸 사람의 상태에 따라 정해집니다: 사망자 → DEAD, 밤의 해적 → 해적에게만 보이는 전체 채팅,
      * 밤의 세이렌 → 세이렌 팀에게만 보이는 채팅, 그 밖 → 전체 채팅
+     * 욕설은 순화 단어로 바꿔서 저장하고, 응답에도 바뀐 문장이 들어갑니다. (보낸 사람도 바뀐 결과를 봅니다)
      */
     public ChatMessageResponse send(long roomId, Long memberId, String message) {
         Room room = getRoom(roomId);
@@ -160,7 +180,10 @@ public class ChatMessageService {
 
         MessageType type = rule == Rule.DEAD ? MessageType.DEAD : MessageType.USER;
         String gameId = rule == Rule.PUBLIC ? null : decided.gameId();
-        ChatMessage saved = repository.save(roomId, type, player.getUserId(), player.getNickname(), message.trim(),
+
+        // 욕설 필터링
+        String text = profanityFilter.mask(message.trim());
+        ChatMessage saved = repository.save(roomId, type, player.getUserId(), player.getNickname(), text,
                 gameId, rule == Rule.NIGHT_PIRATE, rule == Rule.NIGHT_SIREN);
         publishSaved(saved, decided.audience());
         return ChatMessageResponse.from(saved);
