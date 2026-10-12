@@ -40,12 +40,21 @@ namespace WhoisntCitizen.GameUI
             return across >= 1f ? 0f : (1f - across * across) * Mathf.Pow(1f - u, 0.7f) * Mathf.Clamp01(u * 8f);
         }));
 
-        /// <summary>Solid disc with a one-pixel soft edge (round masks, e.g. the role panel portrait).</summary>
-        public static Sprite Circle => circle != null ? circle : (circle = Make("FxCircle", 128, 128, new Vector2(0.5f, 0.5f), (u, v) =>
+        /// <summary>
+        /// Solid disc with a one-pixel soft edge (round masks, e.g. the role panel portrait). An asset (Resources/GameHud/
+        /// HudCircle, Tools/GameHudArt/MakeHudShapes.ps1) so a layout baked into a scene keeps it; made here if it is missing.
+        /// </summary>
+        public static Sprite Circle => circle != null ? circle : (circle = LoadCircle());
+
+        private static Sprite LoadCircle()
         {
-            float x = u * 2f - 1f, y = v * 2f - 1f;
-            return (1f - Mathf.Sqrt(x * x + y * y)) * 64f;
-        }));
+            Sprite art = Resources.Load<Sprite>("GameHud/HudCircle");
+            return art != null ? art : Make("FxCircle", 128, 128, new Vector2(0.5f, 0.5f), (u, v) =>
+            {
+                float x = u * 2f - 1f, y = v * 2f - 1f;
+                return (1f - Mathf.Sqrt(x * x + y * y)) * 64f;
+            });
+        }
 
         /// <summary>Vertical fade: clear at the top, solid at the bottom.</summary>
         public static Sprite Fade => fade != null ? fade : (fade = Make("FxFade", 4, 64, new Vector2(0.5f, 0.5f), (u, v) => 1f - v));

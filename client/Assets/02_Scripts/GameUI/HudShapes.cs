@@ -6,7 +6,8 @@ namespace WhoisntCitizen.GameUI
     /// <summary>
     /// White rounded-rectangle sprites, 9-sliced and tinted by the Image colour, for the small HUD pieces the art sheet
     /// does not have (chat tabs, name tags, the input pill, the timer bar). A panel is a fill with an outline on top.
-    /// Built once on first use.
+    /// The sprites are assets (Resources/GameHud, Tools/GameHudArt/MakeHudShapes.ps1) so a layout baked into a scene keeps
+    /// them; if one is missing the same sprite is made once on first use.
     /// </summary>
     internal static class HudShapes
     {
@@ -14,8 +15,14 @@ namespace WhoisntCitizen.GameUI
         private const float Line = 3f;                          // outline width, in texture pixels
         private static Sprite fill, outline;
 
-        public static Sprite Fill => fill != null ? fill : (fill = Make("HudRoundedFill", false));
-        public static Sprite Outline => outline != null ? outline : (outline = Make("HudRoundedOutline", true));
+        public static Sprite Fill => fill != null ? fill : (fill = Find("HudRoundedFill", false));
+        public static Sprite Outline => outline != null ? outline : (outline = Find("HudRoundedOutline", true));
+
+        private static Sprite Find(string name, bool outlineOnly)
+        {
+            Sprite art = Resources.Load<Sprite>("GameHud/" + name);
+            return art != null ? art : Make(name, outlineOnly);
+        }
 
         /// <summary>A rounded panel on rect: fill colour, outline colour, corner radius in canvas units.</summary>
         public static Image Panel(RectTransform rect, Color fillColor, Color lineColor, float radius)

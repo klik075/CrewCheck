@@ -17,6 +17,9 @@ namespace WhoisntCitizen.Game
     ///   announcement. The bottom drawer and its panels are not shown; the line drives the panels instead.
     /// - Strip: each player's bust and name; the dead crossed out, my pirate mates marked (only I see them), the one
     ///   I picked ringed, the vote counts during the execution. Tap to pick a night target or a vote.
+    /// GameScene3 has these parts baked in (<see cref="Bake"/>, Tools/Game Scene/게임 화면 굽기): this component is on its
+    /// canvas with them, Build only wires them, and nothing here moves them, so they are laid out in the editor. The
+    /// stage (deck, table, night room) still follows RoundTableLayout; its Edit mode preview is RoundTablePreview.
     /// </summary>
     public sealed class GameLayoutTabs : GameLayoutBody
     {
@@ -38,6 +41,7 @@ namespace WhoisntCitizen.Game
             public TextMeshProUGUI tallyText;
         }
 
+        [System.Serializable]
         private sealed class ActionButton
         {
             public RectTransform rect;
@@ -52,11 +56,16 @@ namespace WhoisntCitizen.Game
             public string Key => chip + "|" + title + "|" + sub + "|" + secondary + secondaryOn + "|" + primary + primaryOn;
         }
 
+        // Made by Create: at run time, or once in Edit mode by Bake (then saved with the scene and only wired by Build).
+        [SerializeField, HideInInspector] private bool baked;
+        [SerializeField] private RectTransform backdrop, strip, chipAvatar;
+        [SerializeField] private Button roleChip;
+        [SerializeField] private TextMeshProUGUI chipText, actionChip, actionTitle, actionSub;
+        [SerializeField] private ActionButton secondaryButton, primaryButton;
+
         private readonly List<Slot> slots = new List<Slot>();
         private readonly Dictionary<long, int> tally = new Dictionary<long, int>();
-        private RectTransform strip, chipAvatar, background, backdrop;
-        private TextMeshProUGUI chipText, actionChip, actionTitle, actionSub;
-        private ActionButton secondaryButton, primaryButton;
+        private RectTransform background;
         private string phase, rosterKey, chipKey, shownAction, lastNotice, voteSummary;
         private long shownPick = -1;
         private string shownMarks;
@@ -64,19 +73,38 @@ namespace WhoisntCitizen.Game
 
         public override bool PlaysDayTransitions => true;
 
+        /// <summary>The parts are in the scene (Bake), laid out there.</summary>
+        public bool IsBaked => baked;
+
         protected override void OnBuild()
         {
-            // Everything under the stage lies on one dark backdrop (the raised deck picture does not reach the bottom).
-            backdrop = NewRect("BottomBackdrop", ctx.Canvas);
+            if (!baked) Create(false);
+            Wire();
+        }
+
+        /// <summary>
+        /// Edit mode, once (Tools/Game Scene/게임 화면 굽기): the backdrop with the chat box, action line and strip, my role
+        /// chip, the chat log's place, the input bar and the lifted sheet into the scene, to be saved with it. Play then
+        /// only wires them (Build), so they can be moved and restyled in the editor.
+        /// </summary>
+        public void Bake(GameLayoutContext context)
+        {
+            if (baked) return;
+            ctx = context;
+            Create(true);
+            // Samples to lay out against; the line shows what can be done now once the game runs.
+            actionChip.text = "진행";
+            actionTitle.text = "지금 할 수 있는 일";
+            actionSub.text = "아래 명단에서 대상을 누르세요.";
+            primaryButton.label.text = "확정";
+            secondaryButton.label.text = "넘기기";
+            baked = true;
+        }
+
+        private void Create(bool bake)
+        {
+            backdrop = BuildBackdrop(ctx.Canvas);
             if (ctx.Chat != null) backdrop.SetSiblingIndex(ctx.Chat.GetSiblingIndex()); // under the chat log
-            Stretch(backdrop, 0f, GameHudMetrics.StageBottom, 0f, 0f);
-            AddImage(backdrop, null, Backdrop);
-            RectTransform rule = NewRect("Rule", backdrop);
-            rule.anchorMin = new Vector2(0f, 1f);
-            rule.anchorMax = new Vector2(1f, 1f);
-            rule.pivot = new Vector2(0.5f, 1f);
-            rule.sizeDelta = new Vector2(0f, 3f);
-            AddImage(rule, null, GoldLine);
 
             RectTransform chatBox = NewRect("ChatBox", backdrop);
             Stretch(chatBox, 12f, 10f, 12f, ChatBottom);
@@ -86,14 +114,22 @@ namespace WhoisntCitizen.Game
             BuildStrip(backdrop);
             BuildRoleChip();
 
-            BuildChat(() => new Vector4(28f, GameHudMetrics.StageBottom + 20f, 28f, ChatBottom + InputBar + 6f));
+            if (bake) BakeChat(ChatArea()); // at run time Wire builds the chat (BuildChat), following the stage
             if (ctx.Sheet != null)
             {
                 RectTransform lift = LiftSheet(12f, ChatBottom + 4f, 12f);
                 lift.SetSiblingIndex(backdrop.GetSiblingIndex() + 1);
                 ctx.BottomTab.SetDrawerHeight(0f); // the sheet is the input bar only
-                HideDrawer();
             }
+        }
+
+        private void Wire()
+        {
+            if (roleChip != null) roleChip.onClick.AddListener(ShowRoleWindow);
+            if (primaryButton != null && primaryButton.button != null) primaryButton.button.onClick.AddListener(OnPrimary);
+            if (secondaryButton != null && secondaryButton.button != null) secondaryButton.button.onClick.AddListener(OnSecondary);
+            BuildChat(ChatArea);
+            if (ctx.Sheet != null) HideDrawer();
             // The card hand keeps the vote but is not shown: the strip picks, the action line confirms.
             if (ctx.VoteHand != null)
             {
@@ -103,6 +139,43 @@ namespace WhoisntCitizen.Game
                 hand.interactable = false;
             }
             background = ctx.Canvas.Find("Background") as RectTransform;
+        }
+
+        // The chat log between the stage and the input bar (left, top from the top, right, bottom from the bottom).
+        private static Vector4 ChatArea()
+        {
+            return new Vector4(28f, GameHudMetrics.StageBottom + 20f, 28f, ChatBottom + InputBar + 6f);
+        }
+
+        /// <summary>
+        /// Everything under the stage lies on one dark backdrop with a gold rule on top (the raised deck picture does not
+        /// reach the bottom). Stretched over parent from the stage's bottom down. The Edit mode preview uses it too.
+        /// </summary>
+        public static RectTransform BuildBackdrop(RectTransform parent)
+        {
+            RectTransform backdrop = NewRect("BottomBackdrop", parent);
+            Stretch(backdrop, 0f, GameHudMetrics.StageBottom, 0f, 0f);
+            AddImage(backdrop, null, Backdrop);
+            RectTransform rule = NewRect("Rule", backdrop);
+            rule.anchorMin = new Vector2(0f, 1f);
+            rule.anchorMax = new Vector2(1f, 1f);
+            rule.pivot = new Vector2(0.5f, 1f);
+            rule.sizeDelta = new Vector2(0f, 3f);
+            AddImage(rule, null, GoldLine);
+            return backdrop;
+        }
+
+        /// <summary>
+        /// The deck picture (the scene's Background): full width, raised so the planks are under the table and the sea
+        /// behind the HUD. The Edit mode preview uses it too.
+        /// </summary>
+        public static void PlaceDeck(RectTransform deck, float canvasWidth)
+        {
+            deck.anchorMin = new Vector2(0f, 1f);
+            deck.anchorMax = new Vector2(1f, 1f);
+            deck.pivot = new Vector2(0.5f, 1f);
+            deck.sizeDelta = new Vector2(0f, canvasWidth * DeckAspect);
+            deck.anchoredPosition = new Vector2(0f, RoundTableLayout.Current.deckRaise * canvasWidth / 1080f);
         }
 
         // The drawer's panels (keyboard placeholder, vote, night ability, day skip) stay where GameScreen and the bottom
@@ -127,7 +200,7 @@ namespace WhoisntCitizen.Game
             RectTransform chip = Box(ctx.Canvas, "RoleChip", 16f, GameHudMetrics.HudHeight + 10f, 206f, 66f); // clear of the far seats' names
             if (notice != null) chip.SetSiblingIndex(notice.GetSiblingIndex()); // under the notice
             HudShapes.Panel(chip, Teal, GoldLine, 33f).raycastTarget = true;
-            chip.gameObject.AddComponent<Button>().onClick.AddListener(ShowRoleWindow);
+            roleChip = chip.gameObject.AddComponent<Button>(); // Wire listens to it
             chipAvatar = Box(chip, "Avatar", 0f, 0f, 66f, 66f);
             chipText = NewText(chip, "Text", 26f, Cream, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
             Stretch(chipText.rectTransform, 72f, 4f, 32f, 4f);
@@ -171,17 +244,17 @@ namespace WhoisntCitizen.Game
             actionSub.fontSizeMin = 15f;
             actionSub.fontSizeMax = 22f;
 
-            primaryButton = NewButton(box, "Primary", 16f, PrimaryWidth, true, OnPrimary);
-            secondaryButton = NewButton(box, "Secondary", 16f + PrimaryWidth + 12f, SecondaryWidth, false, OnSecondary);
+            primaryButton = NewButton(box, "Primary", 16f, PrimaryWidth, true); // Wire listens to them
+            secondaryButton = NewButton(box, "Secondary", 16f + PrimaryWidth + 12f, SecondaryWidth, false);
         }
 
-        private ActionButton NewButton(RectTransform parent, string name, float right, float width, bool primary, System.Action onClick)
+        private ActionButton NewButton(RectTransform parent, string name, float right, float width, bool primary)
         {
             RectTransform rect = NewRect(name, parent);
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 0.5f);
             rect.anchoredPosition = new Vector2(-right, 0f);
             rect.sizeDelta = new Vector2(width, ButtonHeight);
-            Button button = TextButton(rect, string.Empty, primary, onClick);
+            Button button = TextButton(rect, string.Empty, primary, null);
             return new ActionButton { rect = rect, button = button, label = rect.Find("Label").GetComponent<TextMeshProUGUI>() };
         }
 
@@ -249,9 +322,12 @@ namespace WhoisntCitizen.Game
             string key = (session.Me.roleName ?? "") + "|" + (bust != null ? bust.name : "");
             if (key == chipKey) return;
             chipKey = key;
-            chipText.text = session.Me.roleName ?? "내 역할";
+            if (chipText != null) chipText.text = session.Me.roleName ?? "내 역할";
+            if (chipAvatar == null) return;
             for (int i = chipAvatar.childCount - 1; i >= 0; i--) Destroy(chipAvatar.GetChild(i).gameObject);
-            Avatar(chipAvatar, "Me", 6f, 6f, 54f, session.Me.playerId, GameStateQueries.NicknameOf(session.State, session.Me.playerId));
+            // Fits the avatar box, inset 6 (a 66 box holds a 54 avatar), so resizing the box in the scene resizes it
+            float size = Mathf.Max(8f, Mathf.Min(chipAvatar.rect.width, chipAvatar.rect.height) - 12f);
+            Avatar(chipAvatar, "Me", 6f, 6f, size, session.Me.playerId, GameStateQueries.NicknameOf(session.State, session.Me.playerId));
         }
 
         // ------------------------------------------------------------------ strip
@@ -263,7 +339,7 @@ namespace WhoisntCitizen.Game
             var key = new System.Text.StringBuilder();
             foreach (PlayerViewDto p in players) key.Append(p.playerId).Append(p.alive ? '+' : '-').Append(BustOf(p.playerId) != null ? 'b' : 'n').Append(',');
             if (session.Me != null) foreach (long id in session.Me.mafiaTeammateIds) key.Append('m').Append(id);
-            if (key.ToString() == rosterKey) return;
+            if (key.ToString() == rosterKey || strip == null) return;
             rosterKey = key.ToString();
 
             for (int i = strip.childCount - 1; i >= 0; i--)
@@ -273,9 +349,10 @@ namespace WhoisntCitizen.Game
             }
             slots.Clear();
             int count = Mathf.Max(1, players.Count);
-            float slotWidth = Mathf.Min(140f, (1080f - 16f) / count);
+            float stripWidth = strip.rect.width > 0f ? strip.rect.width : 1080f; // as wide as the strip is in the scene
+            float slotWidth = Mathf.Min(140f, (stripWidth - 16f) / count);
             float size = Mathf.Min(112f, slotWidth - 18f);
-            float left = (1080f - slotWidth * count) * 0.5f;
+            float left = (stripWidth - slotWidth * count) * 0.5f;
             for (int i = 0; i < players.Count; i++)
             {
                 PlayerViewDto p = players[i];
@@ -344,20 +421,16 @@ namespace WhoisntCitizen.Game
         private void LateUpdate()
         {
             if (ctx == null) return;
-            // The deck picture: full width, raised so the planks are under the table and the sea behind the HUD.
             float width = CanvasWidth;
             float raise = RoundTableLayout.Current.deckRaise;
             if (background != null && (!Mathf.Approximately(width, laidOutWidth) || raise != laidOutRaise))
             {
                 laidOutWidth = width;
                 laidOutRaise = raise;
-                background.anchorMin = new Vector2(0f, 1f);
-                background.anchorMax = new Vector2(1f, 1f);
-                background.pivot = new Vector2(0.5f, 1f);
-                background.sizeDelta = new Vector2(0f, width * DeckAspect);
-                background.anchoredPosition = new Vector2(0f, raise * width / 1080f);
+                PlaceDeck(background, width);
             }
-            backdrop.offsetMax = new Vector2(0f, -GameHudMetrics.StageBottom); // the stage can be retuned while playing
+            // The stage can be retuned while playing. Baked, the backdrop stays where the scene has it.
+            if (!baked && backdrop != null) backdrop.offsetMax = new Vector2(0f, -GameHudMetrics.StageBottom);
 
             GameSession session = ctx.Session();
             if (session == null || session.State == null) return;
@@ -480,18 +553,25 @@ namespace WhoisntCitizen.Game
             string key = s.Key;
             if (key == shownAction) return;
             shownAction = key;
-            actionChip.text = s.chip;
-            actionTitle.text = s.title;
-            actionSub.text = s.sub;
+            SetText(actionChip, s.chip);
+            SetText(actionTitle, s.title);
+            SetText(actionSub, s.sub);
             SetButton(secondaryButton, s.secondary, s.secondaryOn);
             SetButton(primaryButton, s.primary, s.primaryOn);
         }
 
+        // A part taken out of the baked scene is simply not shown.
+        private static void SetText(TMP_Text text, string value)
+        {
+            if (text != null) text.text = value;
+        }
+
         private static void SetButton(ActionButton b, string label, bool on)
         {
+            if (b == null || b.rect == null) return;
             b.rect.gameObject.SetActive(!string.IsNullOrEmpty(label));
-            b.label.text = label ?? string.Empty;
-            b.button.interactable = on;
+            SetText(b.label, label ?? string.Empty);
+            if (b.button != null) b.button.interactable = on;
         }
 
         private void OnPrimary()

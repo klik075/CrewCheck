@@ -106,6 +106,24 @@ namespace WhoisntCitizen.Game
         private bool pendingVoteConfirm;
         private bool voteConfirmAnnounced; // 이번 투표의 "투표 완료"를 채팅에 알렸는지
 
+        /// <summary>이 씬의 화면 배치 (Edit 모드 원탁 미리보기가 본다).</summary>
+        public HudLayout Layout
+        {
+            get { return layout; }
+        }
+
+        /// <summary>한글이 나오는 글꼴 (상단 페이즈 글자의 것).</summary>
+        public TMP_FontAsset LabelFont
+        {
+            get { return phaseText != null ? phaseText.font : null; }
+        }
+
+        /// <summary>채팅 기록 패널. Play 때 원탁은 이 바로 위 형제로 놓인다.</summary>
+        public RectTransform ChatPanel
+        {
+            get { return chatLog != null ? chatLog.transform as RectTransform : null; }
+        }
+
         private GameSession Session
         {
             get { return controller != null ? controller.Session : null; }
@@ -164,7 +182,9 @@ namespace WhoisntCitizen.Game
             }
             SetUpVoteCardHand();
             // 해적 HUD 배치: 상단(페이즈·시간·설정·지도), 공지, 무대(원탁·밤 방), 채팅 틀, 하단 내 역할 패널. 씬은 그대로 두고 실행 시 배치한다
-            hud = gameObject.AddComponent<GameHudLayout>();
+            // (굽기로 씬에 들어 있으면(BakeLayout) 만들지 않고 그 오브젝트에 연결만 한다)
+            hud = GetComponent<GameHudLayout>();
+            if (hud == null) hud = gameObject.AddComponent<GameHudLayout>();
             hud.Build(phaseText, timerText, roleCard != null ? roleCard.transform as RectTransform : null,
                 chatLog != null ? chatLog.transform as RectTransform : null,
                 bottomTab != null ? bottomTab.transform as RectTransform : null, phaseText != null ? phaseText.font : null,
@@ -231,6 +251,38 @@ namespace WhoisntCitizen.Game
                 disconnectedBanner.SetActive(false);
             }
         }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Edit 모드에서 한 번 (Tools/Game Scene/게임 화면 굽기): Play 때 코드가 만들던 고정된 틀(상단 HUD, 공지, 내 역할 칩,
+        /// 무대 아래 바탕·채팅 상자·행동 줄·명단 칸, 채팅 기록 자리, 입력 바)을 씬 오브젝트로 만든다. 씬을 저장하면 Play 때는
+        /// 만들지 않고 그 오브젝트에 연결만 하므로, 위치와 모양을 에디터에서 고칠 수 있다. 지금은 Tabs 배치(GameScene3)만.
+        /// 무대(갑판·원탁·밤 방)는 그대로 RoundTableLayout을 따른다.
+        /// </summary>
+        public void BakeLayout()
+        {
+            if (layout != HudLayout.Tabs) return;
+            GameHudMetrics.Use(layout);
+            RectTransform chat = ChatPanel;
+            RectTransform sheet = bottomTab != null ? bottomTab.transform as RectTransform : null;
+            GameHudLayout bakedHud = GetComponent<GameHudLayout>();
+            if (bakedHud == null) bakedHud = gameObject.AddComponent<GameHudLayout>();
+            bakedHud.Bake(phaseText, timerText, roleCard != null ? roleCard.transform as RectTransform : null, chat, LabelFont);
+            GameLayoutTabs tabs = GetComponent<GameLayoutTabs>();
+            if (tabs == null) tabs = gameObject.AddComponent<GameLayoutTabs>();
+            tabs.Bake(new GameLayoutContext
+            {
+                Canvas = (RectTransform)transform,
+                Font = LabelFont,
+                Hud = bakedHud,
+                Chat = chat,
+                Sheet = sheet,
+                BottomTab = bottomTab,
+                NightPanel = nightPanel,
+                DayPanel = dayPanel,
+            });
+        }
+#endif
 
         private void OnDestroy()
         {

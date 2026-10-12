@@ -179,7 +179,7 @@ namespace WhoisntCitizen.GameUI
             SetVisible(true);
             ShowPreview();
             BindChat();
-            if (snug) RoundTableLayout.Changed += OnLayoutChanged;
+            if (snug && Application.isPlaying) RoundTableLayout.Changed += OnLayoutChanged; // the Edit mode preview is made again instead
         }
 
         private void OnDestroy()

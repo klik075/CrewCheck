@@ -20,6 +20,8 @@ namespace WhoisntCitizen.Game
     ///   role panel opens the action drawer (night ability, day skip).
     /// The old role card of the scene is hidden; GameScreen feeds this instead.
     /// Text boxes are at least 1.33 times their font size tall (the font's line height): a shorter box shows nothing.
+    /// A scene can have the top HUD and the notice baked in (<see cref="Bake"/>, Tools/Game Scene/게임 화면 굽기): this
+    /// component is then on the canvas with them, Build only wires them, and nothing here moves them.
     /// </summary>
     public sealed class GameHudLayout : MonoBehaviour
     {
@@ -38,19 +40,27 @@ namespace WhoisntCitizen.Game
         public event Action MapClicked;
         public event Action RoleCardClicked;
 
-        private RectTransform canvas, sheet, sheetLift, rolePanel, notice;
+        // Made by Create: at run time, or once in Edit mode by Bake (then saved with the scene and only wired by Build).
+        [SerializeField, HideInInspector] private bool built;
+        [SerializeField] private Image phaseIcon;
+        [SerializeField] private RectTransform timerFill, notice;
+        [SerializeField] private CanvasGroup noticeGroup;
+        [SerializeField] private TextMeshProUGUI noticeText;
+        [SerializeField] private Button settingsButton, mapButton;
+
+        private RectTransform canvas, sheet, sheetLift, rolePanel;
         private BottomTabController bottomTab;
         private GameHudChat chatWindow;
-        private CanvasGroup noticeGroup;
-        private Image phaseIcon, tabBarImage, portrait, portraitShade, factionIcon;
-        private RectTransform timerFill, arrow;
-        private TextMeshProUGUI noticeText, roleName, roleGoal, factionTitle, roleBody, deadMark;
+        private Image tabBarImage, portrait, portraitShade, factionIcon;
+        private RectTransform arrow;
+        private TextMeshProUGUI roleName, roleGoal, factionTitle, roleBody, deadMark;
         private TMP_FontAsset font;
         private DesignSpriteCatalog portraits;
         private HudPopup popup;
+        private Vector2 noticeRest; // where the notice stays; it drops in from a little above
         private float noticeShownAt = -1f, noticeSeconds;
         private float laidOutHeight = -1f;
-        private bool built;
+        private bool wired;
 
         /// <summary>The window of the map and settings buttons (made on first use).</summary>
         public HudPopup Popup => popup != null ? popup : (popup = HudPopup.Create(canvas, font));
@@ -68,7 +78,38 @@ namespace WhoisntCitizen.Game
         public void Build(TextMeshProUGUI phaseText, TextMeshProUGUI timerText, RectTransform oldRoleCard, RectTransform chat,
             RectTransform bottomSheet, TMP_FontAsset labelFont, bool frame = true)
         {
+            if (wired) return;
+            wired = true;
+            if (!built) Create(phaseText, timerText, oldRoleCard, chat, bottomSheet, labelFont, frame);
+            canvas = (RectTransform)transform;
+            font = labelFont;
+            portraits = Resources.Load<DesignSpriteCatalog>(Art + "Portraits");
+            if (settingsButton != null) settingsButton.onClick.AddListener(() => SettingsClicked?.Invoke());
+            if (mapButton != null) mapButton.onClick.AddListener(() => MapClicked?.Invoke());
+            if (notice != null)
+            {
+                noticeRest = notice.anchoredPosition;
+                notice.gameObject.SetActive(false); // until the first announcement
+            }
+            SetPhase(null);
+            if (frame) LateUpdate();
+        }
+
+        /// <summary>
+        /// Edit mode, once (Tools/Game Scene/게임 화면 굽기): makes the top HUD and the notice in the scene, to be saved
+        /// with it, so they can be moved and restyled in the editor. Play then only wires them (Build). Not for Frame.
+        /// </summary>
+        public void Bake(TextMeshProUGUI phaseText, TextMeshProUGUI timerText, RectTransform oldRoleCard, RectTransform chat,
+            TMP_FontAsset labelFont)
+        {
             if (built) return;
+            Create(phaseText, timerText, oldRoleCard, chat, null, labelFont, false);
+            if (noticeText != null) noticeText.text = "공지는 게임 중 여기에 잠깐 나타났다가 사라집니다."; // seen when turned on in the editor
+        }
+
+        private void Create(TextMeshProUGUI phaseText, TextMeshProUGUI timerText, RectTransform oldRoleCard, RectTransform chat,
+            RectTransform bottomSheet, TMP_FontAsset labelFont, bool frame)
+        {
             built = true;
             canvas = (RectTransform)transform;
             font = labelFont;
@@ -99,8 +140,6 @@ namespace WhoisntCitizen.Game
             BuildNotice(chat);
             if (bottomSheet != null) BuildInputBar(bottomSheet);
             BuildRolePanel(chat);
-            SetPhase(null);
-            LateUpdate();
         }
 
         /// <summary>Sun by day, moon at night.</summary>
@@ -124,7 +163,7 @@ namespace WhoisntCitizen.Game
         public void ShowNotice(string text)
         {
             if (notice == null) return;
-            noticeText.text = text ?? string.Empty;
+            if (noticeText != null) noticeText.text = text ?? string.Empty;
             if (string.IsNullOrEmpty(text))
             {
                 noticeShownAt = -1f;
@@ -166,7 +205,7 @@ namespace WhoisntCitizen.Game
 
         private void LateUpdate()
         {
-            if (!built) return;
+            if (!wired) return;
             UpdateNotice();
             LayoutDrawer();
         }
@@ -190,9 +229,9 @@ namespace WhoisntCitizen.Game
                 notice.gameObject.SetActive(false);
                 return;
             }
-            noticeGroup.alpha = shown * (1f - gone);
+            if (noticeGroup != null) noticeGroup.alpha = shown * (1f - gone);
             float drop = (1f - shown) * (1f - shown) * 24f;
-            notice.anchoredPosition = new Vector2(notice.anchoredPosition.x, -(GameHudMetrics.NoticeTop - drop));
+            notice.anchoredPosition = noticeRest + new Vector2(0f, drop);
         }
 
         // The drawer reaches up to the stage's bottom edge at most (its panels are laid out for MaxDrawerHeight and
@@ -261,8 +300,8 @@ namespace WhoisntCitizen.Game
             timerFill.anchorMax = new Vector2(0f, 1f);
             HudShapes.Panel(timerFill, new Color(0.86f, 0.2f, 0.15f), new Color(0f, 0f, 0f, 0f), 5f);
 
-            AddButton(Box(hud, "SettingsButton", 800f, 94f, 124f, 124f), Load("ButtonSettings"), () => SettingsClicked?.Invoke());
-            AddButton(Box(hud, "MapButton", 936f, 94f, 124f, 124f), Load("ButtonMap"), () => MapClicked?.Invoke());
+            settingsButton = AddButton(Box(hud, "SettingsButton", 800f, 94f, 124f, 124f), Load("ButtonSettings"), null); // Build wires them
+            mapButton = AddButton(Box(hud, "MapButton", 936f, 94f, 124f, 124f), Load("ButtonMap"), null);
         }
 
         private void BuildNotice(RectTransform chat)
@@ -431,13 +470,14 @@ namespace WhoisntCitizen.Game
             return image;
         }
 
-        private static void AddButton(RectTransform rect, Sprite sprite, Action onClick)
+        private static Button AddButton(RectTransform rect, Sprite sprite, Action onClick)
         {
             Image image = AddImage(rect, sprite, Color.white);
             image.raycastTarget = true;
             Button button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = image;
-            button.onClick.AddListener(() => onClick());
+            if (onClick != null) button.onClick.AddListener(() => onClick());
+            return button;
         }
 
         private TextMeshProUGUI NewText(RectTransform parent, string name, float size, Color color, FontStyles style, TextAlignmentOptions alignment)
