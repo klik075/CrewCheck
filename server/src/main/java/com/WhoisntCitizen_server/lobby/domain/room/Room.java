@@ -35,7 +35,7 @@ public class Room {
      *   - 응답 DTO(RoomResponseDto 등)에 절대 넣지 않는다. 방 목록 API로 모든 유저에게 노출된다.
      *   - Room 객체를 통째로 로그에 찍거나 API 응답으로 그대로 내보내지 않는다.
      *   - 암호화로 바꿀 때는 이 필드(→ passwordHash)와 matchesPassword(),
-     *     그리고 RoomService.createRoom에서 값을 넣는 부분만 바꾸면 된다.
+     *     그리고 값을 넣는 두 곳(생성자, changeSettings)만 바꾸면 된다.
      *     비밀번호 비교는 반드시 matchesPassword()를 통해서만 한다.
      */
     private String password;
@@ -105,6 +105,33 @@ public class Room {
     public boolean matchesPassword(String input) {
         if (!privateRoom) return true;
         return input != null && input.equals(password);
+    }
+
+    // ---------- 방 설정 변경 ----------
+
+    /**
+     * 방 설정(제목, 최대 인원, 공개/비밀, 비밀번호)을 바꾼다. 방장만 가능하며
+     * 권한·게임 중 여부·값 형식 검사는 RoomService.updateSettings에서 끝낸 뒤 호출한다.
+     * 참가자의 준비 상태와 추방 목록은 그대로 둔다.
+     *
+     * 비밀번호 처리
+     *   - 공개방으로 설정: 저장된 비밀번호를 지운다. (생성자와 같은 규칙: 공개방에는 비밀번호를 남기지 않는다)
+     *   - 비밀방으로 설정 + newPassword 있음: 새 비밀번호로 바꾼다.
+     *   - 비밀방으로 설정 + newPassword null: 기존 비밀번호를 유지한다. (원래 비밀방이었을 때만 가능)
+     *
+     * @param newPassword 새 비밀번호. 기존 비밀번호를 유지하려면 null
+     */
+    public void changeSettings(String title, int maxPlayers, boolean privateRoom, String newPassword) {
+        if (maxPlayers < players.size()) throw new IllegalStateException("현재 인원보다 적게 설정할 수 없습니다.");
+        if (privateRoom && newPassword == null && (!this.privateRoom || this.password == null)) {
+            throw new IllegalStateException("비밀방으로 바꾸려면 비밀번호가 필요합니다.");
+        }
+
+        this.title = title;
+        this.maxPlayers = maxPlayers;
+        this.privateRoom = privateRoom;
+        if (!privateRoom) this.password = null;
+        else if (newPassword != null) this.password = newPassword;
     }
 
     // ---------- 방장 위임 / 추방 ----------

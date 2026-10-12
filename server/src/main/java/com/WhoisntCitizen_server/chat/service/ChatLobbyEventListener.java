@@ -7,10 +7,14 @@ import com.WhoisntCitizen_server.lobby.event.RoomHostChangedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerKickedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerJoinedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerLeftEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomSettingsChangedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 로비 방 입장/퇴장 이벤트를 받아 채팅에 시스템 메시지를 남깁니다.
@@ -18,6 +22,7 @@ import org.springframework.stereotype.Component;
  *  - 퇴장: "OOO님이 퇴장했습니다."
  *  - 추방: "OOO님이 추방되었습니다."
  *  - 방장 위임: "OOO님이 방장이 되었습니다."
+ *  - 방 설정 변경: "방 설정이 변경되었습니다. (제목 'A' → 'B', 최대 인원 8명 → 10명, 비밀방으로 전환, 비밀번호 변경)"
  * 방이 삭제되면 그 방의 채팅(Redis)을 지웁니다. (방 id는 다시 쓰이지 않으므로 지우지 않으면 계속 쌓인다)
  * 게임이 시작되면 시작 표시를 남기고, 게임이 끝나 대기실로 돌아오면 게임 중에 오간 메시지를 모두 지웁니다.
  * (게임 전 대기실 대화와 "대기실로 돌아왔습니다" 안내는 남는다)
@@ -52,6 +57,25 @@ public class ChatLobbyEventListener {
     @EventListener
     public void onHostChanged(RoomHostChangedEvent event) {
         post(event.roomId(), displayName(event.nickname(), event.userId()) + "님이 방장이 되었습니다.");
+    }
+
+    @EventListener
+    public void onSettingsChanged(RoomSettingsChangedEvent event) {
+        post(event.roomId(), settingsChangedMessage(event));
+    }
+
+    /**
+     * 바뀐 항목만 모아 한 줄로 만든다. 비밀번호 값은 이벤트에 없으므로 "비밀번호 변경"이라는 사실만 알린다.
+     * 예) 방 설정이 변경되었습니다. (최대 인원 8명 → 10명, 비밀방으로 전환)
+     */
+    static String settingsChangedMessage(RoomSettingsChangedEvent event) {
+        List<String> changes = new ArrayList<>();
+        if (event.titleChanged()) changes.add("제목 '" + event.before().title() + "' → '" + event.after().title() + "'");
+        if (event.maxPlayersChanged()) changes.add("최대 인원 " + event.before().maxPlayers() + "명 → " + event.after().maxPlayers() + "명");
+        if (event.privateRoomChanged()) changes.add(event.after().privateRoom() ? "비밀방으로 전환" : "공개방으로 전환");
+        if (event.passwordChanged()) changes.add("비밀번호 변경");
+        if (changes.isEmpty()) return "방 설정이 변경되었습니다.";
+        return "방 설정이 변경되었습니다. (" + String.join(", ", changes) + ")";
     }
 
     @EventListener
