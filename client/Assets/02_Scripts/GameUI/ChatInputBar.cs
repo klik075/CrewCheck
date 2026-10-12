@@ -1,5 +1,6 @@
 using System;
 using TMPro;
+using WhoisntCitizen.Common;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -41,11 +42,8 @@ namespace WhoisntCitizen.GameUI
             if (string.IsNullOrEmpty(text)) return;
 
             ChatSubmitted?.Invoke(text);
-            if (chatInput != null)
-            {
-                chatInput.text = "";
-                chatInput.ActivateInputField(); // 연속 입력이 가능하도록 포커스 유지
-            }
+            // 한글 IME 조합 중 Enter로 보낸 경우를 위해 다음 프레임에 비운다 (InputFieldExtensions 참고)
+            if (chatInput != null) chatInput.ClearAndRefocus(this);
         }
     }
 }
