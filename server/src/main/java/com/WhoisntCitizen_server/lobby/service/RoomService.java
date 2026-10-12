@@ -14,6 +14,7 @@ import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
+import com.WhoisntCitizen_server.lobby.dto.UpdateRoomSettingsRequestDto;
 import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomGameFinishedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomGameStartingEvent;
@@ -21,6 +22,7 @@ import com.WhoisntCitizen_server.lobby.event.RoomHostChangedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerKickedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerJoinedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerLeftEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomSettingsChangedEvent;
 import com.WhoisntCitizen_server.lobby.lock.RoomLock;
 import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
 import com.WhoisntCitizen_server.user.entity.User;
@@ -95,12 +97,9 @@ public class RoomService {
 
     // 방 생성
     public RoomResponseDto createRoom(Long userId, CreateRoomRequestDto request) {
-        if (request.getTitle() == null || request.getTitle().isBlank()) {
-            throw new IllegalArgumentException("방 제목을 입력해주세요.");
-        }
-        if (request.getMaxPlayers() < MIN_PLAYERS || request.getMaxPlayers() > MAX_PLAYERS) {
-            throw new IllegalArgumentException("최대 인원은 " + MIN_PLAYERS + "~" + MAX_PLAYERS + "명이어야 합니다.");
-        }
+        // 제목·인원 규칙은 방 설정 변경(updateSettings)과 같은 검사를 쓴다.
+        validateTitle(request.getTitle());
+        validateMaxPlayers(request.getMaxPlayers());
 
         // 비밀방이면 비밀번호 형식 검사 (숫자만, 4자리 이상). 공개방이면 비밀번호는 보내도 무시한다.
         boolean privateRoom = request.isPrivateRoom();
@@ -258,6 +257,77 @@ public class RoomService {
         if (room.isInGame()) throw new IllegalStateException("게임 중에는 할 수 없습니다.");
         if (userId.equals(targetUserId)) throw new IllegalArgumentException("자기 자신은 추방할 수 없습니다.");
         if (!room.containsPlayer(targetUserId)) throw new IllegalStateException("해당 플레이어가 방에 없습니다.");
+    }
+
+    /**
+     * 방 설정 변경 (방장만). PUT /api/v1/rooms/{roomId}/settings
+     * body {"title":"초보만","maxPlayers":10,"privateRoom":true,"password":"0427"}
+     *
+     * 설정 전체를 받아 그대로 적용한다. 비밀번호만 예외로, 비밀방을 비밀방으로 유지하면서 비어 있게 보내면 기존 비밀번호를 유지한다.
+     * (클라이언트는 현재 비밀번호를 모르기 때문. 규칙 표는 UpdateRoomSettingsRequestDto 참고)
+     * 참가자의 준비 상태, 추방 목록, 이미 들어와 있는 참가자는 그대로 둔다.
+     *
+     * 검사 순서 (방 잠금 안에서)
+     *   1. 방 없음                    → 400
+     *   2. 방장이 아님                 → 403
+     *   3. 게임 중                    → 409
+     *   4. 제목 없음 / 인원 범위 밖      → 400  (createRoom과 같은 규칙)
+     *   5. 최대 인원 < 현재 인원         → 409
+     *   6. 비밀번호가 필요한데 형식이 틀림 → 400
+     *
+     * 입장(joinRoom)과 같은 방 잠금을 쓰므로, 설정이 바뀐 뒤 처리되는 입장 요청은 새 설정(비밀번호, 정원)으로 검사된다.
+     * 실제로 바뀐 것이 있을 때만 저장하고 RoomSettingsChangedEvent를 발행한다. (채팅에 "방 설정이 변경되었습니다")
+     */
+    public void updateSettings(Long roomId, Long userId, UpdateRoomSettingsRequestDto request) {
+
+        RoomSettingsChangedEvent changed = roomLock.withLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            if (!userId.equals(room.getHostUserId())) throw new ForbiddenException("방장만 방 설정을 바꿀 수 있습니다.");
+            if (room.isInGame()) throw new IllegalStateException("게임 중에는 방 설정을 바꿀 수 없습니다.");
+
+            validateTitle(request.getTitle());
+            if (request.getMaxPlayers() == null) throw new IllegalArgumentException("최대 인원(maxPlayers)을 보내주세요.");
+            if (request.getPrivateRoom() == null) throw new IllegalArgumentException("비밀방 여부(privateRoom)를 보내주세요.");
+            int maxPlayers = request.getMaxPlayers();
+            boolean privateRoom = request.getPrivateRoom();
+            validateMaxPlayers(maxPlayers);
+            if (maxPlayers < room.getPlayers().size()) {
+                throw new IllegalStateException("현재 인원(" + room.getPlayers().size() + "명)보다 적게 설정할 수 없습니다.");
+            }
+
+            // 새 비밀번호 결정: null이면 기존 비밀번호 유지 (비밀방 → 비밀방 + 빈 값일 때만)
+            String newPassword = null;
+            if (privateRoom) {
+                String input = request.getPassword();
+                boolean keepPassword = room.isPrivateRoom() && (input == null || input.isBlank());
+                if (!keepPassword) {
+                    validatePassword(input); // 공개방 → 비밀방이면 비어 있어도 여기서 400
+                    newPassword = input;
+                }
+            }
+
+            RoomSettingsChangedEvent.Settings before = settingsOf(room);
+            // 비밀방 유지 + 다른 비밀번호일 때만 "비밀번호 변경". 비교는 반드시 matchesPassword로 한다. (암호화 대비)
+            boolean passwordChanged = room.isPrivateRoom() && privateRoom
+                    && newPassword != null && !room.matchesPassword(newPassword);
+
+            room.changeSettings(request.getTitle(), maxPlayers, privateRoom, newPassword);
+            RoomSettingsChangedEvent.Settings after = settingsOf(room);
+
+            if (before.equals(after) && !passwordChanged) return null; // 바뀐 것 없음: 저장·알림 생략
+            roomRepository.save(room);
+            return new RoomSettingsChangedEvent(roomId, before, after, passwordChanged);
+        });
+
+        // 이벤트는 잠금 밖에서 발행한다. (채팅 저장 때문에 방 잠금을 오래 쥐지 않도록)
+        if (changed != null) eventPublisher.publishEvent(changed);
+    }
+
+    /** 이벤트에 담을 방 설정 값 (비밀번호 제외) */
+    private static RoomSettingsChangedEvent.Settings settingsOf(Room room) {
+        return new RoomSettingsChangedEvent.Settings(room.getTitle(), room.getMaxPlayers(), room.isPrivateRoom());
     }
 
     /**
@@ -565,6 +635,20 @@ public class RoomService {
     private static void validatePassword(String password) {
         if (password == null || !PASSWORD_PATTERN.matcher(password).matches()) {
             throw new IllegalArgumentException("비밀번호는 숫자 " + MIN_PASSWORD_LENGTH + "자리 이상이어야 합니다.");
+        }
+    }
+
+    /** 방 제목 검사 (방 생성·설정 변경 공통). 비어 있으면 400. */
+    private static void validateTitle(String title) {
+        if (title == null || title.isBlank()) {
+            throw new IllegalArgumentException("방 제목을 입력해주세요.");
+        }
+    }
+
+    /** 최대 인원 범위 검사 (방 생성·설정 변경 공통). MIN_PLAYERS~MAX_PLAYERS 밖이면 400. */
+    private static void validateMaxPlayers(int maxPlayers) {
+        if (maxPlayers < MIN_PLAYERS || maxPlayers > MAX_PLAYERS) {
+            throw new IllegalArgumentException("최대 인원은 " + MIN_PLAYERS + "~" + MAX_PLAYERS + "명이어야 합니다.");
         }
     }
 

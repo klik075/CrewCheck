@@ -8,6 +8,7 @@ import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.SetReadyRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.TransferHostRequestDto;
+import com.WhoisntCitizen_server.lobby.dto.UpdateRoomSettingsRequestDto;
 import com.WhoisntCitizen_server.lobby.presence.RoomPresenceService;
 import com.WhoisntCitizen_server.lobby.service.RoomService;
 import com.WhoisntCitizen_server.user.service.CurrentUserResolver;
@@ -138,6 +139,25 @@ public class RoomController {
         if (request == null || request.getUserId() == null) throw new IllegalArgumentException("위임할 플레이어(userId)를 보내주세요.");
 
         roomService.transferHost(roomId, currentUser.userId(jwt), request.getUserId());
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 방 설정 변경 (방장만). body: {"title":"초보만","maxPlayers":10,"privateRoom":true,"password":"0427"}  성공 시 204.
+     * 설정 전체를 보낸다. 비밀방을 비밀방으로 유지하면서 password를 비워 보내면("" 또는 null) 기존 비밀번호를 유지한다.
+     * 참가자의 준비 상태는 그대로 둔다. 바뀐 것이 있으면 채팅에 "방 설정이 변경되었습니다" 시스템 메시지가 남는다.
+     * 실패: 403 방장 아님, 409 게임 중 / 최대 인원 < 현재 인원,
+     *       400 body 없음 / 제목 없음 / 인원 범위(4~12) 밖 / maxPlayers·privateRoom 누락 / 비밀번호 형식(숫자 4자리 이상) / 존재하지 않는 방
+     */
+    @PutMapping("/{roomId}/settings")
+    public ResponseEntity<Void> updateSettings(
+            @PathVariable Long roomId,
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody(required = false) UpdateRoomSettingsRequestDto request
+    ) {
+        if (request == null) throw new IllegalArgumentException("변경할 방 설정을 보내주세요.");
+
+        roomService.updateSettings(roomId, currentUser.userId(jwt), request);
         return ResponseEntity.noContent().build();
     }
 
