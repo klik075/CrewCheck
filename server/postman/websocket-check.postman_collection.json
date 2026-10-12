@@ -1,0 +1,594 @@
+{
+  "info": {
+    "name": "MafiaGame WebSocket 확인 (4단계)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "4단계 서버 WebSocket(/ws/v1) 동작 확인용. 폴더 1 → 2 → 3 → 4 → 5 순서로 실행하세요.\n\n- 사용자 A·B는 게스트 로그인이라 회원가입이 필요 없습니다.\n- 토큰·방 번호는 스크립트가 컬렉션 변수에 자동 저장합니다.\n- Postman 컬렉션 파일에는 WebSocket 요청을 넣을 수 없어서 2번(연결)만 직접 합니다. 주소와 구독 메시지는 전역 변수 {{ws_url_a}}, {{ws_subscribe}}로 저장되고, 1-2 응답의 Visualize 탭에도 나옵니다.\n- 기존 mafia-game 컬렉션과 변수를 공유하지 않습니다."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "tokenA",
+      "value": ""
+    },
+    {
+      "key": "userIdA",
+      "value": ""
+    },
+    {
+      "key": "tokenB",
+      "value": ""
+    },
+    {
+      "key": "userIdB",
+      "value": ""
+    },
+    {
+      "key": "roomId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. 사용자 A 준비",
+      "description": "A를 게스트로 로그인하고 방을 만듭니다. 방 만들기 응답의 Visualize 탭에 WebSocket 주소와 보낼 메시지가 나옵니다.",
+      "item": [
+        {
+          "name": "1-1. A 게스트 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/members/guest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "members",
+                "guest"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestUuid\": \"ws-test-user-a\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('tokenA', r.accessToken);",
+                  "pm.collectionVariables.set('userIdA', r.userId);",
+                  "const ws = pm.collectionVariables.get('baseUrl').replace(/^http/, 'ws') + '/ws/v1?token=' + r.accessToken;",
+                  "// WebSocket 요청은 컬렉션에 저장되지 않으므로, 어디서든 {{ws_url_a}}로 쓸 수 있게 전역 변수에도 넣는다",
+                  "pm.globals.set('ws_url_a', ws);",
+                  "console.log('A userId =', r.userId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1-2. A 방 만들기",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rooms",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rooms"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenA}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"웹소켓 테스트\",\n  \"maxPlayers\": 8\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('roomId', r.id);",
+                  "pm.globals.set('ws_subscribe', JSON.stringify({type: 'room.subscribe', roomId: r.id}));",
+                  "console.log('roomId =', r.id);",
+                  "const ws = pm.globals.get('ws_url_a');",
+                  "const sub = pm.globals.get('ws_subscribe');",
+                  "const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');",
+                  "pm.visualizer.set(`<div style=\"font-family:sans-serif;font-size:14px;line-height:1.6\">",
+                  "<h3>다음: WebSocket 연결 (Postman에서 New → WebSocket)</h3>",
+                  "<p><b>① 주소</b> (아래를 복사하거나, 주소 칸에 <code>{{ws_url_a}}</code> 입력)</p>",
+                  "<pre style=\"white-space:pre-wrap;word-break:break-all;background:#f4f4f4;padding:8px\">${esc(ws)}</pre>",
+                  "<p>Connect → <code>connected</code> 메시지 확인</p>",
+                  "<p><b>② 30초 안에 보낼 메시지</b> (또는 <code>{{ws_subscribe}}</code> 입력)</p>",
+                  "<pre style=\"background:#f4f4f4;padding:8px\">${esc(sub)}</pre>",
+                  "<p>→ <code>subscribed</code> 확인. 그 다음 이 컬렉션의 3번 폴더로 돌아오세요.</p>",
+                  "</div>`);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. WebSocket 연결 (Postman에서 직접)",
+      "description": "Postman 컬렉션 파일에는 WebSocket 요청을 넣을 수 없어서 이 단계만 직접 합니다.\n\n1) New → WebSocket\n2) 주소: {{ws_url_a}}  (1-2 응답의 Visualize 탭에도 전체 주소가 있음)\n3) Connect → {\"type\":\"connected\",...} 확인\n4) 30초 안에 메시지 칸에 {{ws_subscribe}} 입력 후 Send → {\"type\":\"subscribed\",...} 확인\n5) 연결을 열어 둔 채로 3번 폴더를 실행\n\n30초 동안 아무것도 안 보내면 서버가 4408로 끊습니다. 끊기면 다시 Connect 후 구독 메시지를 보내세요. (중간중간 {\"type\":\"ping\"}을 보내면 유지됨)",
+      "item": [
+        {
+          "name": "2-0. (확인용) 방 상태 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rooms/{{roomId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rooms",
+                "{{roomId}}"
+              ]
+            },
+            "description": "WebSocket 주소와 구독 메시지를 다시 보고 싶을 때 실행하세요. Visualize 탭에 나옵니다.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenA}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const ws = pm.globals.get('ws_url_a');",
+                  "const sub = pm.globals.get('ws_subscribe');",
+                  "const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');",
+                  "pm.visualizer.set(`<div style=\"font-family:sans-serif;font-size:14px;line-height:1.6\">",
+                  "<h3>다음: WebSocket 연결 (Postman에서 New → WebSocket)</h3>",
+                  "<p><b>① 주소</b> (아래를 복사하거나, 주소 칸에 <code>{{ws_url_a}}</code> 입력)</p>",
+                  "<pre style=\"white-space:pre-wrap;word-break:break-all;background:#f4f4f4;padding:8px\">${esc(ws)}</pre>",
+                  "<p>Connect → <code>connected</code> 메시지 확인</p>",
+                  "<p><b>② 30초 안에 보낼 메시지</b> (또는 <code>{{ws_subscribe}}</code> 입력)</p>",
+                  "<pre style=\"background:#f4f4f4;padding:8px\">${esc(sub)}</pre>",
+                  "<p>→ <code>subscribed</code> 확인. 그 다음 이 컬렉션의 3번 폴더로 돌아오세요.</p>",
+                  "</div>`);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. 사용자 B 동작 → A의 WebSocket 창 확인",
+      "description": "요청을 하나 보낼 때마다 A의 WebSocket 창에 신호가 오는지 확인하세요.",
+      "item": [
+        {
+          "name": "3-1. B 게스트 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/members/guest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "members",
+                "guest"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestUuid\": \"ws-test-user-b\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('tokenB', r.accessToken);",
+                  "pm.collectionVariables.set('userIdB', r.userId);",
+                  "console.log('B userId =', r.userId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3-2. B 방 입장 → A: room.changed",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rooms/{{roomId}}/players",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rooms",
+                "{{roomId}}",
+                "players"
+              ]
+            },
+            "description": "기대: A 창에 {\"type\":\"room.changed\",\"roomId\":...} (입장 안내 시스템 메시지 때문에 chat.changed도 함께 옴)",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "console.log('A의 WebSocket 창에 {\"type\":\"room.changed\"} 와 입장 안내 {\"type\":\"chat.changed\"} 가 와야 합니다');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3-3. B 채팅 전송 → A: chat.changed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rooms/{{roomId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rooms",
+                "{{roomId}}",
+                "messages"
+              ]
+            },
+            "description": "기대: A 창에 {\"type\":\"chat.changed\",\"roomId\":...,\"lastMessageId\":(이 응답의 messageId)}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"웹소켓 테스트 메시지\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "console.log('A의 WebSocket 창에 {\"type\":\"chat.changed\",\"lastMessageId\":' + pm.response.json().messageId + '} 가 와야 합니다');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3-4. (선택) B 준비 → A: room.changed",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rooms/{{roomId}}/players/me/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rooms",
+                "{{roomId}}",
+                "players",
+                "me",
+                "ready"
+              ]
+            },
+            "description": "기대: A 창에 room.changed",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ready\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3-5. (선택) B 준비 취소 → A: room.changed",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rooms/{{roomId}}/players/me/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rooms",
+                "{{roomId}}",
+                "players",
+                "me",
+                "ready"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ready\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. 30초 무응답 확인 (요청 없음)",
+      "description": "A의 WebSocket 창에서 아무 메시지도 보내지 말고 30~35초 기다리세요.\n기대: 연결이 끊기고 코드 4408 / 이유 idle timeout.\n서버 로그: [ws] 연결 닫기: ... 이유=idle timeout",
+      "item": []
+    },
+    {
+      "name": "5. 정리 (다시 테스트하기 전에 실행)",
+      "description": "B와 A가 방에서 나가 방을 지웁니다. A의 WebSocket이 아직 연결돼 있다면, B 퇴장 때 room.changed, A 퇴장(방 삭제) 때 room.changed가 오고 구독이 풀립니다.",
+      "item": [
+        {
+          "name": "5-1. B 방 나가기",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rooms/{{roomId}}/players/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rooms",
+                "{{roomId}}",
+                "players",
+                "me"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx 또는 이미 나감', () => pm.expect(pm.response.code).to.be.oneOf([200, 204, 409]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5-2. A 방 나가기 (방 삭제)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rooms/{{roomId}}/players/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rooms",
+                "{{roomId}}",
+                "players",
+                "me"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenA}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx 또는 이미 나감', () => pm.expect(pm.response.code).to.be.oneOf([200, 204, 409]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

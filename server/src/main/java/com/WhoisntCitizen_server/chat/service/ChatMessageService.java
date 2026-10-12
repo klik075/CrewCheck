@@ -4,6 +4,7 @@ import com.WhoisntCitizen_server.chat.dto.ChatMessageResponse;
 import com.WhoisntCitizen_server.chat.dto.ChatMessageSummary;
 import com.WhoisntCitizen_server.chat.entity.ChatMessage;
 import com.WhoisntCitizen_server.chat.entity.MessageType;
+import com.WhoisntCitizen_server.chat.event.ChatMessageSavedEvent;
 import com.WhoisntCitizen_server.chat.repository.ChatMessageRepository;
 import com.WhoisntCitizen_server.common.exception.ForbiddenException;
 import com.WhoisntCitizen_server.common.exception.NotFoundException;
@@ -18,13 +19,19 @@ import com.WhoisntCitizen_server.lobby.domain.room.RoomPlayer;
 import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
 import com.WhoisntCitizen_server.user.entity.User;
 import com.WhoisntCitizen_server.user.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * 채팅 전송/조회.
@@ -76,17 +83,31 @@ public class ChatMessageService {
     private final GameRepository gameRepository;
     // 게임 상태를 읽을 때 게임 진행 쪽과 같은 잠금을 쓴다. (진행 중에 바뀌는 사망·접선·페이즈를 일관되게 읽기 위해)
     private final GameLock gameLock;
+    // 메시지를 저장할 때마다 ChatMessageSavedEvent 발행 (실시간 모듈이 받아 볼 수 있는 사람에게 chat.changed를 보낸다)
+    private final ApplicationEventPublisher eventPublisher;
 
+    @Autowired
     public ChatMessageService(ChatMessageRepository repository,
                               LobbyRoomRepository roomRepository,
                               UserRepository userRepository,
                               GameRepository gameRepository,
-                              GameLock gameLock) {
+                              GameLock gameLock,
+                              ApplicationEventPublisher eventPublisher) {
         this.repository = repository;
         this.roomRepository = roomRepository;
         this.userRepository = userRepository;
         this.gameRepository = gameRepository;
         this.gameLock = gameLock;
+        this.eventPublisher = eventPublisher;
+    }
+
+    /** 이벤트를 발행하지 않는 생성자 (실시간 알림이 필요 없는 테스트용) */
+    public ChatMessageService(ChatMessageRepository repository,
+                              LobbyRoomRepository roomRepository,
+                              UserRepository userRepository,
+                              GameRepository gameRepository,
+                              GameLock gameLock) {
+        this(repository, roomRepository, userRepository, gameRepository, gameLock, event -> { });
     }
 
     /**
@@ -126,9 +147,12 @@ public class ChatMessageService {
                 .orElseThrow(() -> new ForbiddenException("현재 채팅할 수 없는 플레이어입니다. (방 참가자가 아님)"));
 
         // 게임 잠금 안에서 게임을 읽고 규칙까지 정한다. 메시지 저장은 잠금 밖에서 한다
-        SendRule decided = withActiveGame(room, game -> game == null
-                ? new SendRule(Rule.PUBLIC, null)
-                : new SendRule(ruleOf(game, player.getUserId()), game.getGameId()));
+        // 볼 수 있는 사람(audience)도 같은 잠금 안에서 정한다. (실시간 알림을 볼 수 있는 사람에게만 보내기 위해)
+        SendRule decided = withActiveGame(room, game -> {
+            if (game == null) return new SendRule(Rule.PUBLIC, null, null);
+            Rule decidedRule = ruleOf(game, player.getUserId());
+            return new SendRule(decidedRule, game.getGameId(), audienceOf(game, decidedRule));
+        });
         Rule rule = decided.rule();
         if (rule == Rule.NIGHT_BLOCKED) {
             throw new ForbiddenException(NIGHT_BLOCKED_MESSAGE);
@@ -138,6 +162,7 @@ public class ChatMessageService {
         String gameId = rule == Rule.PUBLIC ? null : decided.gameId();
         ChatMessage saved = repository.save(roomId, type, player.getUserId(), player.getNickname(), message.trim(),
                 gameId, rule == Rule.NIGHT_PIRATE, rule == Rule.NIGHT_SIREN);
+        publishSaved(saved, decided.audience());
         return ChatMessageResponse.from(saved);
     }
 
@@ -149,8 +174,10 @@ public class ChatMessageService {
 
     /** 방 존재 여부를 확인하지 않고 시스템 메시지를 저장합니다. (로비 이벤트 처리용) */
     ChatMessage saveSystem(long roomId, String message) {
-        return repository.save(roomId, MessageType.SYSTEM,
+        ChatMessage saved = repository.save(roomId, MessageType.SYSTEM,
                 ChatMessage.SYSTEM_USER_ID, ChatMessage.SYSTEM_NICKNAME, message.trim());
+        publishSaved(saved, null);
+        return saved;
     }
 
     /** 삭제된 방의 메시지를 지웁니다. (로비 이벤트 처리용) */
@@ -174,8 +201,21 @@ public class ChatMessageService {
 
     /** 같은 게임의 해적(접선한 앵무새 포함)에게만 보이는 시스템 메시지를 저장합니다. (해적 안내 이벤트 처리용) */
     ChatMessage saveSystemForPirates(long roomId, String gameId, String message) {
-        return repository.save(roomId, MessageType.SYSTEM,
+        ChatMessage saved = repository.save(roomId, MessageType.SYSTEM,
                 ChatMessage.SYSTEM_USER_ID, ChatMessage.SYSTEM_NICKNAME, message.trim(), gameId, true);
+        // 볼 수 있는 해적을 게임 잠금 안에서 정한다. 게임이 없거나 끝났으면 아무에게도 보이지 않는다
+        Set<Long> pirates = gameLock.withLock(gameId, () -> gameRepository.findById(gameId)
+                .filter(game -> !game.isEnded())
+                .map(game -> audienceOf(game, Rule.NIGHT_PIRATE))
+                .orElse(Set.of()));
+        publishSaved(saved, pirates);
+        return saved;
+    }
+
+    /** 저장 알림. audience == null이면 모두에게 보이는 메시지 */
+    private void publishSaved(ChatMessage saved, Set<Long> audience) {
+        if (saved == null || saved.id() == null || saved.roomId() == null) return;
+        eventPublisher.publishEvent(new ChatMessageSavedEvent(saved.roomId(), saved.id(), audience));
     }
 
     // ---------- 조회: 보이는 메시지만 ----------
@@ -288,8 +328,33 @@ public class ChatMessageService {
                 gameRepository.findById(gameId).filter(game -> !game.isEnded()).orElse(null)));
     }
 
-    /** 전송 규칙과 그 규칙을 정한 게임 id. 게임 잠금 안에서 정해 잠금 밖으로 가지고 나옵니다. */
-    private record SendRule(Rule rule, String gameId) {
+    /**
+     * 전송 규칙, 그 규칙을 정한 게임 id, 볼 수 있는 사용자(모두에게 보이면 null).
+     * 게임 잠금 안에서 정해 잠금 밖으로 가지고 나옵니다.
+     */
+    private record SendRule(Rule rule, String gameId, Set<Long> audience) {
+    }
+
+    /**
+     * 지금 보낸 메시지를 볼 수 있는 사용자. 모두에게 보이면 null. (Visibility.canSee와 같은 규칙을 "보내는 순간" 기준으로 적용)
+     *  - 사망자 채팅: 그 게임의 사망자 (사망한 뒤에 보낸 메시지이므로 지금 사망자는 모두 볼 수 있다)
+     *  - 밤 해적 채팅·해적 안내: 지금 해적으로 취급되는 사람 (해적·요리사, 접선한 앵무새. 사망한 해적 포함)
+     *  - 세이렌 채팅: 지금 세이렌 팀인 사람 (세이렌, 유혹당한 팀원. 사망한 팀원 포함)
+     * withActiveGame 안(게임 잠금 안)에서만 부릅니다.
+     */
+    private static Set<Long> audienceOf(Game game, Rule rule) {
+        Predicate<GamePlayer> canRead = switch (rule) {
+            case DEAD -> p -> !p.isAlive();
+            case NIGHT_PIRATE -> p -> pirateChatSince(p) != null;
+            case NIGHT_SIREN -> p -> sirenChatSince(p) != null;
+            case PUBLIC, NIGHT_BLOCKED -> null;
+        };
+        if (canRead == null) return null;
+        Set<Long> ids = new LinkedHashSet<>();
+        for (GamePlayer p : game.getPlayers()) {
+            if (canRead.test(p)) ids.add(p.getPlayerId());
+        }
+        return Collections.unmodifiableSet(ids);
     }
 
     /**
