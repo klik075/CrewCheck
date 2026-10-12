@@ -53,6 +53,9 @@ public static class AuthSession
         AccessToken = accessToken;
         tokenLifetimeSeconds = ReadTokenLifetimeSeconds(accessToken);
         loginTimestamp = Stopwatch.GetTimestamp();
+
+        // 새 토큰으로 실시간 연결(WebSocket)을 시작한다. 모든 로그인(게스트·계정·소셜)이 여기를 지난다.
+        WhoisntCitizen.Network.RealtimeSession.OnLoggedIn();
     }
 
     /// <summary>
@@ -70,9 +73,11 @@ public static class AuthSession
         Nickname = nickname;
     }
 
-    /// <summary>로그아웃 / 토큰 만료 시 호출</summary>
+    /// <summary>로그아웃 / 토큰 만료 시 호출. 실시간 연결도 끊는다.</summary>
     public static void Clear()
     {
+        WhoisntCitizen.Network.RealtimeSession.OnLoggedOut();
+
         MemberId = 0;
         UserId = 0;
         Username = null;

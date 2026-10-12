@@ -1,3 +1,5 @@
+using WhoisntCitizen.Network;
+
 namespace WhoisntCitizen.Lobby
 {
     /// <summary>
@@ -85,9 +87,19 @@ namespace WhoisntCitizen.Lobby
             GameId = null;
         }
 
-        /// <summary>방을 나갔거나 로그아웃했을 때 호출</summary>
+        /// <summary>
+        /// 방을 나갔거나 로그아웃했을 때 호출.
+        /// 실시간 방 구독도 함께 푼다(room.unsubscribe). 퇴장·강퇴·방 삭제·취소된 게임·로그아웃이 모두 여기를 지나므로 한곳에서 처리한다.
+        /// </summary>
         public static void Clear()
         {
+            // 플레이 종료 중에 새로 만들지 않도록 이미 있는 클라이언트만 쓴다. 방에 없으면 아무것도 보내지 않는다.
+            RealtimeClient realtime = RealtimeClient.ExistingInstance;
+            if (realtime != null)
+            {
+                realtime.LeaveRoom();
+            }
+
             RoomId = 0;
             RoomTitle = null;
             HostUserId = 0;

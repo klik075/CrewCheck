@@ -5,6 +5,8 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using WhoisntCitizen.Common;
+using WhoisntCitizen.Network;
+using WhoisntCitizen.Network.Realtime;
 
 namespace WhoisntCitizen.Lobby
 {
@@ -69,7 +71,8 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private StatusMessageView statusMessage;
 
         [Header("Options")]
-        [Tooltip("방 상태 조회 간격(초). 게임이 시작되면 첫 밤 타이머가 바로 돌기 때문에 짧게 둔다.")]
+        [Tooltip("실시간 신호가 없을 때의 방 상태 조회 간격(초). 게임이 시작되면 첫 밤 타이머가 바로 돌기 때문에 짧게 둔다. " +
+                 "신호를 받는 동안은 15초(안전망)로 늦추고, room.changed가 오면 바로 조회한다.")]
         [SerializeField] private float pollInterval = 1f;
         [Tooltip("게임 시작에 필요한 최소 인원 (서버 RoleAssigner.MIN_PLAYERS = 4)")]
         [SerializeField] private int minPlayersToStart = 4;
@@ -97,6 +100,11 @@ namespace WhoisntCitizen.Lobby
         private bool isManaging;      // 방장 위임 / 추방 요청 중
         private bool isTransitioning; // 다른 씬으로 이동 시작함 (이후 모든 요청/응답 무시)
         private Coroutine pollRoutine;
+        private double nextFetchAt;   // 이 시각(realtime) 이후 다음 조회. 0이면 바로
+        private double lastFetchAt = double.NaN;
+        private bool fetchAgain;      // 조회 응답을 기다리는 중에 신호가 왔다 → 응답 뒤 한 번 더
+        private RealtimeClient realtime;
+        private long realtimeRoomId;
 
         // ------------------------------------------------------------------
         // Unity 생명주기
@@ -140,6 +148,7 @@ namespace WhoisntCitizen.Lobby
                 statusMessage?.ShowError($"로그인 유지 시간이 약 {minutesLeft}분 남았습니다. 게임 중 만료되면 연결이 끊겨 탈락하니, 로비에서 로그아웃 후 다시 로그인해 주세요.", keep: true);
             }
 
+            AttachRealtime(RoomSession.RoomId);
             pollRoutine = StartCoroutine(PollLoop());
         }
 
@@ -157,6 +166,7 @@ namespace WhoisntCitizen.Lobby
             if (exitRoomButton != null) exitRoomButton.onClick.RemoveListener(OnExitRoomClicked);
             if (readyButton != null) readyButton.onClick.RemoveListener(OnReadyClicked);
             if (settingsButton != null) settingsButton.onClick.RemoveListener(OnSettingsClicked);
+            DetachRealtime();
         }
 
         // ------------------------------------------------------------------
@@ -438,20 +448,46 @@ namespace WhoisntCitizen.Lobby
         // 방 상태 polling
         // ------------------------------------------------------------------
 
+        private static double Now => Time.realtimeSinceStartupAsDouble;
+
+        /// <summary>
+        /// 매 프레임 "조회할 때가 됐나"만 본다. 간격은 고정이 아니라 연결 상태에 따라 바뀌고(CurrentPollInterval),
+        /// room.changed 등 신호가 오면 RequestFetchNow()로 nextFetchAt을 당긴다.
+        /// </summary>
         private IEnumerator PollLoop()
         {
-            var wait = new WaitForSeconds(Mathf.Max(0.2f, pollInterval));
+            nextFetchAt = 0; // 시작하자마자 한 번
             while (!isTransitioning)
             {
-                if (!isFetching && !SceneLoader.IsLoading) FetchRoom();
-                yield return wait;
+                // 나가기 요청 중에는 조회하지 않는다. (내가 마지막이면 방이 지워져 400이 나므로)
+                if (!isFetching && !isLeaving && !SceneLoader.IsLoading && Now >= nextFetchAt) FetchRoom();
+                yield return null;
             }
             pollRoutine = null;
+        }
+
+        /// <summary>이 방의 신호를 받는 중이면 15초(안전망), 아니면 pollInterval(1초).</summary>
+        private double CurrentPollInterval()
+        {
+            bool signals = realtime != null && realtime.ReceivesSignalsFor(realtimeRoomId);
+            return RealtimePolling.IntervalSeconds(signals, pollInterval);
+        }
+
+        /// <summary>
+        /// 다음 프레임에 바로 조회한다. 조회 중이면 그 응답은 신호보다 먼저 출발했을 수 있으므로 응답이 온 뒤 한 번 더.
+        /// </summary>
+        private void RequestFetchNow()
+        {
+            if (isTransitioning || isLeaving) return;
+            if (isFetching) fetchAgain = true;
+            else nextFetchAt = 0;
         }
 
         private void FetchRoom()
         {
             isFetching = true;
+            lastFetchAt = Now;
+            nextFetchAt = lastFetchAt + CurrentPollInterval();
             long roomId = RoomSession.RoomId;
             int seqAtRequest = readySeq;
 
@@ -459,6 +495,11 @@ namespace WhoisntCitizen.Lobby
             {
                 if (this == null) return;
                 isFetching = false;
+                if (fetchAgain)
+                {
+                    fetchAgain = false;
+                    nextFetchAt = 0;
+                }
                 if (isTransitioning) return;
 
                 if (!result.success)
@@ -671,6 +712,59 @@ namespace WhoisntCitizen.Lobby
             UpdateStartButton();
             UpdateReadyButton();
             if (pollRoutine == null) pollRoutine = StartCoroutine(PollLoop());
+        }
+
+        // ------------------------------------------------------------------
+        // 실시간 신호
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 이 방의 신호를 받기 시작한다. GameScene에서 돌아온 경우 이미 같은 방을 구독 중이라 EnterRoom은 아무것도 보내지 않는다.
+        /// 연결은 로그인할 때 RealtimeSession이 시작한다. 여기서는 방만 알린다.
+        /// 방을 나갈 때의 LeaveRoom은 RoomSession.Clear()가 한다(ReturnToLobby → Clear).
+        /// </summary>
+        private void AttachRealtime(long roomId)
+        {
+            if (roomId <= 0) return;
+
+            realtime = RealtimeClient.Instance;
+            realtimeRoomId = roomId;
+            realtime.RoomChanged += OnRealtimeRoomChanged;
+            realtime.Resynced += OnRealtimeRoomChanged;           // 구독 확인 → 놓친 변경을 메우려고 한 번 조회
+            realtime.SubscribeRejected += OnRealtimeRoomChanged;  // 거절 → 조회해서 실제로 방에서 빠졌는지 확인
+            realtime.StateChanged += OnRealtimeStateChanged;
+
+            realtime.EnterRoom(roomId);
+        }
+
+        private void DetachRealtime()
+        {
+            RealtimeClient rt = realtime != null ? RealtimeClient.ExistingInstance : null;
+            if (rt != null)
+            {
+                rt.RoomChanged -= OnRealtimeRoomChanged;
+                rt.Resynced -= OnRealtimeRoomChanged;
+                rt.SubscribeRejected -= OnRealtimeRoomChanged;
+                rt.StateChanged -= OnRealtimeStateChanged;
+            }
+            realtime = null;
+            realtimeRoomId = 0;
+        }
+
+        /// <summary>room.changed · Resynced · SubscribeRejected 공통: 이 방이면 바로 조회.</summary>
+        private void OnRealtimeRoomChanged(long roomId)
+        {
+            if (roomId == realtimeRoomId) RequestFetchNow();
+        }
+
+        /// <summary>
+        /// 연결 상태가 바뀌면 다음 조회 시각을 "마지막 조회 + 새 간격"으로 다시 잡는다.
+        /// → 끊기면 1초 폴링으로 바로 돌아가고, 구독되면 15초 안전망으로 늦춘다.
+        /// </summary>
+        private void OnRealtimeStateChanged(RealtimeState previous, RealtimeState next)
+        {
+            if (isFetching || double.IsNaN(lastFetchAt) || nextFetchAt <= 0) return;
+            nextFetchAt = lastFetchAt + CurrentPollInterval();
         }
 
         private static void BindIfEmpty(Button button, UnityEngine.Events.UnityAction action)

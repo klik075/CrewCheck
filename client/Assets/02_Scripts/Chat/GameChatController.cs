@@ -9,6 +9,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using WhoisntCitizen.GameUI;
 using WhoisntCitizen.Lobby; // RoomSession: 로비에서 입장한 방
+using WhoisntCitizen.Network;
+using WhoisntCitizen.Network.Realtime;
 
 namespace WhoisntCitizen.Chat
 {
@@ -20,6 +22,8 @@ namespace WhoisntCitizen.Chat
     /// 기능
     ///  - 시작: 로비에서 들어온 방(RoomSession)으로 바로 채팅. 단독 실행 시 [개발용] 자동 로그인 → 방 참가(없으면 생성)
     ///  - pollInterval초마다 afterId 이후 새 메시지만 받아 기록 뒤에 붙이고, N회마다 전체 목록으로 동기화
+    ///  - 실시간 신호: chat.changed의 lastMessageId가 내가 가진 마지막 id보다 크면 바로 받아 온다.
+    ///    신호를 받는 동안은 폴링을 15초(안전망)로 늦추고, 끊기면 pollInterval(2초)로 돌아간다.
     ///  - 서버 시스템 메시지(입장·퇴장, 게임 진행 안내, 공지) → [시스템] + Unity 콘솔 [Chat][시스템]
     ///  - 내 화면 전용 안내(ChatNotice: 로그인, 방 입장, 연결 상태 등) → [안내] + Unity 콘솔 [Chat][안내]
     ///  - 사망자 채팅(type=DEAD, 서버가 사망자에게만 보내 줌) → 닉네임·내용 모두 회색
@@ -55,6 +59,7 @@ namespace WhoisntCitizen.Chat
         public int devRoomMaxPlayers = 8;
 
         [Header("Polling (새 메시지 자동 수신)")]
+        [Tooltip("실시간 신호가 없을 때의 조회 간격(초). 신호를 받는 동안은 15초(안전망)로 늦춘다")]
         public float pollInterval = 2f;
         public int fullSyncEveryPolls = 15;
         public float retryInterval = 3f;
@@ -84,6 +89,9 @@ namespace WhoisntCitizen.Chat
         long _lastId = -1;
         long _lastLoggedSystemId = -1;
         float _nextPollTime;
+        float _lastPollTime = -1f;   // 마지막으로 정기 조회를 한 시각(unscaledTime). 아직 없으면 -1
+        bool _roomFromSession;       // 방을 RoomSession(로비에서 입장한 방)에서 받았는지
+        RealtimeClient _realtime;
         int _pollCount;
         string _lastStatus = ""; // 마지막으로 표시한 일시 오류 (같은 오류 반복 표시 방지)
         bool _failed;            // 다시 시도해도 안 되는 오류로 멈춤
@@ -155,13 +163,22 @@ namespace WhoisntCitizen.Chat
             }
             foreach (var text in ChatNotice.TakePending()) AddLocal(Colored(localNoticePrefix + text, localNoticeColor));
             Render();
+            AttachRealtime();
             StartCoroutine(Connect());
+        }
+
+        void OnDestroy()
+        {
+            DetachRealtime();
         }
 
         void Update()
         {
             if (!_ready || pollInterval <= 0f || Time.unscaledTime < _nextPollTime) return;
-            _nextPollTime = Time.unscaledTime + pollInterval;
+            // 방을 나가는 중(RoomSession이 비워짐)이면 더 묻지 않는다. 방이 지워져 404가 나기 때문이다.
+            if (_roomFromSession && !RoomSession.HasRoom) return;
+            _lastPollTime = Time.unscaledTime;
+            _nextPollTime = _lastPollTime + CurrentPollInterval();
             if (_fetching) return;
             _pollCount++;
             RequestFetch(fullSyncEveryPolls > 0 && _pollCount % fullSyncEveryPolls == 0);
@@ -208,6 +225,7 @@ namespace WhoisntCitizen.Chat
                 if (RoomSession.HasRoom)
                 {
                     api.roomId = RoomSession.RoomId;
+                    _roomFromSession = true;
                 }
                 else if (autoJoinRoom)
                 {
@@ -265,7 +283,8 @@ namespace WhoisntCitizen.Chat
                 _ready = true;
                 _failed = false;
                 _lastStatus = "";
-                _nextPollTime = Time.unscaledTime + pollInterval;
+                _lastPollTime = Time.unscaledTime;
+                _nextPollTime = _lastPollTime + CurrentPollInterval();
                 RequestFetch(true);
                 break;
             }
@@ -284,6 +303,66 @@ namespace WhoisntCitizen.Chat
         {
             AuthSession.Clear();
             ChatNotice.Post("로그인 시간이 만료되었습니다. 다시 로그인해 주세요.");
+        }
+
+        // ================= 실시간 신호 =================
+
+        /// <summary>
+        /// 로비에서 들어온 방(RoomSession)일 때만 신호를 받는다. (단독 실행 [개발용] 방은 폴링만)
+        /// 연결은 로그인할 때 RealtimeSession이 시작한다. 방 구독은 Room·Game 화면도 하지만 같은 방이면 다시 불러도 아무것도 보내지 않는다.
+        /// </summary>
+        void AttachRealtime()
+        {
+            if (!RoomSession.HasRoom) return;
+            _realtime = RealtimeClient.Instance;
+            _realtime.ChatChanged += OnRealtimeChatChanged;
+            _realtime.Resynced += OnRealtimeResynced;
+            _realtime.StateChanged += OnRealtimeStateChanged;
+            _realtime.EnterRoom(RoomSession.RoomId);
+        }
+
+        void DetachRealtime()
+        {
+            RealtimeClient rt = _realtime != null ? RealtimeClient.ExistingInstance : null;
+            if (rt != null)
+            {
+                rt.ChatChanged -= OnRealtimeChatChanged;
+                rt.Resynced -= OnRealtimeResynced;
+                rt.StateChanged -= OnRealtimeStateChanged;
+            }
+            _realtime = null;
+        }
+
+        /// <summary>이 방의 신호를 받는 중이면 15초(안전망), 아니면 pollInterval(2초).</summary>
+        float CurrentPollInterval()
+        {
+            bool signals = _realtime != null && api != null && _realtime.ReceivesSignalsFor(api.roomId);
+            return (float)RealtimePolling.IntervalSeconds(signals, pollInterval);
+        }
+
+        /// <summary>
+        /// 새 채팅 신호. 이미 그 id까지 받았으면(내가 보낸 메시지를 전송 직후 받아 온 경우 등) 다시 묻지 않는다.
+        /// 받는 중이면 RequestFetch가 응답 뒤 한 번 더 묻는다(_fetchAgain).
+        /// </summary>
+        void OnRealtimeChatChanged(long roomId, long lastMessageId)
+        {
+            if (!_ready || api == null || roomId != api.roomId) return;
+            if (lastMessageId <= _lastId) return;
+            RequestFetch();
+        }
+
+        /// <summary>구독이 (다시) 확인됐다 → 끊긴 동안의 메시지를 받아 온다.</summary>
+        void OnRealtimeResynced(long roomId)
+        {
+            if (!_ready || api == null || roomId != api.roomId) return;
+            RequestFetch();
+        }
+
+        /// <summary>연결 상태가 바뀌면 다음 조회 시각을 "마지막 조회 + 새 간격"으로 다시 잡는다. (끊기면 2초 폴링으로 바로)</summary>
+        void OnRealtimeStateChanged(RealtimeState previous, RealtimeState next)
+        {
+            if (!_ready || _lastPollTime < 0f) return;
+            _nextPollTime = _lastPollTime + CurrentPollInterval();
         }
 
         // ================= 전송 =================
