@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine.Networking;
+using WhoisntCitizen.Game;
 using WhoisntCitizen.Network;
 
 namespace WhoisntCitizen.Lobby
@@ -70,6 +71,18 @@ namespace WhoisntCitizen.Lobby
         public static void CreateRoom(string title, int maxPlayers, Action<ApiResult<RoomResponse>> onDone)
         {
             CreateRoom(title, maxPlayers, false, null, onDone);
+        }
+
+        /// <summary>직업 선택지와 인원별 추천 구성. 방 생성 전 편집 화면에서 사용한다.</summary>
+        public static void GetRoleSetupOptions(Action<ApiResult<RoleSetupOptionsDto>> onDone)
+        {
+            ApiClient.Get("/api/v1/role-setup/options", onDone);
+        }
+
+        /// <summary>생성된 방의 직업 배정 설정을 저장한다. 방장만 호출할 수 있다.</summary>
+        public static void SetRoleSetup(long roomId, RoleSetupDto setup, Action<ApiResult> onDone)
+        {
+            ApiClient.Put($"{RoomsPath}/{roomId}/role-setup", setup, onDone);
         }
 
         /// <summary>

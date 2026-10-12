@@ -80,6 +80,9 @@ namespace WhoisntCitizen.Game
         /// <summary>The vote's public result (counts per player), shown until the next phase.</summary>
         public virtual void OnExecutionResult(ExecutionResultDto result) { }
 
+        /// <summary>Whether GameScreen plays the full-screen cut-scenes for the night's result and the execution (DayTransitionView).</summary>
+        public virtual bool PlaysDayTransitions => false;
+
         protected float CanvasHeight => ctx.Canvas.rect.height;
 
         // ------------------------------------------------------------------ shared parts

@@ -159,6 +159,10 @@ namespace WhoisntCitizen.Game
             int pirates = CountPirates(options, roles);
             if (pirates * 2 >= playerCount)
                 return $"해적 진영({pirates}명)은 선원 진영({playerCount - pirates}명)보다 적어야 합니다.";
+            if (Count(roles, RoleCodes.CrewMonkey) > 0 && !roles.Any(code =>
+                    (FindRole(options, code)?.faction == Factions.Crew && code != RoleCodes.CrewMonkey)
+                    || code == "NEUTRAL_GHOST_CAPTAIN" || code == "NEUTRAL_MERMAID"))
+                return "원숭이가 있으면 원숭이가 위장할 직업(원숭이를 뺀 선원 진영, 유령 선장, 인어)도 1명 이상 있어야 합니다.";
             return null;
         }
 
@@ -235,8 +239,10 @@ namespace WhoisntCitizen.Game
         public static string DescribeFactions(RoleSetupOptionsDto options, List<string> roles)
         {
             int pirates = CountPirates(options, roles);
-            int total = roles?.Count ?? 0;
-            return $"해적 진영 {pirates}명 / 선원 진영 {total - pirates}명";
+            int neutrals = roles?.Count(code => FindRole(options, code)?.faction == Factions.Neutral) ?? 0;
+            int crew = (roles?.Count ?? 0) - pirates - neutrals;
+            string description = $"해적 진영 {pirates}명 / 선원 진영 {crew}명";
+            return neutrals > 0 ? description + $" / 제3 세력 {neutrals}명" : description;
         }
 
         /// <summary>

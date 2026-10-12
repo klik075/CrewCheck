@@ -61,10 +61,7 @@ namespace WhoisntCitizen.Lobby
         public string password;   // 비밀방 비밀번호. 숫자 문자열("0427" - 앞자리 0 유지). 공개방이면 서버가 무시한다
     }
 
-    /// <summary>
-    /// POST /api/v1/rooms/{roomId}/players 요청 body (비밀방 입장용).
-    /// 공개방은 이 body 없이(null) 보낸다.
-    /// </summary>
+    /// <summary>POST /api/v1/rooms/{roomId}/players 요청 body (비밀방 입장용).</summary>
     [Serializable]
     public class JoinRoomRequest
     {

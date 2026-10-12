@@ -2,6 +2,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using WhoisntCitizen.Common;
+using WhoisntCitizen.Game;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 using WhoisntCitizen.Chat; // ChatNotice: 내 화면 전용 안내 (채팅창 + 콘솔)
@@ -48,6 +49,13 @@ namespace WhoisntCitizen.Lobby
         [Header("Buttons")]
         [SerializeField] private Button createButton;            // Button_Create
         [SerializeField] private Button cancelButton;            // Button_Cancel
+
+        private Button[] modeButtons;
+        private Button editRolesButton;
+        private TMP_Text modeInfoText;
+        private CreateRoomRoleEditor roleEditor;
+        private RoleSetupDto roleSetup;
+        private RoleSetupOptionsDto roleOptions;
 
         [Header("Status")]
         [SerializeField] private StatusMessageView statusMessage; // 팝업 안의 StatusMessageText
@@ -108,6 +116,39 @@ namespace WhoisntCitizen.Lobby
                 createButton.onClick.AddListener(OnCreateClicked);
             if (cancelButton != null && cancelButton.onClick.GetPersistentEventCount() == 0)
                 cancelButton.onClick.AddListener(OnCancelClicked);
+
+            Transform background = transform.Find("Background/TitleImage");
+            Transform modeBar = background?.Find("GameMode");
+            modeButtons = new[]
+            {
+                modeBar?.Find("Button")?.GetComponent<Button>(),
+                modeBar?.Find("Button (1)")?.GetComponent<Button>(),
+                modeBar?.Find("Button (2)")?.GetComponent<Button>()
+            };
+            for (int i = 0; i < modeButtons.Length; i++)
+            {
+                if (modeButtons[i] == null) continue;
+                for (int j = 0; j < modeButtons[i].onClick.GetPersistentEventCount(); j++)
+                    modeButtons[i].onClick.SetPersistentListenerState(j, UnityEngine.Events.UnityEventCallState.Off);
+                int selected = i;
+                modeButtons[i].onClick.AddListener(() => SelectRoleMode(selected));
+            }
+            modeInfoText = background?.Find("ModeInfoText")?.GetComponent<TMP_Text>();
+            editRolesButton = background?.Find("Items/Button_Custom")?.GetComponent<Button>();
+            if (editRolesButton != null)
+            {
+                // 씬의 임시 SetActive 연결 대신 데이터가 준비된 후 편집기를 연다.
+                for (int i = 0; i < editRolesButton.onClick.GetPersistentEventCount(); i++)
+                    editRolesButton.onClick.SetPersistentListenerState(i, UnityEngine.Events.UnityEventCallState.Off);
+                editRolesButton.onClick.AddListener(OpenRoleEditor);
+            }
+            Transform editorRoot = transform.Find("Popup_JobCustom");
+            if (editorRoot != null)
+            {
+                roleEditor = editorRoot.GetComponent<CreateRoomRoleEditor>();
+                if (roleEditor == null) roleEditor = editorRoot.gameObject.AddComponent<CreateRoomRoleEditor>();
+                roleEditor.Initialize(message => statusMessage?.ShowError(message, keep: true), RefreshRoleMode);
+            }
         }
 
         private void Awake()
@@ -133,6 +174,7 @@ namespace WhoisntCitizen.Lobby
 
             ResetInputs();
             SetRequesting(false);
+            LoadRoleOptions();
             statusMessage?.ShowInfo($"방 제목과 최대 인원({MinPlayers}~{MaxPlayers}명)을 입력하세요."
                 + (privateToggle != null ? $"\n비밀방은 비밀번호({RoomPasswordRule.Description})가 필요합니다." : ""), keep: true);
 
@@ -146,6 +188,11 @@ namespace WhoisntCitizen.Lobby
         /// <summary>팝업을 닫는다.</summary>
         public void Close()
         {
+            if (roleEditor != null && roleEditor.IsOpen)
+            {
+                roleEditor.Close();
+                return;
+            }
             statusMessage?.Clear();
             gameObject.SetActive(false);
         }
@@ -160,6 +207,11 @@ namespace WhoisntCitizen.Lobby
             if (privateToggle != null) privateToggle.SetIsOnWithoutNotify(false); // 토글 값 변경만, onValueChanged는 실행 안 함
             ClearPassword();
             RefreshPasswordInput();
+            roleSetup = new RoleSetupDto { mode = RoleSetupModes.Recommended };
+            if (roleOptions?.randomCandidates != null)
+                roleSetup.randomCandidates.AddRange(roleOptions.randomCandidates);
+            if (roleEditor != null && roleEditor.IsOpen) roleEditor.gameObject.SetActive(false);
+            RefreshRoleMode();
 
             // 여기서 isOn = false를 썼다면, 토글이 켜져 있던 경우 OnPrivateToggleChanged(false)가 실행됨 
             // 지금 코드에서는 저렇게 해도 결과는 같지만, 팝업 초기화가 "사용자가 토글을 끈 것"처럼 처리되는 건 의도와 다르고, 
@@ -222,13 +274,27 @@ namespace WhoisntCitizen.Lobby
         // Button_Create 클릭 (또는 입력칸에서 Enter)
         public void OnCreateClicked()
         {
-            if (isRequesting || SceneLoader.IsLoading) return;
+            if (isRequesting || SceneLoader.IsLoading || (roleEditor != null && roleEditor.IsOpen)) return;
 
             // 1) 클라이언트 1차 검증. 실패하면 서버에 보내지 않는다. (최종 검증은 서버가 다시 한다)
             if (!TryReadInputs(out string title, out int maxPlayers, out bool privateRoom, out string password, out string error))
             {
                 statusMessage?.ShowError(error, keep: true);
                 return;
+            }
+            if (roleSetup.mode != RoleSetupModes.Recommended)
+            {
+                if (roleOptions == null)
+                {
+                    statusMessage?.ShowError("직업 정보를 불러온 뒤 다시 시도해 주세요.", keep: true);
+                    return;
+                }
+                string problem = RoleSetupRules.FirstCustomProblem(roleSetup, roleOptions);
+                if (roleSetup.mode == RoleSetupModes.Custom && problem != null)
+                {
+                    statusMessage?.ShowError(problem, keep: true);
+                    return;
+                }
             }
 
             // 2) 서버에 방 생성 요청
@@ -248,22 +314,99 @@ namespace WhoisntCitizen.Lobby
                     return;
                 }
 
-                // 3) 성공: 만든 사람은 방장으로 자동 입장된 상태 → 방 정보를 저장하고 Room 씬으로 이동
-                RoomSession.Set(result.data);
-                statusMessage?.ShowSuccess($"'{result.data.title}' 방을 만들었습니다. 입장 중...", keep: true);
-
-                // 비밀번호는 로그에 남기지 않는다. (비밀방 여부만)
-                Debug.Log($"[Lobby] 방 생성 완료: #{result.data.id} {result.data.title} ({result.data.currentPlayers}/{result.data.maxPlayers})"
-                          + (result.data.privateRoom ? " [비밀방]" : ""));
-                ChatNotice.Post($"'{result.data.title}' {(result.data.privateRoom ? "비밀방" : "방")}을 만들었습니다. (최대 {result.data.maxPlayers}명)");
-
-                // 씬 이동이 시작되지 않으면(Build Settings 누락 등) 다시 누를 수 있게 잠금을 푼다.
-                if (!SceneLoader.Load(SceneType.Room))
+                // 방 생성 API와 직업 설정 API가 별도라서, 설정을 저장한 뒤에만 입장한다.
+                if (roleSetup.mode == RoleSetupModes.Recommended)
                 {
-                    SetRequesting(false);
-                    statusMessage?.ShowError("Room 씬으로 이동하지 못했습니다. (Build Settings 확인)", keep: true);
+                    EnterCreatedRoom(result.data);
+                    return;
                 }
+                statusMessage?.ShowInfo("직업 구성을 저장하는 중...", keep: true);
+                RoomApi.SetRoleSetup(result.data.id, roleSetup.Clone(), saved =>
+                {
+                    if (this == null) return;
+                    if (saved.success) { EnterCreatedRoom(result.data); return; }
+                    // 설정 실패 시 생성된 빈 방을 정리해 재시도에서 중복 생성되지 않게 한다.
+                    RoomApi.LeaveRoom(result.data.id, leave =>
+                    {
+                        if (this == null) return;
+                        SetRequesting(false);
+                        statusMessage?.ShowError("직업 구성 저장에 실패했습니다: " + saved.message
+                            + (leave.success ? "" : " (생성된 방을 정리하지 못했습니다.)"), keep: true);
+                    });
+                });
             });
+        }
+
+        private void EnterCreatedRoom(RoomResponse room)
+        {
+            RoomSession.Set(room);
+            statusMessage?.ShowSuccess($"'{room.title}' 방을 만들었습니다. 입장 중...", keep: true);
+            Debug.Log($"[Lobby] 방 생성 완료: #{room.id} {room.title} ({room.currentPlayers}/{room.maxPlayers})"
+                      + (room.privateRoom ? " [비밀방]" : ""));
+            ChatNotice.Post($"'{room.title}' {(room.privateRoom ? "비밀방" : "방")}을 만들었습니다. (최대 {room.maxPlayers}명)");
+            if (!SceneLoader.Load(SceneType.Room))
+            {
+                SetRequesting(false);
+                statusMessage?.ShowError("Room 씬으로 이동하지 못했습니다. (Build Settings 확인)", keep: true);
+            }
+        }
+
+        private void LoadRoleOptions()
+        {
+            if (roleOptions != null) return;
+            RoomApi.GetRoleSetupOptions(result =>
+            {
+                if (this == null) return;
+                if (!result.success || result.data == null)
+                {
+                    statusMessage?.ShowError("직업 정보를 불러오지 못했습니다. 추천 구성으로는 방을 만들 수 있습니다.", keep: true);
+                    return;
+                }
+                roleOptions = result.data;
+                roleSetup.randomCandidates = new System.Collections.Generic.List<string>(roleOptions.randomCandidates ?? new System.Collections.Generic.List<string>());
+                RefreshRoleMode();
+            });
+        }
+
+        private void SelectRoleMode(int index)
+        {
+            string mode = index == 1 ? RoleSetupModes.Custom : index == 2 ? RoleSetupModes.Random : RoleSetupModes.Recommended;
+            if (mode != RoleSetupModes.Recommended && roleOptions == null)
+            {
+                statusMessage?.ShowError("직업 정보를 불러오는 중입니다. 잠시 후 다시 선택해 주세요.", keep: true);
+                return;
+            }
+            roleSetup.mode = mode;
+            RefreshRoleMode();
+        }
+
+        private void OpenRoleEditor()
+        {
+            if (roleOptions == null || roleEditor == null)
+            {
+                statusMessage?.ShowError("직업 정보를 불러오지 못해 편집기를 열 수 없습니다.", keep: true);
+                return;
+            }
+            int count = int.TryParse(maxPlayersInput?.text, out int selected) ? selected : 8;
+            roleEditor.Open(roleSetup, roleOptions, count);
+        }
+
+        private void RefreshRoleMode()
+        {
+            if (roleSetup == null) return;
+            int active = roleSetup.mode == RoleSetupModes.Custom ? 1 : roleSetup.mode == RoleSetupModes.Random ? 2 : 0;
+            if (modeButtons != null)
+                for (int i = 0; i < modeButtons.Length; i++)
+                {
+                    Image image = modeButtons[i]?.GetComponent<Image>();
+                    if (image != null) image.color = i == active ? new Color(0.96f, 0.79f, 0.36f) : Color.white;
+                }
+            if (modeInfoText != null)
+                modeInfoText.text = active == 0 ? "인원별 추천 직업 구성을 사용합니다."
+                    : active == 1 ? $"인원별 직접 설정 · {roleSetup.customCompositions.Count}개 인원 구성 수정됨"
+                    : $"랜덤 구성 · 후보 {roleSetup.randomCandidates.Count}개 (제3 세력은 직접 설정에서 선택)";
+            TMP_Text editLabel = editRolesButton?.GetComponentInChildren<TMP_Text>();
+            if (editLabel != null) editLabel.text = active == 2 ? "랜덤 후보 수정하기" : "직업 구성 수정하기";
         }
 
         // ------------------------------------------------------------------
@@ -335,6 +478,9 @@ namespace WhoisntCitizen.Lobby
             if (titleInput != null) titleInput.interactable = !value;
             if (maxPlayersInput != null) maxPlayersInput.interactable = !value;
             if (privateToggle != null) privateToggle.interactable = !value;
+            if (modeButtons != null)
+                foreach (Button button in modeButtons) if (button != null) button.interactable = !value;
+            if (editRolesButton != null) editRolesButton.interactable = !value;
             RefreshPasswordInput(); // 비밀번호 입력칸은 "비밀방 선택 && 요청 중 아님"일 때만 활성화
         }
 
