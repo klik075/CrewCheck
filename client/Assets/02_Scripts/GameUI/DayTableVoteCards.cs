@@ -42,11 +42,13 @@ namespace WhoisntCitizen.GameUI
         private RectTransform myCard;           // holder (flattened) with the card face; lying on myTarget's spot or flying
         private long myTarget;
         private Coroutine myRoutine;
+        private Sprite cardBack;
 
         public void Bind(DayRoundTableView view, TMP_FontAsset labelFont)
         {
             table = view;
             font = labelFont;
+            table.Rebuilding += Clear; // the card spots are about to go (a snug table remade for another player count)
         }
 
         /// <summary>
@@ -375,6 +377,16 @@ namespace WhoisntCitizen.GameUI
             RectTransform face = NewRect(name, parent);
             face.sizeDelta = CardSize;
             face.gameObject.AddComponent<CanvasGroup>().blocksRaycasts = false;
+            // The painted card back of the HUD set; drawn cards are kept when it is missing.
+            Sprite art = cardBack != null ? cardBack : (cardBack = Resources.Load<Sprite>("GameHud/CardBack"));
+            if (art != null)
+            {
+                Image image = face.gameObject.AddComponent<Image>();
+                image.sprite = art;
+                image.preserveAspect = true;
+                image.raycastTarget = false;
+                return face;
+            }
             AddImage(face, Edge);
             AddImage(Inset("Frame", face, 2.5f), Gold);
             AddImage(Inset("Back", face, 4.5f), Back);

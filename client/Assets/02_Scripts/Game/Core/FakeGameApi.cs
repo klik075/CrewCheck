@@ -440,6 +440,23 @@ namespace WhoisntCitizen.Game
             Reply(onDone, GameApiResult<GameResultDto>.Ok(result));
         }
 
+        /// <summary>직업 목록과, 이 판 인원수의 추천 구성으로 이 판의 실제 구성을 돌려준다 (실제 서버도 추천 구성으로 배정한다).</summary>
+        public void GetRoleSetupOptions(Action<GameApiResult<RoleSetupOptionsDto>> onDone)
+        {
+            var options = new RoleSetupOptionsDto { minPlayers = players.Count, maxPlayers = players.Count };
+            foreach (RoleInfo role in Roles.Values)
+            {
+                options.roles.Add(new RoleDto { code = role.Code, name = role.Name, faction = role.Faction, actionCode = role.ActionCode });
+            }
+            var composition = new RoleCompositionDto { playerCount = players.Count };
+            foreach (FakePlayer p in players)
+            {
+                composition.roles.Add(p.Role);
+            }
+            options.recommended.Add(composition);
+            Reply(onDone, GameApiResult<RoleSetupOptionsDto>.Ok(options));
+        }
+
         // ================================================================ 페이즈 진행
 
         private void Advance()

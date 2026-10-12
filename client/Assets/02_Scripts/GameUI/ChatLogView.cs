@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
@@ -11,6 +13,9 @@ namespace WhoisntCitizen.GameUI
     // Content는 Viewport 하단에 붙어 있다(anchor/pivot y = 0). 그래서
     //  - 시트가 올라와 Viewport가 줄어들어도 최신 메시지(맨 아래)가 계속 보이고
     //  - 메시지가 적을 때는 아래쪽부터 쌓인다.
+    // 줄은 ChatEntry로 받는다. RowFactory(게임 화면의 해적 HUD가 넣는다)가 있으면 그 줄 모양(아바타·이름패·시간)으로,
+    // 없으면(대기실 등) 줄 프리팹에 리치 텍스트 한 줄로 그린다.
+    // 탭(전체 / 시스템 / 귓속말)과 보낸 사람 필터는 SetFilter로 바꾼다. 걸러진 줄은 꺼 둔다.
     // 이미지 메시지(역할 카드 등)는 나중에 메시지 종류별 프리팹을 추가해 AddItem으로 넣으면 된다.
     public class ChatLogView : MonoBehaviour, IPointerClickHandler
     {
@@ -27,34 +32,121 @@ namespace WhoisntCitizen.GameUI
 
         public UnityEvent OnTapped => onTapped;
 
+        // 줄 모양. 비우면 리치 텍스트 한 줄. 이미 그린 줄은 바뀌지 않는다
+        public Func<ChatEntry, RectTransform> RowFactory { get; set; }
+
+        // 줄이 늘거나 줄거나 필터가 바뀌었을 때 (빈 목록 안내 등)
+        public event Action RowsChanged;
+
+        public ChatTab Tab { get; private set; } = ChatTab.All;
+        public string SpeakerFilter { get; private set; } // 이 닉네임의 플레이어 채팅만 (비우면 모두)
+
+        private sealed class Row
+        {
+            public ChatEntry entry;
+            public GameObject go;
+        }
+
+        private readonly List<Row> rows = new List<Row>();
+
+        public int VisibleCount
+        {
+            get
+            {
+                int count = 0;
+                foreach (Row row in rows) if (row.go != null && row.go.activeSelf) count++;
+                return count;
+            }
+        }
+
+        // 지금 기록에 있는 플레이어 닉네임 (처음 말한 순서)
+        public List<string> Speakers()
+        {
+            var names = new List<string>();
+            foreach (Row row in rows)
+            {
+                ChatEntry e = row.entry;
+                if (e.Kind == ChatEntryKind.Player && !string.IsNullOrEmpty(e.Nickname) && !names.Contains(e.Nickname)) names.Add(e.Nickname);
+            }
+            return names;
+        }
+
         // 시스템 메시지: "갑판장이 처형당했습니다", "역할이 배정되었습니다" 등
         public void AddSystemMessage(string text)
         {
             string hex = ColorUtility.ToHtmlStringRGB(systemColor);
-            AddLine($"<color=#{hex}>[시스템] {text}</color>");
+            AddEntry(new ChatEntry
+            {
+                Kind = ChatEntryKind.System, Nickname = "시스템", Text = text, Time = DateTime.Now,
+                Rich = $"<color=#{hex}>[시스템] {text}</color>"
+            });
+        }
+
+        // 내 화면에만 보이는 안내·오류: "[알림] 투표할 수 없습니다" 등
+        public void AddNotice(string label, string text, Color color)
+        {
+            string hex = ColorUtility.ToHtmlStringRGB(color);
+            AddEntry(new ChatEntry
+            {
+                Kind = ChatEntryKind.Notice, Nickname = label, Text = text, TextColor = color, Time = DateTime.Now,
+                Rich = $"<color=#{hex}>[{label}] {Escape(text)}</color>"
+            });
         }
 
         // 플레이어 채팅: "원우  1번이 범인인 듯"
         public void AddPlayerMessage(string nickname, string text, bool isMe = false)
         {
             string name = isMe ? $"<color=#6EA8FF><b>{nickname}</b></color>" : $"<b>{nickname}</b>";
-            AddLine($"{name}  {Escape(text)}");
+            AddEntry(new ChatEntry
+            {
+                Kind = ChatEntryKind.Player, Nickname = nickname, Text = text, Mine = isMe, Time = DateTime.Now,
+                Rich = $"{name}  {Escape(text)}"
+            });
         }
 
+        // 리치 텍스트 한 줄 (안내 줄로 취급한다). 줄 모양이 있으면 그 모양의 TMP가 아니므로 null을 돌려준다
         public TextMeshProUGUI AddLine(string richText)
         {
-            TextMeshProUGUI line = Instantiate(linePrefab, content);
-            line.text = richText;
-            AddItem(line.transform);
+            return AddEntry(new ChatEntry { Kind = ChatEntryKind.Notice, Time = DateTime.Now, Rich = richText });
+        }
+
+        public TextMeshProUGUI AddEntry(ChatEntry entry)
+        {
+            GameObject go;
+            TextMeshProUGUI line = null;
+            if (RowFactory != null)
+            {
+                RectTransform row = RowFactory(entry);
+                row.SetParent(content, false);
+                go = row.gameObject;
+            }
+            else
+            {
+                line = Instantiate(linePrefab, content);
+                line.text = entry.Rich ?? Escape(entry.Text ?? string.Empty);
+                go = line.gameObject;
+            }
+            rows.Add(new Row { entry = entry, go = go });
+            go.SetActive(Visible(entry));
+            Trim();
+            RowsChanged?.Invoke();
             return line;
         }
 
-        // 메시지 종류별 프리팹(이미지 등)을 직접 만들어 넣을 때 사용
+        // 메시지 종류별 프리팹(이미지 등)을 직접 만들어 넣을 때 사용 (필터와 상관없이 늘 보인다)
         public void AddItem(Transform item)
         {
             if (item.parent != content) item.SetParent(content, false);
-            while (content.childCount > maxItems)
-                DestroyImmediate(content.GetChild(0).gameObject);
+            Trim();
+        }
+
+        public void SetFilter(ChatTab tab, string speaker)
+        {
+            Tab = tab;
+            SpeakerFilter = tab == ChatTab.All && !string.IsNullOrEmpty(speaker) ? speaker : null;
+            foreach (Row row in rows) if (row.go != null) row.go.SetActive(Visible(row.entry));
+            ScrollToLatest();
+            RowsChanged?.Invoke();
         }
 
         public void ScrollToLatest()
@@ -67,11 +159,33 @@ namespace WhoisntCitizen.GameUI
         {
             for (int i = content.childCount - 1; i >= 0; i--)
                 Destroy(content.GetChild(i).gameObject);
+            rows.Clear();
+            RowsChanged?.Invoke();
         }
 
         public void OnPointerClick(PointerEventData eventData)
         {
             if (!eventData.dragging) onTapped?.Invoke();
+        }
+
+        private bool Visible(ChatEntry e)
+        {
+            switch (Tab)
+            {
+                case ChatTab.System: return e.Kind == ChatEntryKind.System || e.Kind == ChatEntryKind.Notice;
+                case ChatTab.Whisper: return e.Kind == ChatEntryKind.Whisper;
+                default: return SpeakerFilter == null || (e.Kind == ChatEntryKind.Player && e.Nickname == SpeakerFilter);
+            }
+        }
+
+        private void Trim()
+        {
+            while (content.childCount > maxItems)
+            {
+                GameObject oldest = content.GetChild(0).gameObject;
+                rows.RemoveAll(r => r.go == oldest);
+                DestroyImmediate(oldest);
+            }
         }
 
         // 플레이어가 입력한 문자열의 리치 텍스트 태그를 무력화한다.

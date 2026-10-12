@@ -33,6 +33,7 @@ namespace WhoisntCitizen.Game
     {
         public const string Crew = "CREW";
         public const string Pirate = "PIRATE";
+        public const string Neutral = "NEUTRAL"; // 세이렌·크라켄·유령 선장·인어 (각자 승리 조건이 다르다)
     }
 
     /// <summary>밤 능력 코드 (/me의 actionCode). null이면 능력 없음.</summary>

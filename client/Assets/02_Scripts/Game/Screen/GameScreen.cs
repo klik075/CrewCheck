@@ -20,6 +20,8 @@ namespace WhoisntCitizen.Game
     ///       뽑은 카드를 다시 눌러 되돌리면 표를 거둔다(기권, targetId 0). 오른쪽 하단 [투표 완료]를 누르면 지금 상태로 고정(confirm=true)하고
     ///       카드패가 내려간다. 아무 카드도 뽑지 않은 채 시간이 끝나면 서버가 기권으로 처리한다(별도 기권 버튼 없음).
     ///       기존 VotePanel 투표 처리는 [카드패 투표로 교체 - 주석 처리] 표시로 막아 두었다(패널은 보기 전용으로 남는다).
+    /// 배치: GameHudLayout이 실행 시 해적 HUD로 배치한다(상단 페이즈·시간·설정·지도, 공지, 무대, 채팅 틀, 하단 내 역할 패널).
+    ///       내 역할 패널을 누르면 능력 서랍이 열리고, 지도 버튼은 이번 판 직업 구성을 보여 준다. 예전 RoleCard는 숨긴다.
     /// 밤: NightRoomView가 낮 테이블 자리에 내 직업의 방과 내 캐릭터를 보여 준다. 서로 아는 해적은 한 방에 있고, 앵무새는 접선하면
     ///       해적 방으로 들어간다(NightRoomRules). 밤 능력이 접수되면 직업 컷인과 직업 모션을 내 화면에만 보여 준다.
     // [공개 안내 수동 설정 - 주석 처리]
@@ -30,6 +32,9 @@ namespace WhoisntCitizen.Game
     /// </summary>
     public sealed class GameScreen : MonoBehaviour, IGameView
     {
+        [Header("화면 배치 (GameScene: Frame, GameScene2: Stage, GameScene3: Tabs, GameScene4: Sheet)")]
+        [SerializeField] private HudLayout layout = HudLayout.Frame;
+
         [Header("진행 (비우면 씬에서 찾는다)")]
         [SerializeField] private GameController controller;
         [SerializeField] private WaitingRoomController waitingRoom;
@@ -78,6 +83,9 @@ namespace WhoisntCitizen.Game
         private DayRoundTableView dayTable;
         private DayTableVoteCards voteCards;
         private NightRoomView nightRoom;
+        private GameHudLayout hud;
+        private GameLayoutBody body; // Frame 밖의 배치(무대 중심·탭·시트)에서 채팅·서랍·투표·내 역할 자리를 맡는다
+        private int phaseSeconds = -1; // 이번 페이즈 처음에 남아 있던 시간 (상단 시간 막대의 기준)
         private readonly List<long> contactedPirates = new List<long>(); // 이번 판 내 접선으로 알게 된 해적 (앵무새)
         private long cutInVersion = -1;                                  // 능력 컷인을 보여 준 밤의 phaseVersion (밤마다 처음 한 번)
         private string announcedRole;
@@ -131,6 +139,7 @@ namespace WhoisntCitizen.Game
 
         private void Awake()
         {
+            GameHudMetrics.Use(layout); // 무대 자리: 테이블과 밤 방을 만들기 전에 정한다
             if (controller == null)
             {
                 controller = FindFirstObjectByType<GameController>();
@@ -151,7 +160,17 @@ namespace WhoisntCitizen.Game
                 // votePanel.VoteConfirmed += OnVoteConfirmed;
             }
             SetUpVoteCardHand();
+            // 해적 HUD 배치: 상단(페이즈·시간·설정·지도), 공지, 무대(원탁·밤 방), 채팅 틀, 하단 내 역할 패널. 씬은 그대로 두고 실행 시 배치한다
+            hud = gameObject.AddComponent<GameHudLayout>();
+            hud.Build(phaseText, timerText, roleCard != null ? roleCard.transform as RectTransform : null,
+                chatLog != null ? chatLog.transform as RectTransform : null,
+                bottomTab != null ? bottomTab.transform as RectTransform : null, phaseText != null ? phaseText.font : null,
+                layout == HudLayout.Frame);
+            hud.SettingsClicked += OnSettingsClicked;
+            hud.MapClicked += OnMapClicked;
+            hud.RoleCardClicked += OnRoleCardClicked;
             dayTable = gameObject.AddComponent<DayRoundTableView>();
+            if (layout == HudLayout.Tabs) dayTable.UseSnugLayout(); // 인원수만큼의 자리, 테이블에 붙어 앉은 큰 캐릭터
             Transform background = transform.Find("Background");
             dayTable.Initialize(background != null ? background.GetComponent<Image>() : null,
                 chatLog != null ? chatLog.transform as RectTransform : null,
@@ -164,6 +183,26 @@ namespace WhoisntCitizen.Game
             nightRoom = gameObject.AddComponent<NightRoomView>();
             nightRoom.Initialize(chatLog != null ? chatLog.transform as RectTransform : null,
                 phaseText != null ? phaseText.font : null, dayTable.SkinOf);
+            hud.SetChatSkins(dayTable.SkinOf); // 채팅 줄의 아바타: 그 플레이어가 테이블에서 입은 스킨의 흉상
+            body = GameLayoutBody.Create(layout, gameObject);
+            if (body != null)
+            {
+                body.Build(new GameLayoutContext
+                {
+                    Canvas = (RectTransform)transform,
+                    Font = phaseText != null ? phaseText.font : null,
+                    Hud = hud,
+                    Chat = chatLog != null ? chatLog.transform as RectTransform : null,
+                    Sheet = bottomTab != null ? bottomTab.transform as RectTransform : null,
+                    BottomTab = bottomTab,
+                    NightPanel = nightPanel,
+                    DayPanel = dayPanel,
+                    VoteHand = voteCardHand,
+                    SkinOf = dayTable.SkinOf,
+                    Session = () => Session,
+                    ShowLineup = OnMapClicked,
+                });
+            }
             if (nightPanel != null)
             {
                 nightPanel.PortraitResolver = PortraitOf;
@@ -219,6 +258,12 @@ namespace WhoisntCitizen.Game
             {
                 bottomTab.ModeChanged -= OnDrawerModeChanged;
             }
+            if (hud != null)
+            {
+                hud.SettingsClicked -= OnSettingsClicked;
+                hud.MapClicked -= OnMapClicked;
+                hud.RoleCardClicked -= OnRoleCardClicked;
+            }
         }
 
         private void Update()
@@ -244,6 +289,8 @@ namespace WhoisntCitizen.Game
                 shownSeconds = seconds;
                 shownWaiting = waiting;
                 timerText.text = seconds < 0 ? string.Empty : (waiting ? GameScreenText.WaitingForServer : GameScreenText.Timer(seconds));
+                if (seconds > phaseSeconds) phaseSeconds = seconds; // 페이즈 시작 때(또는 시계를 다시 맞췄을 때)의 남은 시간
+                if (hud != null) hud.SetTimer(seconds, phaseSeconds);
             }
         }
 
@@ -269,6 +316,13 @@ namespace WhoisntCitizen.Game
             currentPhase = phaseChanged.Phase;
             if (dayTable != null) dayTable.SetPhase(currentPhase);
             if (nightRoom != null) nightRoom.SetPhase(currentPhase);
+            phaseSeconds = -1;
+            if (hud != null)
+            {
+                hud.SetPhase(currentPhase);
+                string notice = GameScreenText.PhaseAnnouncement(phaseChanged);
+                if (!string.IsNullOrEmpty(notice)) ShowNotice(notice); // 결과 페이즈는 결과가 오면 공지가 바뀐다
+            }
             if (voteCards != null && currentPhase != GamePhases.Execution)
             {
                 voteCards.Clear(); // 처형 결과 동안만 남기고, 새 투표·밤에는 테이블을 비운다
@@ -321,6 +375,7 @@ namespace WhoisntCitizen.Game
             ApplyDrawerContent(bottomTab != null ? bottomTab.Mode : BottomTabMode.Closed);
             RefreshPanels();
             UpdateNightRoom();
+            if (body != null) body.OnPhase(currentPhase);
         }
 
         public void ShowPlayerDied(GameEvent died)
@@ -356,6 +411,7 @@ namespace WhoisntCitizen.Game
 
         public void ShowNightResult(NightResultDto result)
         {
+            ShowNotice(ReportFormatter.NightSummary(result));
             if (AnnouncePublic)
             {
                 AddSystem(ReportFormatter.NightSummary(result));
@@ -368,6 +424,8 @@ namespace WhoisntCitizen.Game
 
         public void ShowExecutionResult(ExecutionResultDto result)
         {
+            ShowNotice(ReportFormatter.ExecutionSummary(result));
+            if (body != null) body.OnExecutionResult(result);
             if (AnnouncePublic)
             {
                 AddSystem(ReportFormatter.ExecutionSummary(result));
@@ -385,6 +443,7 @@ namespace WhoisntCitizen.Game
 
         public void ShowGameResult(GameResultDto result)
         {
+            ShowNotice(ReportFormatter.ResultHeadline(result));
             if (AnnouncePublic)
             {
                 AddSystem(ReportFormatter.ResultHeadline(result));
@@ -450,7 +509,7 @@ namespace WhoisntCitizen.Game
         {
             if (chatLog != null && !string.IsNullOrEmpty(message))
             {
-                chatLog.AddLine("<color=#FF6B6B>[알림] " + GameScreenText.NoRichText(message) + "</color>");
+                chatLog.AddNotice("알림", message, new Color32(0xFF, 0x6B, 0x6B, 0xFF));
                 chatLog.ScrollToLatest();
             }
             // 투표 중 오류(서버 거절·연결 실패)면 뽑은 카드를 서버가 실제로 가진 내 표로 되돌린다
@@ -631,6 +690,7 @@ namespace WhoisntCitizen.Game
             if (nightRoom != null) nightRoom.Clear();
             contactedPirates.Clear();
             cutInVersion = -1;
+            if (hud != null) hud.ShowNotice(string.Empty);
             announcedRole = null;
             announcedTeammates = null;
             playerViews.Clear();
@@ -861,6 +921,16 @@ namespace WhoisntCitizen.Game
             {
                 roleCard.Show(session.Me, session.State);
             }
+            if (hud != null && session.Me != null)
+            {
+                // 초상화는 내가 입은 스킨(테이블과 같은 것)의 흉상
+                ChibiCharacterSkin skin = dayTable != null ? dayTable.SkinOf(session.Me.playerId) : null;
+                hud.ShowRole(session.Me, session.State, skin != null ? skin.DesignId : null);
+            }
+            if (body != null)
+            {
+                body.Refresh(session);
+            }
         }
 
         /// <summary>밤이 되면 쓸 수 있는 능력이 있을 때 한 번 서랍을 열어 준다. /me가 늦게 와도 받은 뒤에 연다.</summary>
@@ -908,6 +978,77 @@ namespace WhoisntCitizen.Game
         private void OnDrawerModeChanged(BottomTabMode mode)
         {
             ApplyDrawerContent(mode);
+            if (hud != null) hud.SetDrawerOpen(mode == BottomTabMode.Vote);
+            if (body != null) body.OnDrawerMode(mode);
+        }
+
+        // ================================================================ HUD 버튼
+
+        /// <summary>하단 내 역할 패널을 누르면 능력 서랍(밤 능력·낮 토론 넘기기)을 열고, 열려 있으면 닫는다.</summary>
+        private void OnRoleCardClicked()
+        {
+            if (bottomTab == null)
+            {
+                return;
+            }
+            if (bottomTab.Mode == BottomTabMode.Vote)
+            {
+                bottomTab.Close();
+                return;
+            }
+            OpenDrawer();
+            ApplyDrawerContent(BottomTabMode.Vote);
+        }
+
+        /// <summary>지도 버튼: 이번 판의 직업 구성(인원수별 추천 구성 — 실제 서버도 이 구성으로 배정한다)과 직업 설명.</summary>
+        private void OnMapClicked()
+        {
+            GameSession session = Session;
+            HudPopup popup = hud.Popup;
+            int count = session != null && session.State != null ? session.State.players.Count : 0;
+            popup.Show("이번 판 직업", count > 0 ? count + "명 게임 · 기본(추천) 구성" : string.Empty);
+            if (session == null || count == 0)
+            {
+                popup.ShowMessage("게임이 시작되면 볼 수 있습니다.");
+                return;
+            }
+            popup.ShowMessage("불러오는 중…");
+            session.LoadRoleSetupOptions(options =>
+            {
+                if (this == null || !popup.gameObject.activeSelf)
+                {
+                    return; // 닫았거나 씬이 바뀌었다
+                }
+                List<RoleCount> lineup = RoleInfoText.Lineup(options, count);
+                if (options == null || lineup.Count == 0)
+                {
+                    popup.ShowMessage(options == null ? "직업 정보를 불러오지 못했습니다." : count + "명 구성 정보가 없습니다.");
+                    return;
+                }
+                popup.ShowMessage(string.Empty);
+                foreach (RoleCount line in lineup)
+                {
+                    popup.AddRow(line.Role.name + " " + line.Count + "명", RoleInfoText.FactionName(line.Role.faction),
+                        FactionColor(line.Role.faction), RoleInfoText.Description(line.Role.code));
+                }
+            });
+        }
+
+        /// <summary>설정 버튼: 아직 내용이 없다.</summary>
+        private void OnSettingsClicked()
+        {
+            hud.Popup.Show("설정", string.Empty);
+            hud.Popup.ShowMessage("준비 중입니다.");
+        }
+
+        private static Color FactionColor(string faction)
+        {
+            switch (faction)
+            {
+                case Factions.Pirate: return new Color(0.95f, 0.42f, 0.36f);
+                case Factions.Crew: return new Color(0.5f, 0.78f, 0.98f);
+                default: return new Color(0.78f, 0.64f, 0.98f);
+            }
         }
 
         /// <summary>
@@ -944,6 +1085,13 @@ namespace WhoisntCitizen.Game
                 return null;
             }
             return portraits[index % portraits.Length];
+        }
+
+        /// <summary>공지 두루마리와 (Frame 밖의 배치면) 그 배치의 안내 줄에 공개 안내를 보여 준다.</summary>
+        private void ShowNotice(string text)
+        {
+            if (hud != null) hud.ShowNotice(text);
+            if (body != null) body.OnNotice(text);
         }
 
         private void AddSystem(string text)

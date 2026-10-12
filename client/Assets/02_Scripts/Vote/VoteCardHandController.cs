@@ -106,6 +106,7 @@ namespace WhoisntCitizen.Vote
         private RectTransform handArea;   // 카드패 (아래에서 올라오고 내려간다)
         private RectTransform drawnLayer; // 뽑은 카드가 놓이는 층 (카드패 위에 그린다)
         private TextMeshProUGUI hintText;
+        private Image hintBack;           // 안내 문구 뒤 띠
         private RectTransform confirmButtonRt; // 카드패(handArea) 안에 있어 카드패와 함께 오르내린다
         private Button confirmButton;
         private TextMeshProUGUI confirmText;
@@ -142,7 +143,10 @@ namespace WhoisntCitizen.Vote
                 Relayout(false); // 화면 크기(캔버스 스케일러)가 바뀌면 부채꼴을 다시 편다
             }
             float baseY = BaseY();
-            handArea.anchoredPosition = new Vector2(0f, baseY + slideOffset);
+            // 다 내려간 카드패(투표 끝·투표 완료)는 화면 아래에 둔다. 하단 서랍이 열려 시트 윗변이 올라가도
+            // 따라 올라오지 않는다 (밤 능력 서랍 위에 안내 문구가 떠 있지 않게)
+            bool down = (!IsShown || IsLocked) && slideRoutine == null;
+            handArea.anchoredPosition = new Vector2(0f, down ? -(contentHeight + 80f) : baseY + slideOffset);
             if (drawn != null && IsShown)
             {
                 drawn.SetTarget(DrawnSlot(baseY), 0f, drawnScale);
@@ -268,6 +272,19 @@ namespace WhoisntCitizen.Vote
             SetConfirmVisible(false);
             SetLockedText(null);
             slideOffset = HiddenOffset();
+        }
+
+        /// <summary>
+        /// 이 플레이어의 카드를 누른 것과 같다 (카드패 대신 다른 화면, 예: 플레이어 명단에서 고를 때).
+        /// 뽑아 둔 카드의 플레이어나 0이면 그 카드를 카드패로 돌려보낸다(기권) → VoteRequested.
+        /// </summary>
+        public void Choose(long playerId)
+        {
+            VoteCardView card = playerId == 0 || playerId == DrawnPlayerId ? drawn : Find(playerId);
+            if (card != null)
+            {
+                OnCardClicked(card);
+            }
         }
 
         /// <summary>
@@ -535,6 +552,8 @@ namespace WhoisntCitizen.Vote
             handArea.sizeDelta = new Vector2(root.rect.width, contentHeight);
             hintText.rectTransform.anchoredPosition = new Vector2(0f, contentHeight + 4f);
             float hintHeight = hintText.preferredHeight > 0f ? hintText.preferredHeight : 40f;
+            hintBack.rectTransform.anchoredPosition = new Vector2(0f, contentHeight);
+            hintBack.rectTransform.sizeDelta = new Vector2(root.rect.width, hintHeight + 8f);
             confirmButtonRt.anchoredPosition = new Vector2(
                 root.rect.width * 0.5f - confirmRightMargin - confirmButtonSize.x * 0.5f,
                 contentHeight + 4f + hintHeight + confirmGap);
@@ -564,7 +583,7 @@ namespace WhoisntCitizen.Vote
         {
             for (int i = 0; i < handCards.Count; i++)
             {
-                handCards[i].Rect.SetSiblingIndex(i + 1); // 0번은 안내 문구
+                handCards[i].Rect.SetSiblingIndex(i + 2); // 0번은 안내 문구 띠, 1번은 안내 문구
             }
             if (confirmButtonRt != null)
             {
@@ -733,6 +752,14 @@ namespace WhoisntCitizen.Vote
             handArea = NewRect("Hand", root);
             handArea.anchorMin = handArea.anchorMax = new Vector2(0.5f, 0f);
             handArea.pivot = new Vector2(0.5f, 0f);
+
+            // 안내 문구 뒤의 어두운 띠: 카드패 뒤 채팅 기록 글자와 겹쳐도 안내 문구가 읽히게 한다
+            var hintBackRt = NewRect("HintBack", handArea);
+            hintBackRt.anchorMin = hintBackRt.anchorMax = new Vector2(0.5f, 0f);
+            hintBackRt.pivot = new Vector2(0.5f, 0f);
+            hintBack = hintBackRt.gameObject.AddComponent<Image>();
+            hintBack.color = new Color(0.04f, 0.05f, 0.08f, 0.75f);
+            hintBack.raycastTarget = false;
 
             var hintRt = NewRect("Hint", handArea);
             hintRt.anchorMin = hintRt.anchorMax = new Vector2(0.5f, 0f);
@@ -914,7 +941,7 @@ namespace WhoisntCitizen.Vote
             for (int i = handArea.childCount - 1; i >= 0; i--)
             {
                 Transform child = handArea.GetChild(i);
-                if (child != hintText.transform && child != confirmButtonRt)
+                if (child != hintText.transform && child != hintBack.transform && child != confirmButtonRt)
                 {
                     Destroy(child.gameObject);
                 }

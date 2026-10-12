@@ -84,6 +84,27 @@ namespace WhoisntCitizen.GameUI
         public void OpenVote() => SetMode(BottomTabMode.Vote);
         public void Close() => SetMode(BottomTabMode.Closed);
 
+        public float DrawerHeight => drawerHeight;
+
+        // 화면 배치에 맞춰 Drawer 높이를 바꾼다. 시트 높이(탭 바 + Drawer)도 같이 바꾸고, 지금 모드의 위치로 바로 옮긴다.
+        public void SetDrawerHeight(float height)
+        {
+            if (sheet == null) sheet = (RectTransform)transform;
+            height = Mathf.Max(0f, height);
+            if (Mathf.Approximately(height, drawerHeight)) return;
+
+            float tabBarHeight = sheet.sizeDelta.y - drawerHeight;
+            drawerHeight = height;
+            sheet.sizeDelta = new Vector2(sheet.sizeDelta.x, tabBarHeight + drawerHeight);
+            if (slideRoutine != null)
+            {
+                StopCoroutine(slideRoutine);
+                slideRoutine = null;
+            }
+            SetSheetY(Mode == BottomTabMode.Closed ? -drawerHeight : 0f);
+            OnSlideFinished();
+        }
+
         public void SetMode(BottomTabMode mode)
         {
             if (mode == Mode) return;

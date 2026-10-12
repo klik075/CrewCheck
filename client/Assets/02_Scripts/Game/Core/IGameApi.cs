@@ -42,5 +42,7 @@ namespace WhoisntCitizen.Game
 
         /// <summary>GET /api/v1/games/{gameId}/result — 끝나기 전에는 ended=false, players 빈 목록.</summary>
         void GetResult(string gameId, Action<GameApiResult<GameResultDto>> onDone);
+        /// <summary>GET /api/v1/role-setup/options — 직업 목록(이름·진영·능력)과 인원수별 추천 구성. 서버가 켜져 있는 동안 바뀌지 않는다.</summary>
+        void GetRoleSetupOptions(Action<GameApiResult<RoleSetupOptionsDto>> onDone);
     }
 }
