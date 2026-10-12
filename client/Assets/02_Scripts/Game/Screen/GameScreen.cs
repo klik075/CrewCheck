@@ -88,6 +88,9 @@ namespace WhoisntCitizen.Game
         private int phaseSeconds = -1; // 이번 페이즈 처음에 남아 있던 시간 (상단 시간 막대의 기준)
         private readonly List<long> contactedPirates = new List<long>(); // 이번 판 내 접선으로 알게 된 해적 (앵무새)
         private long cutInVersion = -1;                                  // 능력 컷인을 보여 준 밤의 phaseVersion (밤마다 처음 한 번)
+        private DayTransitionView transition;                            // 밤 결과·처형 컷신 (배치가 쓰면. 지금은 GameScene3)
+        private long joinedPhaseVersion = -1;                            // 새 게임·재접속으로 들어온 페이즈: 그 결과는 컷신 없이 보여 준다
+        private GameResultDto pendingGameResult;                         // 컷신이 끝나면 띄울 게임 결과
         private string announcedRole;
         private string announcedTeammates;
         private bool nightDrawerOpened;
@@ -264,6 +267,10 @@ namespace WhoisntCitizen.Game
                 hud.MapClicked -= OnMapClicked;
                 hud.RoleCardClicked -= OnRoleCardClicked;
             }
+            if (transition != null)
+            {
+                transition.Finished -= OnTransitionFinished;
+            }
         }
 
         private void Update()
@@ -306,6 +313,11 @@ namespace WhoisntCitizen.Game
             if (phaseChanged.PreviousPhase == null)
             {
                 ResetScreen(); // 새 게임 (또는 재접속)
+                joinedPhaseVersion = Session != null && Session.State != null ? Session.State.phaseVersion : -1;
+            }
+            if (transition != null)
+            {
+                transition.Release(); // 다음 페이즈가 시작됐다: 컷신이 마지막 명패에서 걷힌다
             }
             if (currentPhase == GamePhases.Vote && phaseChanged.Phase != GamePhases.Vote)
             {
@@ -420,6 +432,7 @@ namespace WhoisntCitizen.Game
             {
                 AddSystem(line); // 개인 결과 (나에게만 온다. 서버 채팅에는 없다)
             }
+            PlayNightTransition(result);
         }
 
         public void ShowExecutionResult(ExecutionResultDto result)
@@ -439,6 +452,7 @@ namespace WhoisntCitizen.Game
             {
                 voteCards.ShowTally(result.votes); // 공개된 득표 수만큼 각 대상 자리에 카드 더미 (누가 냈는지는 없다)
             }
+            PlayExecutionTransition(result); // 첫 0.8초는 테이블의 카드 더미를 그대로 보여 준다
         }
 
         public void ShowGameResult(GameResultDto result)
@@ -451,6 +465,11 @@ namespace WhoisntCitizen.Game
             }
             CloseDrawer();
             HideVoteHand();
+            if (transition != null && transition.IsPlaying)
+            {
+                pendingGameResult = result; // 마지막 죽음의 컷신이 끝나면 띄운다
+                return;
+            }
             if (resultPanel != null)
             {
                 resultPanel.Show(result, Session != null ? Session.Me : null);
@@ -690,6 +709,8 @@ namespace WhoisntCitizen.Game
             if (nightRoom != null) nightRoom.Clear();
             contactedPirates.Clear();
             cutInVersion = -1;
+            if (transition != null) transition.Stop();
+            pendingGameResult = null;
             if (hud != null) hud.ShowNotice(string.Empty);
             announcedRole = null;
             announcedTeammates = null;
@@ -811,6 +832,107 @@ namespace WhoisntCitizen.Game
             MyRoleDto me = session.Me;
             nightRoom.PlayAbility(NightRoomRules.DesignIdFor(me.role), me.actionCode, me.roleName,
                 GameScreenText.AbilityCutInLine(me.actionCode, target, session.State), firstTonight);
+        }
+
+        // ================================================================ 결과 컷신
+
+        /// <summary>이 배치가 밤 결과·처형 컷신을 쓰는지 (지금은 GameScene3의 Tabs 배치만).</summary>
+        private bool PlaysTransitions
+        {
+            get { return body != null && body.PlaysDayTransitions; }
+        }
+
+        /// <summary>
+        /// 결과가 그 결과 페이즈(또는 그 결과로 끝난 게임) 안에서 막 왔는지.
+        /// 재접속해 들어온 페이즈나 이미 지나간 페이즈의 결과는 컷신 없이 공지·채팅으로만 보여 준다.
+        /// </summary>
+        private bool IsLiveResult(string resultPhase)
+        {
+            GameStateDto state = Session != null ? Session.State : null;
+            return state != null && (state.phase == resultPhase || state.phase == GamePhases.Ended)
+                && state.phaseVersion != joinedPhaseVersion;
+        }
+
+        /// <summary>밤 결과 컷신: 사망(희생자 수배서), 선의 보호(금빛 고리), 아무 일 없음(고요한 바다). 끝나면 낮 명패.</summary>
+        private void PlayNightTransition(NightResultDto result)
+        {
+            if (!PlaysTransitions || !IsLiveResult(GamePhases.NightResult))
+            {
+                return;
+            }
+            var info = new DayTransitionInfo { Day = result.day, GameOver = currentPhase == GamePhases.Ended };
+            if (result.HasKill)
+            {
+                info.Kind = DayTransitionKind.Killed;
+                DescribeDead(info, result.killedPlayerId, result.killedNickname);
+            }
+            else
+            {
+                info.Kind = result.protectedByDoctor ? DayTransitionKind.Protected : DayTransitionKind.Quiet;
+            }
+            PlayTransition(info);
+        }
+
+        /// <summary>처형 컷신: 테이블의 개표 → 판결문 → 널빤지 → 첨벙, 처형이 없으면 무효 판결. 끝나면 밤 명패.</summary>
+        private void PlayExecutionTransition(ExecutionResultDto result)
+        {
+            if (!PlaysTransitions || !IsLiveResult(GamePhases.Execution))
+            {
+                return;
+            }
+            var info = new DayTransitionInfo { Day = result.day, GameOver = currentPhase == GamePhases.Ended };
+            if (result.HasExecution)
+            {
+                info.Kind = DayTransitionKind.Executed;
+                DescribeDead(info, result.executedPlayerId, result.executedNickname);
+                foreach (VoteCountDto vote in result.votes)
+                {
+                    info.TotalVotes += vote.count;
+                    if (vote.playerId == result.executedPlayerId) info.Votes = vote.count;
+                }
+            }
+            else
+            {
+                info.Kind = DayTransitionKind.NotExecuted;
+                info.Reason = ReportFormatter.ExecutionSummary(result);
+            }
+            PlayTransition(info);
+        }
+
+        /// <summary>죽은 사람: 닉네임과 테이블에서 입은 스킨(흉상·서 있는 모습). 직업은 서버가 알려 주지 않으므로 없다.</summary>
+        private void DescribeDead(DayTransitionInfo info, long playerId, string nickname)
+        {
+            info.Name = !string.IsNullOrEmpty(nickname) ? nickname : GameStateQueries.NicknameOf(Session != null ? Session.State : null, playerId);
+            ChibiCharacterSkin skin = dayTable != null ? dayTable.SkinOf(playerId) : null;
+            info.Figure = skin != null ? skin.Standing : null;
+            info.Portrait = skin != null && hud != null && hud.Portraits != null ? hud.Portraits.Find(skin.DesignId) : null;
+            info.Mine = playerId == MyId;
+        }
+
+        private void PlayTransition(DayTransitionInfo info)
+        {
+            if (transition == null)
+            {
+                transition = DayTransitionView.Create((RectTransform)transform, phaseText != null ? phaseText.font : null);
+                NightSceneBackgroundCatalog nights = Resources.Load<NightSceneBackgroundCatalog>("NightScene/NightSceneBackgrounds");
+                transition.NightBackdrop = nights != null ? nights.PirateShared : null;
+                transition.Finished += OnTransitionFinished;
+            }
+            transition.Play(info, false); // 게임이 끝났으면(GameOver) 명패 없이 바로 걷힌다
+        }
+
+        private void OnTransitionFinished()
+        {
+            if (pendingGameResult == null)
+            {
+                return;
+            }
+            GameResultDto result = pendingGameResult;
+            pendingGameResult = null;
+            if (resultPanel != null)
+            {
+                resultPanel.Show(result, Session != null ? Session.Me : null);
+            }
         }
 
         // ================================================================ 투표 카드패

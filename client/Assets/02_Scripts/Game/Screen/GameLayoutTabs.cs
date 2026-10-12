@@ -62,6 +62,8 @@ namespace WhoisntCitizen.Game
         private string shownMarks;
         private float laidOutWidth = -1f, laidOutRaise = float.NaN;
 
+        public override bool PlaysDayTransitions => true;
+
         protected override void OnBuild()
         {
             // Everything under the stage lies on one dark backdrop (the raised deck picture does not reach the bottom).
