@@ -11,6 +11,8 @@ namespace WhoisntCitizen.Game
     ///   그래서 폴링 사이에 NIGHT_RESULT·EXECUTION을 놓쳐도, 승패가 나서 바로 ENDED가 돼도 결과가 빠지지 않는다.
     /// - ENDED가 되면 게임 결과를 받고 폴링을 멈춘다. 404(서버에서 게임이 지워짐)면 닫는다.
     /// - Close() 뒤에 도착한 응답은 무시한다.
+    /// - 실시간 신호(WebSocket game.changed)가 오면 RequestPollNow()로 기다리지 않고 바로 가져온다.
+    ///   신호를 받는 동안에는 SetPollInterval(15)로 폴링을 안전망으로 늦추고, 끊기면 원래 간격으로 되돌린다.
     /// </summary>
     public sealed class GameSession
     {
@@ -20,7 +22,7 @@ namespace WhoisntCitizen.Game
         private readonly IGameApi api;
         private readonly IGameView view;
         private readonly Func<double> clock;
-        private readonly double pollInterval;
+        private double pollInterval;
         private readonly PhaseTracker tracker = new PhaseTracker();
         private readonly PhaseClock phaseClock = new PhaseClock();
 
@@ -28,6 +30,8 @@ namespace WhoisntCitizen.Game
         private bool connected = true;
         private double nextPollAt;          // 0 → 다음 Tick에 바로
         private bool pollInFlight;
+        private bool pollAgain;             // 응답을 기다리는 중에 RequestPollNow → 응답이 오면 한 번 더
+        private double lastPollAt = double.NaN; // 마지막으로 GET을 보낸 시각. 아직 없으면 NaN
         private bool actionInFlight;        // 밤 행동·넘기기·토론 넘기기·투표는 한 번에 하나만
         private bool meNeeded = true;
         private bool meInFlight;
@@ -71,12 +75,18 @@ namespace WhoisntCitizen.Game
             GameId = gameId;
             this.view = view;
             this.clock = clock;
-            pollInterval = Math.Max(0.2, pollIntervalSeconds);
+            pollInterval = double.IsNaN(pollIntervalSeconds) ? 0.2 : Math.Max(0.2, pollIntervalSeconds);
         }
 
         // ================================================================ 화면이 읽는 값
 
         public string GameId { get; private set; }
+
+        /// <summary>지금 폴링 간격(초).</summary>
+        public double PollIntervalSeconds
+        {
+            get { return pollInterval; }
+        }
 
         /// <summary>마지막으로 받은 상태. 첫 응답 전에는 null.</summary>
         public GameStateDto State
@@ -230,8 +240,46 @@ namespace WhoisntCitizen.Game
                 return;
             }
             nextPollAt = now + pollInterval;
+            lastPollAt = now;
             pollInFlight = true;
             api.GetState(GameId, OnState);
+        }
+
+        /// <summary>
+        /// 다음 Tick에 간격을 기다리지 않고 상태를 가져온다. (서버가 "게임이 바뀌었다"고 알려 줬을 때)
+        /// 이미 응답을 기다리는 중이면 그 응답은 신호보다 먼저 출발했을 수 있으므로, 응답이 온 뒤 한 번 더 가져온다.
+        /// 여러 번 불러도 추가 요청은 한 번뿐이다. 닫혔거나 끝난 게임이면 아무 일도 없다.
+        /// </summary>
+        public void RequestPollNow()
+        {
+            if (closed || IsFinished())
+            {
+                return;
+            }
+            if (pollInFlight)
+            {
+                pollAgain = true;
+                return;
+            }
+            nextPollAt = 0;
+        }
+
+        /// <summary>
+        /// 폴링 간격을 바꾼다(최소 0.2초). 신호를 받는 동안 15초(안전망), 끊기면 원래 간격(1초)으로 되돌릴 때 쓴다.
+        /// 다음 폴링 시각은 "마지막 폴링 + 새 간격"으로 다시 잡는다. → 15초에서 1초로 줄이면 늦어도 1초 안에 가져온다.
+        /// </summary>
+        public void SetPollInterval(double seconds)
+        {
+            double next = double.IsNaN(seconds) ? 0.2 : Math.Max(0.2, seconds);
+            if (next == pollInterval)
+            {
+                return;
+            }
+            pollInterval = next;
+            if (!pollInFlight && !double.IsNaN(lastPollAt) && nextPollAt > 0)
+            {
+                nextPollAt = lastPollAt + pollInterval;
+            }
         }
 
         /// <summary>그만 진행한다. 이후 도착한 응답은 무시한다.</summary>
@@ -419,6 +467,11 @@ namespace WhoisntCitizen.Game
         private void OnState(GameApiResult<GameStateDto> r)
         {
             pollInFlight = false;
+            if (pollAgain)
+            {
+                pollAgain = false;
+                nextPollAt = 0; // 기다리는 동안 신호가 왔다 → 다음 Tick에 바로 한 번 더
+            }
             if (closed)
             {
                 return;

@@ -61,18 +61,6 @@ namespace WhoisntCitizen.Lobby
         public string password;   // 비밀방 비밀번호. 숫자 문자열("0427" - 앞자리 0 유지). 공개방이면 서버가 무시한다
     }
 
-    /// <summary>
-    /// PUT /api/v1/rooms/{roomId}/settings. 비공개 방의 빈 password는 기존 비밀번호 유지.
-    /// </summary>
-    [Serializable]
-    public class UpdateRoomSettingsRequest
-    {
-        public string title;
-        public int maxPlayers;
-        public bool privateRoom;
-        public string password;
-    }
-
     /// <summary>POST /api/v1/rooms/{roomId}/players 요청 body (비밀방 입장용).</summary>
     [Serializable]
     public class JoinRoomRequest
@@ -88,6 +76,24 @@ namespace WhoisntCitizen.Lobby
     public class SetReadyRequest
     {
         public bool ready;
+    }
+
+    /// <summary>
+    /// PUT /api/v1/rooms/{roomId}/settings 요청 body (방장만). 설정 전체를 보낸다.
+    /// 예) {"title":"초보만","maxPlayers":10,"privateRoom":true,"password":""}
+    ///
+    /// password 규칙 (현재 비밀번호는 서버가 알려주지 않으므로)
+    ///   - 공개방으로 설정: 서버가 무시하고 저장된 비밀번호를 지운다.
+    ///   - 공개방 → 비밀방: 필수 (숫자 4자리 이상)
+    ///   - 비밀방 → 비밀방: ""(빈 값)이면 기존 비밀번호 유지, 값이 있으면 새 비밀번호로 교체
+    /// </summary>
+    [Serializable]
+    public class UpdateRoomSettingsRequest
+    {
+        public string title;
+        public int maxPlayers;   // 서버 규칙: 4~12명, 현재 인원 이상
+        public bool privateRoom;
+        public string password;
     }
 
     /// <summary>PUT /api/v1/rooms/{roomId}/host 요청 body. {"userId": 5} (새 방장이 될 참가자)</summary>

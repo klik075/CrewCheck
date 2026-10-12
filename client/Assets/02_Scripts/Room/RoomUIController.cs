@@ -5,6 +5,8 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using WhoisntCitizen.Common;
+using WhoisntCitizen.Network;
+using WhoisntCitizen.Network.Realtime;
 
 namespace WhoisntCitizen.Lobby
 {
@@ -29,6 +31,8 @@ namespace WhoisntCitizen.Lobby
     ///      방장을 넘기거나 내보낼 수 있다.
     ///      위임받은 사람은 다음 polling에서 방장이 되어 시작 버튼이 보이고, 이전 방장에게는 준비 버튼이 보인다.
     ///      추방된 사람은 다음 polling에서 목록에 자신이 없음을 보고 로비로 돌아간다. (그 방에는 다시 들어갈 수 없음)
+    ///   7) 방장은 Button_RoomSettings → 방 설정 팝업에서 제목 / 최대 인원 / 공개·비밀 / 비밀번호를 바꿀 수 있다.
+    ///      (PUT /api/v1/rooms/{roomId}/settings) 준비 상태는 유지되고, 다른 참가자는 다음 polling에서 바뀐 제목·인원을 본다.
     ///
     /// 진입 조건
     ///   로그인 안 됨 → Title, 방 정보 없음 → Lobby
@@ -49,6 +53,8 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private Button startGameButton; // Buttons/Button_StartGame (방장만 보임)
         [SerializeField] private Button exitRoomButton;  // Buttons/Button_ExitRoom
         [SerializeField] private Button readyButton;     // Buttons/Button_Ready (방장이 아닌 참가자만 보임)
+        [Tooltip("방 설정 버튼 (방장에게만 보임). 비워 두면 방 설정 기능이 꺼진다.")]
+        [SerializeField] private Button settingsButton;  // Buttons/Button_RoomSettings
         [Tooltip("준비 버튼 문구. 비워 두면 readyButton 자식의 첫 번째 TMP_Text를 사용한다.")]
         [SerializeField] private TMP_Text readyButtonLabel;
         [SerializeField] private string readyLabel = "준비";
@@ -59,12 +65,15 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private PlayerManageMenu playerManageMenu;
         [Tooltip("위임/추방 확인 팝업(Popup_Confirm). 비워 두면 묻지 않고 바로 요청한다.")]
         [SerializeField] private RoomConfirmPopup confirmPopup;
+        [Tooltip("방 설정 팝업(Popup_RoomSettings). settingsButton으로 연다.")]
+        [SerializeField] private RoomSettingsPopup roomSettingsPopup;
 
         [Header("Status (선택)")]
         [SerializeField] private StatusMessageView statusMessage;
 
         [Header("Options")]
-        [Tooltip("방 상태 조회 간격(초). 게임이 시작되면 첫 밤 타이머가 바로 돌기 때문에 짧게 둔다.")]
+        [Tooltip("실시간 신호가 없을 때의 방 상태 조회 간격(초). 게임이 시작되면 첫 밤 타이머가 바로 돌기 때문에 짧게 둔다. " +
+                 "신호를 받는 동안은 15초(안전망)로 늦추고, room.changed가 오면 바로 조회한다.")]
         [SerializeField] private float pollInterval = 1f;
         [Tooltip("게임 시작에 필요한 최소 인원 (서버 RoleAssigner.MIN_PLAYERS = 4)")]
         [SerializeField] private int minPlayersToStart = 4;
@@ -83,6 +92,7 @@ namespace WhoisntCitizen.Lobby
         private bool lastAllGuestsReady; // 방장을 뺀 모든 참가자가 준비했는지
         private bool myReady;            // 내 준비 상태
         private int readySeq;            // 준비 요청마다 증가. 요청 전에 보낸 방 조회 응답(이전 준비 상태)을 무시하기 위한 값
+        private RoomDetailResponse lastRoom; // 마지막으로 화면에 그린 방 (설정 팝업에 현재 값을 채울 때 사용)
 
         private bool isFetching;      // GET /rooms/{id} 요청 중
         private bool isStarting;      // POST /rooms/{id}/games 요청 중
@@ -92,7 +102,11 @@ namespace WhoisntCitizen.Lobby
         private bool isTransitioning; // 다른 씬으로 이동 시작함 (이후 모든 요청/응답 무시)
         private Coroutine pollRoutine;
         private RoomLobbyLayout cabin;
-        private RoomDetailResponse latestRoom;
+        private double nextFetchAt;   // 이 시각(realtime) 이후 다음 조회. 0이면 바로
+        private double lastFetchAt = double.NaN;
+        private bool fetchAgain;      // 조회 응답을 기다리는 중에 신호가 왔다 → 응답 뒤 한 번 더
+        private RealtimeClient realtime;
+        private long realtimeRoomId;
 
         // ------------------------------------------------------------------
         // Unity 생명주기
@@ -113,7 +127,7 @@ namespace WhoisntCitizen.Lobby
                     playerListContent = cabin.Content; startGameButton = cabin.StartButton;
                     readyButton = cabin.ReadyButton; readyButtonLabel = cabin.ReadyLabel;
                     exitRoomButton = cabin.ExitButton; statusMessage = cabin.Status;
-                    cabin.SettingsButton.onClick.AddListener(OnSettingsClicked);
+                    settingsButton = cabin.SettingsButton; // 방 설정은 dev의 설정 팝업(Popup_Settings)을 연다
                     cabin.InviteButton.onClick.AddListener(OnInviteClicked);
                     if (confirmPopup == null) confirmPopup = canvas.GetComponentInChildren<RoomConfirmPopup>(true);
                 }
@@ -121,6 +135,7 @@ namespace WhoisntCitizen.Lobby
             BindIfEmpty(startGameButton, OnStartGameClicked);
             BindIfEmpty(exitRoomButton, OnExitRoomClicked);
             BindIfEmpty(readyButton, OnReadyClicked);
+            BindIfEmpty(settingsButton, OnSettingsClicked);
             if (readyButtonLabel == null && readyButton != null) readyButtonLabel = readyButton.GetComponentInChildren<TMP_Text>(true);
         }
 
@@ -153,6 +168,7 @@ namespace WhoisntCitizen.Lobby
                 statusMessage?.ShowError($"로그인 유지 시간이 약 {minutesLeft}분 남았습니다. 게임 중 만료되면 연결이 끊겨 탈락하니, 로비에서 로그아웃 후 다시 로그인해 주세요.", keep: true);
             }
 
+            AttachRealtime(RoomSession.RoomId);
             pollRoutine = StartCoroutine(PollLoop());
         }
 
@@ -169,43 +185,18 @@ namespace WhoisntCitizen.Lobby
             if (startGameButton != null) startGameButton.onClick.RemoveListener(OnStartGameClicked);
             if (exitRoomButton != null) exitRoomButton.onClick.RemoveListener(OnExitRoomClicked);
             if (readyButton != null) readyButton.onClick.RemoveListener(OnReadyClicked);
-            if (cabin != null)
-            {
-                cabin.SettingsButton.onClick.RemoveListener(OnSettingsClicked);
-                cabin.InviteButton.onClick.RemoveListener(OnInviteClicked);
-            }
+            if (settingsButton != null) settingsButton.onClick.RemoveListener(OnSettingsClicked);
+            if (cabin != null) cabin.InviteButton.onClick.RemoveListener(OnInviteClicked);
+            DetachRealtime();
         }
 
         private bool IsBusy => isStarting || isLeaving || isReadying || isManaging || isTransitioning || SceneLoader.IsLoading;
 
-        private void OnSettingsClicked()
-        {
-            if (IsBusy || cabin == null || latestRoom == null) return;
-            cabin.Settings.Open(latestRoom, RoomSession.IsHost && !lastInGame, SaveSettings);
-        }
-
-        private void SaveSettings(UpdateRoomSettingsRequest request)
-        {
-            if (IsBusy || !RoomSession.IsHost || lastInGame || cabin == null) return;
-            SetManaging(true); cabin.Settings.SetBusy(true);
-            RoomApi.UpdateSettings(RoomSession.RoomId, request, result =>
-            {
-                if (this == null || isTransitioning) return;
-                SetManaging(false); cabin.Settings.SetBusy(false);
-                if (result.success)
-                {
-                    cabin.Settings.Close(); statusMessage?.ShowSuccess("방 설정을 변경했습니다.");
-                    if (!isFetching) FetchRoom();
-                }
-                else cabin.Settings.ShowError(result.message);
-            });
-        }
-
         private void OnInviteClicked()
         {
-            if (IsBusy || latestRoom == null) return;
-            GUIUtility.systemCopyBuffer = $"{latestRoom.title} · 방 번호 #{latestRoom.id}\n로비에서 방 번호를 확인하고 입장해 주세요.";
-            statusMessage?.ShowSuccess(latestRoom.privateRoom
+            if (IsBusy || lastRoom == null) return;
+            GUIUtility.systemCopyBuffer = $"{lastRoom.title} · 방 번호 #{lastRoom.id}\n로비에서 방 번호를 확인하고 입장해 주세요.";
+            statusMessage?.ShowSuccess(lastRoom.privateRoom
                 ? "초대 정보를 복사했어요. 비공개 방 비밀번호는 별도로 알려 주세요."
                 : "방 번호와 초대 정보를 복사했어요. 친구에게 전달해 주세요.");
         }
@@ -327,6 +318,26 @@ namespace WhoisntCitizen.Lobby
             });
         }
 
+        /// <summary>Button_RoomSettings: 방 설정 팝업을 연다 (방장만, 대기 중일 때만)</summary>
+        public void OnSettingsClicked()
+        {
+            if (isStarting || isLeaving || isReadying || isManaging || isTransitioning || SceneLoader.IsLoading) return;
+            if (!RoomSession.IsHost || lastInGame || lastRoom == null) return;
+
+            if (roomSettingsPopup == null)
+            {
+                Debug.LogWarning("[Room] roomSettingsPopup이 연결되지 않아 방 설정 팝업을 열 수 없습니다.");
+                return;
+            }
+
+            roomSettingsPopup.Open(lastRoom, message =>
+            {
+                if (this == null || isTransitioning) return;
+                statusMessage?.ShowSuccess(message);
+                if (!isFetching) FetchRoom(); // 다음 polling을 기다리지 않고 바뀐 제목·인원을 바로 반영
+            });
+        }
+
         /// <summary>참가자 줄의 [관리] 버튼 (방장에게만, 내 줄 제외) → 플레이어 관리 메뉴를 연다.</summary>
         private void OnManageClicked(RoomPlayerView target)
         {
@@ -398,6 +409,20 @@ namespace WhoisntCitizen.Lobby
                 confirmPopup.Close();
                 statusMessage?.ShowInfo("방 상태가 바뀌어 요청을 취소했습니다.");
             }
+
+            // 방 설정 팝업: 방장이 아니게 됐거나 게임이 시작되면 닫는다. (요청 중이면 응답을 기다린다 - 서버가 403/409로 막음)
+            if (roomSettingsPopup != null && roomSettingsPopup.IsOpen)
+            {
+                if (!canManage && !roomSettingsPopup.IsRequesting)
+                {
+                    roomSettingsPopup.Close();
+                    statusMessage?.ShowInfo("방 상태가 바뀌어 방 설정 창을 닫았습니다.");
+                }
+                else
+                {
+                    roomSettingsPopup.OnRoomUpdated(room); // 최대 인원 하한(현재 인원) 갱신
+                }
+            }
         }
 
         /// <summary>씬을 떠날 때 열려 있는 관리 메뉴·확인 팝업을 닫는다.</summary>
@@ -405,6 +430,7 @@ namespace WhoisntCitizen.Lobby
         {
             if (playerManageMenu != null && playerManageMenu.IsOpen) playerManageMenu.Close();
             if (confirmPopup != null && confirmPopup.IsOpen) confirmPopup.Close();
+            if (roomSettingsPopup != null && roomSettingsPopup.IsOpen) roomSettingsPopup.Close();
         }
 
         /// <summary>
@@ -454,20 +480,46 @@ namespace WhoisntCitizen.Lobby
         // 방 상태 polling
         // ------------------------------------------------------------------
 
+        private static double Now => Time.realtimeSinceStartupAsDouble;
+
+        /// <summary>
+        /// 매 프레임 "조회할 때가 됐나"만 본다. 간격은 고정이 아니라 연결 상태에 따라 바뀌고(CurrentPollInterval),
+        /// room.changed 등 신호가 오면 RequestFetchNow()로 nextFetchAt을 당긴다.
+        /// </summary>
         private IEnumerator PollLoop()
         {
-            var wait = new WaitForSeconds(Mathf.Max(0.2f, pollInterval));
+            nextFetchAt = 0; // 시작하자마자 한 번
             while (!isTransitioning)
             {
-                if (!isFetching && !SceneLoader.IsLoading) FetchRoom();
-                yield return wait;
+                // 나가기 요청 중에는 조회하지 않는다. (내가 마지막이면 방이 지워져 400이 나므로)
+                if (!isFetching && !isLeaving && !SceneLoader.IsLoading && Now >= nextFetchAt) FetchRoom();
+                yield return null;
             }
             pollRoutine = null;
+        }
+
+        /// <summary>이 방의 신호를 받는 중이면 15초(안전망), 아니면 pollInterval(1초).</summary>
+        private double CurrentPollInterval()
+        {
+            bool signals = realtime != null && realtime.ReceivesSignalsFor(realtimeRoomId);
+            return RealtimePolling.IntervalSeconds(signals, pollInterval);
+        }
+
+        /// <summary>
+        /// 다음 프레임에 바로 조회한다. 조회 중이면 그 응답은 신호보다 먼저 출발했을 수 있으므로 응답이 온 뒤 한 번 더.
+        /// </summary>
+        private void RequestFetchNow()
+        {
+            if (isTransitioning || isLeaving) return;
+            if (isFetching) fetchAgain = true;
+            else nextFetchAt = 0;
         }
 
         private void FetchRoom()
         {
             isFetching = true;
+            lastFetchAt = Now;
+            nextFetchAt = lastFetchAt + CurrentPollInterval();
             long roomId = RoomSession.RoomId;
             int seqAtRequest = readySeq;
 
@@ -475,6 +527,11 @@ namespace WhoisntCitizen.Lobby
             {
                 if (this == null) return;
                 isFetching = false;
+                if (fetchAgain)
+                {
+                    fetchAgain = false;
+                    nextFetchAt = 0;
+                }
                 if (isTransitioning) return;
 
                 if (!result.success)
@@ -524,8 +581,8 @@ namespace WhoisntCitizen.Lobby
 
         private void Render(RoomDetailResponse room)
         {
-            latestRoom = room;
             List<RoomPlayerResponse> players = room.players ?? new List<RoomPlayerResponse>();
+            lastRoom = room;
             lastPlayerCount = players.Count;
             lastInGame = room.IsInGame;
             lastAllGuestsReady = room.AllGuestsReady();
@@ -574,7 +631,7 @@ namespace WhoisntCitizen.Lobby
                 view.SetManageInteractable(!isManaging);
                 spawnedPlayers.Add(view);
             }
-            if (cabin != null) cabin.AddEmptySlots(Mathf.Max(0, (latestRoom?.maxPlayers ?? RoomSession.MaxPlayers) - players.Count));
+            if (cabin != null) cabin.AddEmptySlots(Mathf.Max(0, (lastRoom?.maxPlayers ?? RoomSession.MaxPlayers) - players.Count));
         }
 
         private void ClearPlayerList()
@@ -592,6 +649,7 @@ namespace WhoisntCitizen.Lobby
         /// <summary>시작 버튼: 방장에게만 보이고, 인원이 충분하고 모두 준비했고 다른 요청 중이 아닐 때만 누를 수 있다.</summary>
         private void UpdateStartButton()
         {
+            UpdateSettingsButton(); // 같은 방장 전용 버튼이라 같은 시점에 갱신한다
             if (startGameButton == null) return;
 
             bool isHost = RoomSession.IsHost;
@@ -601,6 +659,19 @@ namespace WhoisntCitizen.Lobby
                                            && lastAllGuestsReady
                                            && !lastInGame
                                            && !isStarting && !isLeaving && !isManaging && !isTransitioning;
+        }
+
+        /// <summary>방 설정 버튼: 방장에게만 보이고, 대기 중이며 다른 요청 중이 아닐 때만 누를 수 있다.</summary>
+        private void UpdateSettingsButton()
+        {
+            if (settingsButton == null) return;
+
+            bool isHost = RoomSession.IsHost;
+            settingsButton.gameObject.SetActive(isHost);
+            settingsButton.interactable = isHost
+                                          && lastRoom != null
+                                          && !lastInGame
+                                          && !isStarting && !isLeaving && !isManaging && !isTransitioning;
         }
 
         /// <summary>준비 버튼: 방장이 아닌 참가자에게만 보이고, 내 상태에 따라 "준비" / "준비 취소"를 표시한다.</summary>
@@ -621,11 +692,8 @@ namespace WhoisntCitizen.Lobby
             if (startGameButton != null) startGameButton.interactable = value;
             if (exitRoomButton != null) exitRoomButton.interactable = value;
             if (readyButton != null) readyButton.interactable = value;
-            if (cabin != null)
-            {
-                cabin.SettingsButton.interactable = value;
-                cabin.InviteButton.interactable = value;
-            }
+            if (settingsButton != null) settingsButton.interactable = value;
+            if (cabin != null) cabin.InviteButton.interactable = value;
         }
 
         private static string BuildSignature(long hostUserId, List<RoomPlayerResponse> players)
@@ -688,6 +756,59 @@ namespace WhoisntCitizen.Lobby
             UpdateStartButton();
             UpdateReadyButton();
             if (pollRoutine == null) pollRoutine = StartCoroutine(PollLoop());
+        }
+
+        // ------------------------------------------------------------------
+        // 실시간 신호
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// 이 방의 신호를 받기 시작한다. GameScene에서 돌아온 경우 이미 같은 방을 구독 중이라 EnterRoom은 아무것도 보내지 않는다.
+        /// 연결은 로그인할 때 RealtimeSession이 시작한다. 여기서는 방만 알린다.
+        /// 방을 나갈 때의 LeaveRoom은 RoomSession.Clear()가 한다(ReturnToLobby → Clear).
+        /// </summary>
+        private void AttachRealtime(long roomId)
+        {
+            if (roomId <= 0) return;
+
+            realtime = RealtimeClient.Instance;
+            realtimeRoomId = roomId;
+            realtime.RoomChanged += OnRealtimeRoomChanged;
+            realtime.Resynced += OnRealtimeRoomChanged;           // 구독 확인 → 놓친 변경을 메우려고 한 번 조회
+            realtime.SubscribeRejected += OnRealtimeRoomChanged;  // 거절 → 조회해서 실제로 방에서 빠졌는지 확인
+            realtime.StateChanged += OnRealtimeStateChanged;
+
+            realtime.EnterRoom(roomId);
+        }
+
+        private void DetachRealtime()
+        {
+            RealtimeClient rt = realtime != null ? RealtimeClient.ExistingInstance : null;
+            if (rt != null)
+            {
+                rt.RoomChanged -= OnRealtimeRoomChanged;
+                rt.Resynced -= OnRealtimeRoomChanged;
+                rt.SubscribeRejected -= OnRealtimeRoomChanged;
+                rt.StateChanged -= OnRealtimeStateChanged;
+            }
+            realtime = null;
+            realtimeRoomId = 0;
+        }
+
+        /// <summary>room.changed · Resynced · SubscribeRejected 공통: 이 방이면 바로 조회.</summary>
+        private void OnRealtimeRoomChanged(long roomId)
+        {
+            if (roomId == realtimeRoomId) RequestFetchNow();
+        }
+
+        /// <summary>
+        /// 연결 상태가 바뀌면 다음 조회 시각을 "마지막 조회 + 새 간격"으로 다시 잡는다.
+        /// → 끊기면 1초 폴링으로 바로 돌아가고, 구독되면 15초 안전망으로 늦춘다.
+        /// </summary>
+        private void OnRealtimeStateChanged(RealtimeState previous, RealtimeState next)
+        {
+            if (isFetching || double.IsNaN(lastFetchAt) || nextFetchAt <= 0) return;
+            nextFetchAt = lastFetchAt + CurrentPollInterval();
         }
 
         private static void BindIfEmpty(Button button, UnityEngine.Events.UnityAction action)
