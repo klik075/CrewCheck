@@ -159,6 +159,31 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 제3_세력은_커스텀에_넣고_진영별로_집계한다()
+        {
+            RoleSetupOptionsDto options = Options();
+            options.roles.Add(Role("NEUTRAL_SIREN", "세이렌", Factions.Neutral));
+            options.roles.Add(Role("NEUTRAL_MERMAID", "인어", Factions.Neutral));
+            var roles = new List<string> { R, C, D, S, "NEUTRAL_SIREN", "NEUTRAL_MERMAID" };
+
+            Assert.IsNull(RoleSetupRules.Problem(options, 6, roles));
+            Assert.AreEqual("해적 진영 1명 / 선원 진영 3명 / 제3 세력 2명",
+                RoleSetupRules.DescribeFactions(options, roles));
+        }
+
+        [Test]
+        public void 원숭이는_위장할_직업이_필요하다()
+        {
+            RoleSetupOptionsDto options = Options();
+            options.roles.Add(Role("NEUTRAL_SIREN", "세이렌", Factions.Neutral));
+            options.roles.Add(Role("NEUTRAL_MERMAID", "인어", Factions.Neutral));
+            StringAssert.Contains("위장할 직업", RoleSetupRules.Problem(options, 4,
+                new List<string> { R, M, "NEUTRAL_SIREN", "NEUTRAL_SIREN" }));
+            Assert.IsNull(RoleSetupRules.Problem(options, 4,
+                new List<string> { R, M, "NEUTRAL_SIREN", "NEUTRAL_MERMAID" }));
+        }
+
+        [Test]
         public void 커스텀_표의_첫_번째_문제를_인원수와_함께_알려_준다()
         {
             RoleSetupDto setup = Setup(RoleSetupModes.Custom, Comp(5, R, C, D, S, S), Comp(4, P, C, D, S));
