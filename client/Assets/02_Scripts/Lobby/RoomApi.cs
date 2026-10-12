@@ -17,7 +17,7 @@ namespace WhoisntCitizen.Lobby
     ///   });
     ///
     /// Lobby 씬은 GetRooms / CreateRoom / JoinRoom / GetRoom 을 사용한다.
-    /// GetRoom / LeaveRoom / SetReady / TransferHost / KickPlayer / StartGame 은 Room 씬(대기실, RoomUIController)에서 사용한다.
+    /// GetRoom / LeaveRoom / SetReady / TransferHost / KickPlayer / UpdateSettings / StartGame 은 Room 씬(대기실, RoomUIController)에서 사용한다.
     /// </summary>
     public static class RoomApi
     {
@@ -146,6 +146,29 @@ namespace WhoisntCitizen.Lobby
         public static void KickPlayer(long roomId, long targetUserId, Action<ApiResult> onDone)
         {
             ApiClient.Delete($"{RoomsPath}/{roomId}/players/{targetUserId}", onDone);
+        }
+
+        /// <summary>
+        /// 방 설정 변경 (방장만). PUT /api/v1/rooms/{roomId}/settings  body {"title","maxPlayers","privateRoom","password"}
+        /// 성공 시 204, 본문 없음. 참가자의 준비 상태는 그대로 유지되고, 채팅에 "방 설정이 변경되었습니다" 시스템 메시지가 남는다.
+        /// 실패: 403 방장 아님, 409 게임 중 / 최대 인원이 현재 인원보다 적음,
+        ///       400 제목 없음 / 인원 범위(4~12) 밖 / 비밀번호 형식(숫자 4자리 이상) / 방 없음
+        /// </summary>
+        /// <param name="password">
+        /// 비밀방일 때만 의미가 있다. 이미 비밀방이면 null/""로 보내 기존 비밀번호를 유지할 수 있다.
+        /// 공개방으로 바꾸면 무시된다.
+        /// </param>
+        public static void UpdateSettings(long roomId, string title, int maxPlayers, bool privateRoom, string password,
+            Action<ApiResult> onDone)
+        {
+            var body = new UpdateRoomSettingsRequest
+            {
+                title = title,
+                maxPlayers = maxPlayers,
+                privateRoom = privateRoom,
+                password = privateRoom ? (password ?? string.Empty) : string.Empty, // 공개방이면 보내지 않는다 (빈 값)
+            };
+            ApiClient.Put($"{RoomsPath}/{roomId}/settings", body, onDone);
         }
 
         /// <summary>
