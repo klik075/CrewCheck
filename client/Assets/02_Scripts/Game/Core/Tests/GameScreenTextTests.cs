@@ -49,6 +49,16 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 능력_컷인_아래_줄은_능력과_대상만()
+        {
+            var state = NightAllAlive();
+
+            Assert.AreEqual("공격 · 영희님", GameScreenText.AbilityCutInLine(ActionCodes.SelectAttackTarget, 12, state));
+            Assert.AreEqual("관찰 · 민수님", GameScreenText.AbilityCutInLine(ActionCodes.WatchAction, 13, state));
+            Assert.AreEqual("보호", GameScreenText.AbilityCutInLine(ActionCodes.Protect, 0, state));
+        }
+
+        [Test]
         public void 밤_능력_패널_안내()
         {
             var state = NightAllAlive();

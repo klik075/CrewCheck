@@ -102,6 +102,7 @@ namespace WhoisntCitizen.GameUI
         private readonly RectTransform[] cardSpots = new RectTransform[SeatCount]; // by seat index, on the table rim
         private readonly List<PlayerViewDto> players = new List<PlayerViewDto>(SeatCount);
         private readonly Dictionary<long, ChibiCharacterSkin> skinOverrides = new Dictionary<long, ChibiCharacterSkin>();
+        private readonly Dictionary<long, ChibiCharacterSkin> wornSkins = new Dictionary<long, ChibiCharacterSkin>();
         private ChibiCharacterSkin[] skins;
         private Func<long, int> seatOrdinalFor;
         private Func<long, int> skinIndexFor;
@@ -168,7 +169,7 @@ namespace WhoisntCitizen.GameUI
             foreach (int i in nearSeats) CreateSeat(i, font);
             for (int i = 0; i < capacity; i++) CreateSpeech(i, font);
 
-            SetVisible(true);
+            SetVisible(true, true);
             ShowPreview();
             BindChat();
         }
@@ -176,7 +177,9 @@ namespace WhoisntCitizen.GameUI
         public void SetPhase(string phase)
         {
             // Execution too: the vote tally stays on the table while the result is shown (DayTableVoteCards).
-            SetVisible(phase == GamePhases.Day || phase == GamePhases.Vote || phase == GamePhases.Execution);
+            bool table = phase == GamePhases.Day || phase == GamePhases.Vote || phase == GamePhases.Execution;
+            // The night room (NightRoomView) stands on the same stage, so the chat stays below it at night too.
+            SetVisible(table, table || phase == GamePhases.Night || phase == GamePhases.NightResult);
         }
 
         /// <summary>
@@ -235,6 +238,7 @@ namespace WhoisntCitizen.GameUI
         public void Clear()
         {
             players.Clear();
+            wornSkins.Clear();
             Refresh();
         }
 
@@ -248,6 +252,13 @@ namespace WhoisntCitizen.GameUI
             foreach (ChibiCharacterSkin skin in skins)
                 if (skin != null && string.Equals(skin.DesignId, designId, StringComparison.OrdinalIgnoreCase)) return skin;
             return null;
+        }
+
+        /// <summary>The skin this player wears at the table (null if not seated yet). The night room dresses them the same.</summary>
+        public ChibiCharacterSkin SkinOf(long playerId)
+        {
+            ChibiCharacterSkin skin;
+            return wornSkins.TryGetValue(playerId, out skin) ? skin : null;
         }
 
         /// <summary>Dresses a player in this skin (null = back to the seat's default). Size and seat stay the same.</summary>
@@ -266,7 +277,8 @@ namespace WhoisntCitizen.GameUI
             Refresh();
         }
 
-        private void SetVisible(bool visible)
+        /// <param name="stage">Keep the chat below the stage (the table or the night room is on it).</param>
+        private void SetVisible(bool visible, bool stage)
         {
             if (!initialized || tableRoot == null) return;
             if (!visible) ClearSpeech();
@@ -281,7 +293,7 @@ namespace WhoisntCitizen.GameUI
             if (chatRect != null)
             {
                 Vector2 max = originalChatMax;
-                if (visible) max.y = ChatTop;
+                if (stage) max.y = ChatTop;
                 chatRect.offsetMax = max;
             }
         }
@@ -407,6 +419,7 @@ namespace WhoisntCitizen.GameUI
                     if (skinIndex < 0) skinIndex = ordinal;
                     skin = skins != null && skins.Length > 0 ? skins[skinIndex % skins.Length] : null;
                 }
+                wornSkins[players[i].playerId] = skin;
                 ApplySprite(seat, SpriteFor(skin, seat.pose) ?? previewSprite);
                 seat.restingColor = seat.alive ? Color.white : new Color(0.55f, 0.6f, 0.65f, 0.6f);
                 seat.name.text = players[i].nickname;
