@@ -1,6 +1,7 @@
 package com.WhoisntCitizen_server.user.controller;
 
 import com.WhoisntCitizen_server.user.dto.UserDto;
+import com.WhoisntCitizen_server.user.service.UserPresenceService;
 import com.WhoisntCitizen_server.user.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
 
 	private final UserService userService;
+	private final UserPresenceService userPresenceService;
 
 	// 내 프로필 정보 조회
 	@GetMapping("/me")
@@ -49,5 +51,21 @@ public class UserController {
 	) {
 		Long currentMemberId = Long.valueOf(jwt.getSubject());
 		return ResponseEntity.ok(userService.updateNickname(currentMemberId, req.getNickname()));
+	}
+
+	/**
+	 * 접속 상태 유지(Heartbeat 핑)
+	 * POST /api/users/ping
+	 */
+	@PostMapping("/ping")
+	public ResponseEntity<Void> heartbeatPing(
+			@AuthenticationPrincipal Jwt jwt
+	) {
+		Long currentMemberId = Long.valueOf(jwt.getSubject());
+		// memberId로 profile User 엔티티의 ID 조회
+		Long userId = userService.getMyProfile(currentMemberId).getUserId();
+
+		userPresenceService.updatePresence(userId);
+		return ResponseEntity.ok().build();
 	}
 }

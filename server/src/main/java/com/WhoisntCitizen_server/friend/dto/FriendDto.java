@@ -31,8 +31,9 @@ public class FriendDto {
 		private int playCount;
 		private int winCount;
 		private double winRate;
+		private boolean isOnline;
 
-		public static FriendResponse from(Friendship friendship, User friendUser) {
+		public static FriendResponse from(Friendship friendship, User friendUser, boolean isOnline) {
 			double rate = Math.round(friendUser.getWinRate() * 1000.0) / 10.0;
 
 			return FriendResponse.builder()
@@ -43,6 +44,7 @@ public class FriendDto {
 					.playCount(friendUser.getPlayCount())
 					.winCount(friendUser.getWinCount())
 					.winRate(rate)
+					.isOnline(isOnline)
 					.build();
 		}
 	}

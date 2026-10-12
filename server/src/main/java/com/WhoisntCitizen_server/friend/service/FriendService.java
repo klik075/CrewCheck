@@ -6,6 +6,7 @@ import com.WhoisntCitizen_server.friend.entity.FriendshipStatus;
 import com.WhoisntCitizen_server.friend.repository.FriendshipRepository;
 import com.WhoisntCitizen_server.user.entity.User;
 import com.WhoisntCitizen_server.user.repository.UserRepository;
+import com.WhoisntCitizen_server.user.service.UserPresenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,7 @@ public class FriendService {
 
 	private final FriendshipRepository friendshipRepository;
 	private final UserRepository userRepository;
+	private final UserPresenceService userPresenceService;
 
 	/** 친구 요청 전송 */
 	@Transactional
@@ -116,7 +118,10 @@ public class FriendService {
 					User friendUser = Objects.equals(f.getRequester().getId(), me.getId())
 							? f.getReceiver()
 							: f.getRequester();
-					return FriendDto.FriendResponse.from(f, friendUser);
+
+					boolean isOnline = userPresenceService.isOnline(friendUser.getId());
+
+					return FriendDto.FriendResponse.from(f, friendUser, isOnline);
 				})
 				.toList();
 	}
