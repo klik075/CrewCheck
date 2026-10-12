@@ -36,6 +36,7 @@ namespace WhoisntCitizen.Lobby
     public class RoomUIController : MonoBehaviour
     {
         [Header("Room Info")]
+        [SerializeField] private bool useCabinLayout;
         [SerializeField] private TMP_Text titleText;       // Canvas/Title
         [SerializeField] private TMP_Text memberCountText; // Text_memberCntInfo ("00 / 00")
 
@@ -90,6 +91,8 @@ namespace WhoisntCitizen.Lobby
         private bool isManaging;      // 방장 위임 / 추방 요청 중
         private bool isTransitioning; // 다른 씬으로 이동 시작함 (이후 모든 요청/응답 무시)
         private Coroutine pollRoutine;
+        private RoomLobbyLayout cabin;
+        private RoomDetailResponse latestRoom;
 
         // ------------------------------------------------------------------
         // Unity 생명주기
@@ -97,6 +100,24 @@ namespace WhoisntCitizen.Lobby
 
         private void Awake()
         {
+            if (useCabinLayout && titleText != null)
+            {
+                Canvas canvas = titleText.GetComponentInParent<Canvas>();
+                if (canvas != null)
+                {
+                    cabin = canvas.gameObject.AddComponent<RoomLobbyLayout>();
+                    cabin.Build(canvas, titleText.font, titleText.transform.parent,
+                        canvas.GetComponentInChildren<WhoisntCitizen.GameUI.ChatLogView>(true),
+                        canvas.GetComponentInChildren<WhoisntCitizen.GameUI.ChatInputBar>(true));
+                    titleText = cabin.Title; memberCountText = cabin.MemberCount;
+                    playerListContent = cabin.Content; startGameButton = cabin.StartButton;
+                    readyButton = cabin.ReadyButton; readyButtonLabel = cabin.ReadyLabel;
+                    exitRoomButton = cabin.ExitButton; statusMessage = cabin.Status;
+                    cabin.SettingsButton.onClick.AddListener(OnSettingsClicked);
+                    cabin.InviteButton.onClick.AddListener(OnInviteClicked);
+                    if (confirmPopup == null) confirmPopup = canvas.GetComponentInChildren<RoomConfirmPopup>(true);
+                }
+            }
             BindIfEmpty(startGameButton, OnStartGameClicked);
             BindIfEmpty(exitRoomButton, OnExitRoomClicked);
             BindIfEmpty(readyButton, OnReadyClicked);
@@ -148,6 +169,45 @@ namespace WhoisntCitizen.Lobby
             if (startGameButton != null) startGameButton.onClick.RemoveListener(OnStartGameClicked);
             if (exitRoomButton != null) exitRoomButton.onClick.RemoveListener(OnExitRoomClicked);
             if (readyButton != null) readyButton.onClick.RemoveListener(OnReadyClicked);
+            if (cabin != null)
+            {
+                cabin.SettingsButton.onClick.RemoveListener(OnSettingsClicked);
+                cabin.InviteButton.onClick.RemoveListener(OnInviteClicked);
+            }
+        }
+
+        private bool IsBusy => isStarting || isLeaving || isReadying || isManaging || isTransitioning || SceneLoader.IsLoading;
+
+        private void OnSettingsClicked()
+        {
+            if (IsBusy || cabin == null || latestRoom == null) return;
+            cabin.Settings.Open(latestRoom, RoomSession.IsHost && !lastInGame, SaveSettings);
+        }
+
+        private void SaveSettings(UpdateRoomSettingsRequest request)
+        {
+            if (IsBusy || !RoomSession.IsHost || lastInGame || cabin == null) return;
+            SetManaging(true); cabin.Settings.SetBusy(true);
+            RoomApi.UpdateSettings(RoomSession.RoomId, request, result =>
+            {
+                if (this == null || isTransitioning) return;
+                SetManaging(false); cabin.Settings.SetBusy(false);
+                if (result.success)
+                {
+                    cabin.Settings.Close(); statusMessage?.ShowSuccess("방 설정을 변경했습니다.");
+                    if (!isFetching) FetchRoom();
+                }
+                else cabin.Settings.ShowError(result.message);
+            });
+        }
+
+        private void OnInviteClicked()
+        {
+            if (IsBusy || latestRoom == null) return;
+            GUIUtility.systemCopyBuffer = $"{latestRoom.title} · 방 번호 #{latestRoom.id}\n로비에서 방 번호를 확인하고 입장해 주세요.";
+            statusMessage?.ShowSuccess(latestRoom.privateRoom
+                ? "초대 정보를 복사했어요. 비공개 방 비밀번호는 별도로 알려 주세요."
+                : "방 번호와 초대 정보를 복사했어요. 친구에게 전달해 주세요.");
         }
 
         // ------------------------------------------------------------------
@@ -464,6 +524,7 @@ namespace WhoisntCitizen.Lobby
 
         private void Render(RoomDetailResponse room)
         {
+            latestRoom = room;
             List<RoomPlayerResponse> players = room.players ?? new List<RoomPlayerResponse>();
             lastPlayerCount = players.Count;
             lastInGame = room.IsInGame;
@@ -472,9 +533,10 @@ namespace WhoisntCitizen.Lobby
 
             if (titleText != null) titleText.text = room.title;
             if (memberCountText != null) memberCountText.text = $"{players.Count} / {room.maxPlayers}";
+            cabin?.RenderInfo(room);
 
             // 참가자 또는 방장이 바뀌었을 때만 목록을 다시 만든다.
-            string signature = BuildSignature(room.hostUserId, players);
+            string signature = room.maxPlayers + "|" + BuildSignature(room.hostUserId, players);
             if (signature != lastListSignature)
             {
                 lastListSignature = signature;
@@ -489,7 +551,7 @@ namespace WhoisntCitizen.Lobby
         private void RebuildPlayerList(long hostUserId, List<RoomPlayerResponse> players)
         {
             ClearPlayerList();
-            if (playerListContent == null || roomPlayerPrefab == null)
+            if (playerListContent == null || (cabin == null && roomPlayerPrefab == null))
             {
                 Debug.LogWarning("[Room] playerListContent 또는 roomPlayerPrefab이 연결되지 않았습니다.");
                 return;
@@ -499,14 +561,20 @@ namespace WhoisntCitizen.Lobby
             bool canManage = hostUserId == myUserId; // 내가 방장이면 다른 사람 줄에 관리 버튼
             foreach (RoomPlayerResponse p in players)
             {
-                GameObject go = Instantiate(roomPlayerPrefab, playerListContent);
-                go.name = $"RoomPlayer_{p.userId}";
-                RoomPlayerView view = go.GetComponent<RoomPlayerView>();
-                if (view == null) view = go.AddComponent<RoomPlayerView>();
+                RoomPlayerView view;
+                if (cabin != null) view = cabin.CreatePlayer(p, p.userId == hostUserId, p.userId == myUserId);
+                else
+                {
+                    GameObject go = Instantiate(roomPlayerPrefab, playerListContent);
+                    go.name = $"RoomPlayer_{p.userId}";
+                    view = go.GetComponent<RoomPlayerView>();
+                    if (view == null) view = go.AddComponent<RoomPlayerView>();
+                }
                 view.Bind(p, p.userId == hostUserId, p.userId == myUserId, canManage, OnManageClicked);
                 view.SetManageInteractable(!isManaging);
                 spawnedPlayers.Add(view);
             }
+            if (cabin != null) cabin.AddEmptySlots(Mathf.Max(0, (latestRoom?.maxPlayers ?? RoomSession.MaxPlayers) - players.Count));
         }
 
         private void ClearPlayerList()
@@ -514,7 +582,11 @@ namespace WhoisntCitizen.Lobby
             spawnedPlayers.Clear();
             if (playerListContent == null) return;
             for (int i = playerListContent.childCount - 1; i >= 0; i--)
-                Destroy(playerListContent.GetChild(i).gameObject);
+            {
+                GameObject row = playerListContent.GetChild(i).gameObject;
+                row.SetActive(false); // Destroy는 프레임 끝에 실행되므로 레이아웃에서 먼저 제외한다.
+                Destroy(row);
+            }
         }
 
         /// <summary>시작 버튼: 방장에게만 보이고, 인원이 충분하고 모두 준비했고 다른 요청 중이 아닐 때만 누를 수 있다.</summary>
@@ -549,6 +621,11 @@ namespace WhoisntCitizen.Lobby
             if (startGameButton != null) startGameButton.interactable = value;
             if (exitRoomButton != null) exitRoomButton.interactable = value;
             if (readyButton != null) readyButton.interactable = value;
+            if (cabin != null)
+            {
+                cabin.SettingsButton.interactable = value;
+                cabin.InviteButton.interactable = value;
+            }
         }
 
         private static string BuildSignature(long hostUserId, List<RoomPlayerResponse> players)

@@ -36,12 +36,27 @@ namespace WhoisntCitizen.Lobby
         public string Nickname { get; private set; }
 
         private Action<RoomPlayerView> onManage;
+        private GameObject hostBadge;
+        private TMP_Text readyState;
+        private GameObject selfBadge;
+        private RoomHelmGraphic stateIcon;
+
+        public void ConfigureCabin(TMP_Text nameLabel, GameObject badge, TMP_Text state, Button manage,
+            GameObject self = null, RoomHelmGraphic icon = null)
+        {
+            if (manageButton != null) manageButton.onClick.RemoveListener(OnManage);
+            nicknameText = nameLabel; hostBadge = badge; readyState = state; manageButton = manage;
+            selfBadge = self; stateIcon = icon;
+            if (manageButton != null) manageButton.onClick.AddListener(OnManage);
+        }
+
+        private void OnManage() => onManage?.Invoke(this);
 
         private void Awake()
         {
             EnsureText();
             // 줄은 목록이 바뀔 때마다 새로 만들어지므로 리스너는 한 번만 연결하고 콜백만 Bind에서 바꾼다.
-            if (manageButton != null) manageButton.onClick.AddListener(() => onManage?.Invoke(this));
+            if (manageButton != null) manageButton.onClick.AddListener(OnManage);
         }
 
         /// <summary>참가자 정보를 화면에 표시한다. (방장 전용 버튼 없음)</summary>
@@ -67,7 +82,30 @@ namespace WhoisntCitizen.Lobby
             if (readyIndicator != null) readyIndicator.SetActive(showReady);
             string readyText = showReady && readyIndicator == null ? readySuffix : "";
 
-            if (nicknameText != null)
+            if (readyState != null)
+            {
+                hostBadge.SetActive(isHost);
+                nicknameText.text = Nickname;
+                nicknameText.richText = false;
+                var nameRect = nicknameText.rectTransform;
+                nameRect.anchoredPosition = new Vector2(184, isHost ? -36 : -24);
+                nameRect.sizeDelta = new Vector2(isMe ? 382 : 404, nameRect.sizeDelta.y);
+                if (selfBadge != null)
+                {
+                    selfBadge.SetActive(isMe);
+                    float nameWidth = Mathf.Min(382, nicknameText.GetPreferredValues(Nickname).x);
+                    selfBadge.GetComponent<RectTransform>().anchoredPosition = new Vector2(196 + nameWidth, isHost ? -49 : -35);
+                }
+                readyState.text = isHost ? "방장" : player.ready ? "준비 완료" : "준비 중";
+                readyState.color = isHost ? new Color32(147, 48, 32, 255) : player.ready
+                    ? new Color32(44, 115,  60, 255) : new Color32(140, 91, 37, 255);
+                if (stateIcon != null)
+                {
+                    stateIcon.Shape = isHost ? RoomHelmGraphic.Symbol.Crown : player.ready ? RoomHelmGraphic.Symbol.Ready : RoomHelmGraphic.Symbol.Waiting;
+                    stateIcon.color = isHost || player.ready ? readyState.color : new Color32(191, 127, 24, 255);
+                }
+            }
+            else if (nicknameText != null)
                 nicknameText.text = $"{(isHost ? hostPrefix : "")}{Nickname}{(isMe ? meSuffix : "")}{readyText}";
 
             onManage = manage;

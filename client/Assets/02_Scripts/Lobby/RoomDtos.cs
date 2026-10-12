@@ -62,9 +62,18 @@ namespace WhoisntCitizen.Lobby
     }
 
     /// <summary>
-    /// POST /api/v1/rooms/{roomId}/players 요청 body (비밀방 입장용).
-    /// 공개방은 이 body 없이(null) 보낸다.
+    /// PUT /api/v1/rooms/{roomId}/settings. 비공개 방의 빈 password는 기존 비밀번호 유지.
     /// </summary>
+    [Serializable]
+    public class UpdateRoomSettingsRequest
+    {
+        public string title;
+        public int maxPlayers;
+        public bool privateRoom;
+        public string password;
+    }
+
+    /// <summary>POST /api/v1/rooms/{roomId}/players 요청 body (비밀방 입장용).</summary>
     [Serializable]
     public class JoinRoomRequest
     {
