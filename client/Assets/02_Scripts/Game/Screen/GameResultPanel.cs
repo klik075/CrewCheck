@@ -6,7 +6,10 @@ using UnityEngine.UI;
 
 namespace WhoisntCitizen.Game
 {
-    /// <summary>게임 결과 패널. 승리 진영, 내 승패, 전원의 실제 직업. "대기실로" 버튼을 누르면 BackRequested.</summary>
+    /// <summary>
+    /// 게임 결과 패널. 승리 진영, 내 승패, 전원의 실제 직업. "대기실로" 버튼을 누르면 BackRequested.
+    /// 자동 복귀가 켜져 있으면 패널이 뜬 뒤 autoReturnSeconds초가 지나면 버튼을 누른 것처럼 BackRequested를 낸다.
+    /// </summary>
     public sealed class GameResultPanel : MonoBehaviour
     {
         [SerializeField] private GameObject root;
@@ -14,11 +17,20 @@ namespace WhoisntCitizen.Game
         [SerializeField] private TextMeshProUGUI outcomeText;
         [SerializeField] private TextMeshProUGUI playersText;
         [SerializeField] private Button backButton;
+        [Tooltip("결과 패널이 뜬 뒤 자동으로 대기실로 돌아가기까지의 시간(초). 0 이하면 자동 복귀하지 않는다.")]
+        private float autoReturnSeconds = 20f;
 
         private readonly Dictionary<string, Sprite> backgrounds = new Dictionary<string, Sprite>();
         private Image backgroundImage;
         private AspectRatioFitter backgroundFit;
         private bool presentationReady;
+
+        // 자동 복귀 카운트다운
+        private bool counting;
+        private float remaining;
+        private int shownSeconds = -1;
+        private TextMeshProUGUI backLabel;
+        private string backLabelText;
 
         /// <summary>"대기실로" 버튼</summary>
         public event Action BackRequested;
@@ -34,7 +46,21 @@ namespace WhoisntCitizen.Game
             if (backButton != null)
             {
                 backButton.onClick.AddListener(OnBackClicked);
+                backLabel = backButton.GetComponentInChildren<TextMeshProUGUI>(true);
+                if (backLabel != null) backLabelText = backLabel.text;
             }
+        }
+
+        private void Update()
+        {
+            if (!counting) return;
+            remaining -= Time.unscaledDeltaTime;
+            if (remaining <= 0f)
+            {
+                OnBackClicked(); // 카운트다운도 여기서 멈춘다
+                return;
+            }
+            RefreshCountdownLabel();
         }
 
         private void OnDestroy()
@@ -45,7 +71,8 @@ namespace WhoisntCitizen.Game
             }
         }
 
-        public void Show(GameResultDto result, MyRoleDto me)
+        /// <param name="autoReturn">false면 자동 복귀하지 않는다. (가짜 서버 게임: 자동으로 새 판이 이어지지 않게)</param>
+        public void Show(GameResultDto result, MyRoleDto me, bool autoReturn = true)
         {
             if (result == null) return;
             PreparePresentation();
@@ -65,6 +92,32 @@ namespace WhoisntCitizen.Game
             }
             Root.SetActive(true);
             Root.transform.SetAsLastSibling();
+            if (autoReturn && autoReturnSeconds > 0f) StartCountdown();
+            else StopCountdown();
+        }
+
+        private void StartCountdown()
+        {
+            counting = true;
+            remaining = autoReturnSeconds;
+            shownSeconds = -1;
+            RefreshCountdownLabel();
+        }
+
+        private void StopCountdown()
+        {
+            counting = false;
+            shownSeconds = -1;
+            if (backLabel != null && backLabelText != null) backLabel.text = backLabelText;
+        }
+
+        /// <summary>버튼 라벨에 남은 초를 붙인다. 예) "대기실로 (7)". 초가 바뀔 때만 갱신.</summary>
+        private void RefreshCountdownLabel()
+        {
+            int seconds = Mathf.CeilToInt(Mathf.Max(0f, remaining));
+            if (seconds == shownSeconds || backLabel == null) return;
+            shownSeconds = seconds;
+            backLabel.text = backLabelText + "\n(" + seconds + "초뒤 자동 복귀)";
         }
 
         /// <summary>Uses the local player's outcome, not simply the winning faction. Cancelled/unknown results have no win/loss art.</summary>
@@ -174,11 +227,13 @@ namespace WhoisntCitizen.Game
 
         public void Hide()
         {
+            StopCountdown();
             Root.SetActive(false);
         }
 
         private void OnBackClicked()
         {
+            StopCountdown(); // 버튼과 타이머가 두 번 보내지 않게
             if (BackRequested != null)
             {
                 BackRequested();
