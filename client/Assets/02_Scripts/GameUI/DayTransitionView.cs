@@ -29,6 +29,7 @@ namespace WhoisntCitizen.GameUI
         public int TotalVotes;     // executed: every vote cast
         public string Reason;      // not executed: why ("동점이라 아무도 처형되지 않았습니다.")
         public bool Mine;          // I am the one who died
+        public bool Kraken;        // killed: the kraken dragged them away (not the pirates' attack)
         public bool GameOver;      // the game ended with this result: no next day or night to announce
     }
 
@@ -699,6 +700,9 @@ namespace WhoisntCitizen.GameUI
             splashCaption.text = info.Mine ? "당신은 처형되었습니다" : name + "님이 처형되었습니다";
             myLine.text = "당신은 사망했습니다";
             dawnCaption.text = info.Kind == DayTransitionKind.Protected ? "아무도 죽지 않았습니다" : "밤사이 아무도 죽지 않았습니다";
+            bool kraken = info.Kind == DayTransitionKind.Killed && info.Kraken;
+            strikeCaption.text = kraken ? "어젯밤, 바다 밑에서 무언가 올라왔습니다" : "어젯밤, 누군가 습격당했습니다";
+            posterLine.text = kraken ? "크라켄에게 끌려갔습니다" : "밤사이 사망했습니다";
         }
 
         // ================================================================ build

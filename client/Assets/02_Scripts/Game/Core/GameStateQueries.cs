@@ -50,5 +50,39 @@ namespace WhoisntCitizen.Game
             PlayerViewDto p = FindPlayer(state, playerId);
             return p != null && !string.IsNullOrEmpty(p.nickname) ? p.nickname : "플레이어 " + playerId;
         }
+
+        /// <summary>
+        /// 끝난 게임에서 이 플레이어가 이겼는지. 서버가 알려 준 winnerIds(= players[].win)로 판단한다.
+        /// 진영으로는 판단할 수 없다: 유혹당한 선원은 진영이 CREW여도 세이렌 팀으로 이기고, 중립은 각자 혼자 이긴다.
+        /// 승자 목록이 없는 예전 응답이면 승리 진영과 내 진영(myFaction)을 비교한다. 취소됐거나 끝나지 않았으면 false.
+        /// </summary>
+        public static bool IsWinner(GameResultDto result, long playerId, string myFaction)
+        {
+            if (result == null || !result.ended || result.IsCancelled || string.IsNullOrEmpty(result.winner))
+            {
+                return false;
+            }
+            if (result.winnerIds != null && result.winnerIds.Count > 0)
+            {
+                return result.winnerIds.Contains(playerId);
+            }
+            bool anyWin = false;
+            if (result.players != null)
+            {
+                foreach (PlayerResultDto p in result.players)
+                {
+                    if (p == null || !p.win)
+                    {
+                        continue;
+                    }
+                    anyWin = true;
+                    if (p.playerId == playerId)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return !anyWin && !string.IsNullOrEmpty(myFaction) && result.winner == myFaction;
+        }
     }
 }

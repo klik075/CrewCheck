@@ -476,5 +476,99 @@ namespace WhoisntCitizen.Game.Tests
             Assert.IsTrue(session.IsClosed);
             Assert.AreEqual(1, api.Calls("GetState"));
         }
+
+        // ---------------------------------------------------------------- 중립 직업 (가짜 서버에 없어서 정해 둔 응답으로)
+
+        /// <summary>state가 없으면 밤, 나 11(me) + 12 영희 + 13 민수 생존. night는 GET /night-result가 돌려줄 밤 결과.</summary>
+        private ScriptedGameApi Scripted(MyRoleDto me, GameStateDto state = null, NightResultDto night = null)
+        {
+            now = 0;
+            var scripted = new ScriptedGameApi { State = state ?? GameTestData.NightAllAlive(), Me = me, NightResult = night };
+            view = new RecordingView();
+            session = new GameSession(scripted, FakeGameApi.FakeGameId, view, () => now, 1.0);
+            session.Tick(); // 상태 → /me, (밤이 지났으면) 밤 결과
+            return scripted;
+        }
+
+        /// <summary>2일차 투표, 나 11 + 12 영희 + 13 민수 생존.</summary>
+        private static GameStateDto VoteDay2()
+        {
+            GameStateDto state = GameTestData.State(GamePhases.Vote, 12,
+                GameTestData.P(11, "철수", true), GameTestData.P(12, "영희", true), GameTestData.P(13, "민수", true));
+            state.day = 2;
+            return state;
+        }
+
+        [Test]
+        public void 요리사에게_투표를_금지당하면_그날은_투표를_보내지_않는다()
+        {
+            var night = new NightResultDto { day = 2 };
+            night.reports.Add(new ReportDto { type = ReportTypes.VoteBanned });
+            ScriptedGameApi scripted = Scripted(GameTestData.Me(11, RoleCodes.CrewSailor, null, -1), VoteDay2(), night);
+
+            Assert.IsTrue(session.VoteBannedToday);
+            Assert.IsFalse(session.CanVote);
+            Assert.IsFalse(session.Vote(12));
+
+            Assert.AreEqual(0, scripted.Votes.Count);
+            Assert.AreEqual(ReportFormatter.VoteBannedMessage, view.Errors.Single());
+        }
+
+        [Test]
+        public void 투표_금지가_없으면_투표할_수_있다()
+        {
+            ScriptedGameApi scripted = Scripted(GameTestData.Me(11, RoleCodes.CrewSailor, null, -1), VoteDay2(), new NightResultDto { day = 2 });
+
+            Assert.IsFalse(session.VoteBannedToday);
+            Assert.IsTrue(session.Vote(12));
+            CollectionAssert.AreEqual(new long[] { 12 }, scripted.Votes);
+        }
+
+        [Test]
+        public void 크라켄은_표식_대신_발동을_보낼_수_있다()
+        {
+            var me = GameTestData.Me(11, "NEUTRAL_KRAKEN", ActionCodes.KrakenMark, -1);
+            me.krakenMarkIds.Add(12);
+            ScriptedGameApi scripted = Scripted(me);
+
+            Assert.IsTrue(session.CanStrike);
+            Assert.IsTrue(session.StrikeKraken());
+
+            Assert.AreEqual(new System.Collections.Generic.KeyValuePair<long, string>(0, ActionCodes.KrakenStrike), scripted.NightActions.Single());
+            Assert.IsTrue(session.StruckTonight);
+            Assert.IsFalse(session.SkippedTonight); // 대상이 없어도 넘긴 것이 아니다
+            Assert.AreEqual(0L, session.MyNightTarget);
+
+            Assert.IsTrue(session.SubmitNightAction(13)); // 판정 전에는 표식으로 다시 바꿀 수 있다
+            Assert.AreEqual(new System.Collections.Generic.KeyValuePair<long, string>(13, null), scripted.NightActions.Last());
+            Assert.IsFalse(session.StruckTonight);
+            Assert.AreEqual(13L, session.MyNightTarget);
+        }
+
+        [Test]
+        public void 표식이_없으면_발동을_보내지_않는다()
+        {
+            ScriptedGameApi scripted = Scripted(GameTestData.Me(11, "NEUTRAL_KRAKEN", ActionCodes.KrakenMark, -1));
+
+            Assert.IsFalse(session.CanStrike);
+            Assert.IsFalse(session.StrikeKraken());
+
+            Assert.AreEqual(0, scripted.NightActions.Count);
+            Assert.AreEqual(GameSession.CannotStrikeMessage, view.Errors.Single());
+        }
+
+        [Test]
+        public void 쉬는_밤의_세이렌은_유혹을_보내지_않는다()
+        {
+            var me = GameTestData.Me(11, "NEUTRAL_SIREN", ActionCodes.Seduce, -1);
+            me.abilityAvailable = false;
+            ScriptedGameApi scripted = Scripted(me);
+
+            Assert.AreEqual(AbilityBlock.Resting, session.NightAbility);
+            Assert.IsFalse(session.SubmitNightAction(12));
+
+            Assert.AreEqual(0, scripted.NightActions.Count);
+            Assert.AreEqual(ReportFormatter.AbilityBlockMessage(AbilityBlock.Resting), view.Errors.Single());
+        }
     }
 }

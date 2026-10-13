@@ -98,6 +98,7 @@ namespace WhoisntCitizen.Game
         private int shownSeconds = -1;
         private bool shownWaiting;
         private bool deadVoteNoticeShown;
+        private int voteBanNoticeDay;      // 요리사의 투표 금지를 투표 시간에 다시 알린 일차 (하루에 한 번)
         private readonly List<PlayerView> voteTargets = new List<PlayerView>();
 
         // 투표 전송 대기: 앞 요청(밤 행동·투표)이 처리 중이면 보낼 수 없으므로, 마지막으로 원한 상태만 남겨 두었다가 보낸다
@@ -231,6 +232,7 @@ namespace WhoisntCitizen.Game
                 nightPanel.PortraitResolver = PortraitOf;
                 nightPanel.Confirmed += OnNightConfirmed;
                 nightPanel.Skipped += OnNightSkipped;
+                nightPanel.Struck += OnNightStruck;
             }
             if (dayPanel != null)
             {
@@ -301,6 +303,7 @@ namespace WhoisntCitizen.Game
             {
                 nightPanel.Confirmed -= OnNightConfirmed;
                 nightPanel.Skipped -= OnNightSkipped;
+                nightPanel.Struck -= OnNightStruck;
             }
             if (dayPanel != null)
             {
@@ -489,6 +492,14 @@ namespace WhoisntCitizen.Game
             {
                 AddSystem(line); // 개인 결과 (나에게만 온다. 서버 채팅에는 없다)
             }
+            GameSession session = Session;
+            if (voteCardHand != null && voteCardHand.IsShown && session != null && session.VoteBannedToday)
+            {
+                // 투표 도중 재접속해 밤 결과가 카드패보다 늦게 왔다: 요리사에게 투표를 금지당했으면 카드패를 내리고 알린다
+                ClearPendingVote();
+                HideVoteHand();
+                TryShowVoteHand();
+            }
             PlayNightTransition(result);
         }
 
@@ -547,7 +558,8 @@ namespace WhoisntCitizen.Game
             {
                 return;
             }
-            AddSystem(GameScreenText.ActionAccepted(result, session.Me.actionCode, session.MyNightTarget, session.SkippedTonight, session.State));
+            AddSystem(GameScreenText.ActionAccepted(result, session.Me.actionCode, session.MyNightTarget, session.SkippedTonight, session.State,
+                session.StruckTonight, session.KrakenMarks.Count));
             foreach (long pirateId in result.contactedPirateIds)
             {
                 if (!contactedPirates.Contains(pirateId)) contactedPirates.Add(pirateId); // 앵무새 접선: 해적 방으로 간다
@@ -744,6 +756,14 @@ namespace WhoisntCitizen.Game
             }
         }
 
+        private void OnNightStruck()
+        {
+            if (controller != null)
+            {
+                controller.StrikeKraken();
+            }
+        }
+
         private void OnDaySkipped()
         {
             if (controller != null)
@@ -798,6 +818,7 @@ namespace WhoisntCitizen.Game
             }
             CloseDrawer();
             deadVoteNoticeShown = false;
+            voteBanNoticeDay = 0;
             ClearPendingVote();
             voteConfirmAnnounced = false;
             if (voteCardHand != null)
@@ -887,15 +908,17 @@ namespace WhoisntCitizen.Game
                 return;
             }
             long target = session.MyNightTarget;
-            if (target == 0)
+            bool struck = session.StruckTonight; // 크라켄 발동은 대상이 없다
+            if (target == 0 && !struck)
             {
                 return;
             }
             bool firstTonight = cutInVersion != session.State.phaseVersion;
             cutInVersion = session.State.phaseVersion;
             MyRoleDto me = session.Me;
-            nightRoom.PlayAbility(NightRoomRules.DesignIdFor(me.role), me.actionCode, me.roleName,
-                GameScreenText.AbilityCutInLine(me.actionCode, target, session.State), firstTonight);
+            string action = struck ? ActionCodes.KrakenStrike : me.actionCode;
+            nightRoom.PlayAbility(NightRoomRules.DesignIdFor(me.role), action, me.roleName,
+                GameScreenText.AbilityCutInLine(action, target, session.State), firstTonight);
         }
 
         // ================================================================ 결과 컷신
@@ -917,7 +940,10 @@ namespace WhoisntCitizen.Game
                 && state.phaseVersion != joinedPhaseVersion;
         }
 
-        /// <summary>밤 결과 컷신: 사망(희생자 수배서), 선의 보호(금빛 고리), 아무 일 없음(고요한 바다). 끝나면 낮 명패.</summary>
+        /// <summary>
+        /// 밤 결과 컷신: 사망(희생자 수배서), 선의 보호(금빛 고리), 아무 일 없음(고요한 바다). 끝나면 낮 명패.
+        /// 수배서는 한 사람만 그린다(내가 죽었으면 나, 아니면 습격 먼저·크라켄 다음). 여러 명이 죽었으면 나머지는 공지와 채팅 안내로 알린다.
+        /// </summary>
         private void PlayNightTransition(NightResultDto result)
         {
             if (!PlaysTransitions || !IsLiveResult(GamePhases.NightResult))
@@ -927,8 +953,10 @@ namespace WhoisntCitizen.Game
             var info = new DayTransitionInfo { Day = result.day, GameOver = currentPhase == GamePhases.Ended };
             if (result.HasKill)
             {
+                DeathDto first = result.Deaths.Find(d => d.playerId == MyId) ?? result.Deaths[0]; // 내가 죽었으면 나를
                 info.Kind = DayTransitionKind.Killed;
-                DescribeDead(info, result.killedPlayerId, result.killedNickname);
+                info.Kraken = first.cause == DeathCauses.Kraken;
+                DescribeDead(info, first.playerId, first.nickname);
             }
             else
             {
@@ -1023,13 +1051,25 @@ namespace WhoisntCitizen.Game
             voteCardHand.VoteConfirmed += OnCardVoteConfirmed;
         }
 
-        /// <summary>VOTE 페이즈이고 내가 투표할 수 있으면 카드패를 올린다. 이미 올라와 있으면 아무것도 하지 않는다.</summary>
+        /// <summary>
+        /// VOTE 페이즈이고 내가 투표할 수 있으면 카드패를 올린다. 이미 올라와 있으면 아무것도 하지 않는다.
+        /// 요리사에게 투표를 금지당했거나 사망했으면 올리지 않고 이유를 알린다.
+        /// </summary>
         private void TryShowVoteHand()
         {
             GameSession session = Session;
             if (voteCardHand == null || voteCardHand.IsShown || session == null || session.State == null || session.Me == null
                 || currentPhase != GamePhases.Vote)
             {
+                return;
+            }
+            if (session.VoteBannedToday)
+            {
+                if (voteBanNoticeDay != session.State.day)
+                {
+                    voteBanNoticeDay = session.State.day;
+                    AddSystem(ReportFormatter.VoteBannedMessage);
+                }
                 return;
             }
             if (!session.CanVote)

@@ -96,7 +96,7 @@ namespace WhoisntCitizen.GameUI
                 if (outcome != null) { Top(outcome.rectTransform, 112f, 64f, 32f); outcome.color = originalOutcomeColor; }
                 return;
             }
-            headerAccent = GameResultPalette.ForFaction(result.winner);
+            headerAccent = GameResultPalette.ForWinner(result.winner);
             headerWood.color = Color.Lerp(new Color(.015f, .025f, .04f), headerAccent, .12f);
             crest.color = rule.color = headerAccent;
             crestInset.color = headerWood.color;
@@ -113,7 +113,7 @@ namespace WhoisntCitizen.GameUI
                 outcome.rectTransform.anchorMin = new Vector2(.3f, 1f); outcome.rectTransform.anchorMax = new Vector2(.9f, 1f);
                 outcome.fontSizeMax = 29f;
             }
-            bool lost = me == null || me.faction != result.winner;
+            bool lost = me == null || !GameStateQueries.IsWinner(result, me.playerId, me.faction);
             outcomeBorder.color = lost ? GameResultPalette.Muted : headerAccent;
             if (outcome != null) outcome.color = outcomeBorder.color;
             int alive = 0;
@@ -131,7 +131,7 @@ namespace WhoisntCitizen.GameUI
         private void AddPlayer(PlayerResultDto player, MyRoleDto me, Func<long, ChibiCharacterSkin> skinOf)
         {
             bool mine = me != null && player.playerId == me.playerId;
-            Color accent = GameResultPalette.ForFaction(GameResultPalette.FactionForRole(player.role));
+            Color accent = GameResultPalette.ForFaction(GameResultPalette.FactionForPlayer(player));
             var rect = Rect("Player_" + player.playerId, grid); rows.Add(rect);
             var bg = Art("CardFill", rect, fill, Color.Lerp(new Color(.025f, .04f, .055f), accent, mine ? .23f : .13f));
             Stretch(bg.rectTransform, 0f, 0f);
@@ -161,7 +161,7 @@ namespace WhoisntCitizen.GameUI
             string roleName = string.IsNullOrEmpty(player.roleName) ? player.role : player.roleName;
             var role = Label("Role", rect, string.IsNullOrEmpty(roleName) ? "직업 미확인" : roleName, 23f, Color.Lerp(accent, Color.white, .45f));
             TextLine(role, 39f, 36f, 108f, 90f);
-            var faction = Label("Faction", rect, FactionName(player.role), 19f, accent);
+            var faction = Label("Faction", rect, FactionName(player), 19f, accent);
             TextLine(faction, 68f, 30f, 108f, 90f);
             var status = Label("Status", rect, player.alive ? "생존" : "사망", 20f,
                 player.alive ? new Color(.55f, .91f, .73f) : new Color(.69f, .71f, .74f));
@@ -206,9 +206,10 @@ namespace WhoisntCitizen.GameUI
             rows.Clear();
         }
 
-        private static string FactionName(string role)
+        private static string FactionName(PlayerResultDto player)
         {
-            switch (GameResultPalette.FactionForRole(role))
+            if (player.team == Teams.Siren) return "세이렌 팀"; // the siren and the seduced players (their roles stay)
+            switch (GameResultPalette.FactionForRole(player.role))
             {
                 case Factions.Crew: return "선원 진영";
                 case Factions.Pirate: return "해적 진영";

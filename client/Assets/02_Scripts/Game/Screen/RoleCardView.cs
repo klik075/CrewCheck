@@ -23,7 +23,7 @@ namespace WhoisntCitizen.Game
                 : me.alive;
 
             SetText(roleNameText, me.roleName);
-            SetText(factionText, ReportFormatter.FactionName(me.faction));
+            SetText(factionText, RoleInfoText.TeamName(me));
             SetText(abilityText, GameScreenText.AbilityLine(me));
             SetText(teammatesText, GameScreenText.NoRichText(ReportFormatter.TeammatesLine(state, me)));
             if (deadBadge != null)

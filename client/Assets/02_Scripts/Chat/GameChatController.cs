@@ -28,6 +28,7 @@ namespace WhoisntCitizen.Chat
     ///  - 내 화면 전용 안내(ChatNotice: 로그인, 방 입장, 연결 상태 등) → [안내] + Unity 콘솔 [Chat][안내]
     ///  - 사망자 채팅(type=DEAD, 서버가 사망자에게만 보내 줌) → 닉네임·내용 모두 회색
     ///  - 밤 채팅: 밤에는 해적만 입력할 수 있고(그 밖은 서버가 403 → 안내 문장 표시), 서버가 해적에게만 보내 줌 → 닉네임·내용 모두 주황색
+    ///  - 세이렌 팀 채팅: 밤에 살아 있는 세이렌도 입력할 수 있고(유혹당한 팀원은 읽기만), 서버가 세이렌 팀에게만 보내 줌 → 내용 분홍색
     ///  - 오류는 채팅용 문장으로 바꿔 표시하고 콘솔에는 원문도 남김. 401이면 다시 로그인
     ///  - SendSystemMessage(): 공지 전송 (에디터 창 Tools > Chat > System Message Console)
     ///
@@ -76,6 +77,8 @@ namespace WhoisntCitizen.Chat
         public Color deadColor = new Color(0.6f, 0.6f, 0.6f);
         [Tooltip("밤에 해적이 입력한 채팅(nightChat)의 내용 글자색. 닉네임은 일반 채팅과 같은 색(내 것/남의 것)을 씁니다")]
         public Color nightChatColor = new Color(1f, 0.6f, 0.2f);
+        [Tooltip("밤에 세이렌이 입력한 채팅(sirenChat, 세이렌 팀에게만 보임)의 내용 글자색. 닉네임은 일반 채팅과 같은 색을 씁니다")]
+        public Color sirenChatColor = new Color(0.95f, 0.55f, 0.85f);
 
         [Header("Console (Unity 콘솔 연동)")]
         public bool logSystemMessagesToConsole = true;
@@ -645,16 +648,19 @@ namespace WhoisntCitizen.Chat
                 else
                 {
                     bool mine = myId != null && m.userId == myId;
-                    // 밤에 해적이 입력한 채팅(서버가 해적에게만 보내 줌)은 내용만 주황색. 닉네임은 일반 채팅과 같은 규칙
-                    string body = m.nightChat
-                        ? "<color=#" + ColorUtility.ToHtmlStringRGB(nightChatColor) + ">" + NoParse(m.content) + "</color>"
+                    // 밤에 해적이 입력한 채팅(서버가 해적에게만 보내 줌)은 내용만 주황색, 세이렌이 입력한 채팅(세이렌 팀에게만)은 분홍색.
+                    // 닉네임은 일반 채팅과 같은 규칙
+                    bool night = m.nightChat || m.sirenChat;
+                    Color nightColor = m.sirenChat ? sirenChatColor : nightChatColor;
+                    string body = night
+                        ? "<color=#" + ColorUtility.ToHtmlStringRGB(nightColor) + ">" + NoParse(m.content) + "</color>"
                         : NoParse(m.content);
                     entry.Kind = ChatEntryKind.Player;
                     entry.Nickname = nickname;
                     entry.SenderId = ParseId(m.userId);
                     entry.Mine = mine;
-                    entry.Night = m.nightChat;
-                    if (m.nightChat) entry.TextColor = nightChatColor;
+                    entry.Night = night;
+                    if (night) entry.TextColor = nightColor;
                     entry.Rich = "<color=#" + (mine ? myHex : otherHex) + "><b>" + NoParse(nickname) + "</b></color>: " + body;
                 }
                 lines.Add(entry);

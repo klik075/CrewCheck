@@ -9,6 +9,107 @@ namespace WhoisntCitizen.Game.Tests
 {
     public class ReportFormatterTests
     {
+        // ---------------------------------------------------------------- 중립 직업
+
+        [Test]
+        public void 밤_요약은_크라켄에게_죽은_사람도_알린다()
+        {
+            // killedPlayerId는 해적의 습격만 담는다. 크라켄에게 죽은 사람은 deaths에만 있다.
+            var r = new NightResultDto { day = 2 };
+            r.deaths.Add(new DeathDto { playerId = 12, nickname = "영희", cause = DeathCauses.Kraken });
+            r.deaths.Add(new DeathDto { playerId = 13, nickname = "민수", cause = DeathCauses.Kraken });
+
+            Assert.IsTrue(r.HasKill);
+            Assert.AreEqual("영희님이 크라켄에게 끌려가 사망했습니다.\n민수님이 크라켄에게 끌려가 사망했습니다.", ReportFormatter.NightSummary(r));
+        }
+
+        [Test]
+        public void 밤_요약은_습격과_크라켄을_함께_알린다()
+        {
+            var r = new NightResultDto { day = 2, killedPlayerId = 12, killedNickname = "영희" };
+            r.deaths.Add(new DeathDto { playerId = 12, nickname = "영희", cause = DeathCauses.Attack });
+            r.deaths.Add(new DeathDto { playerId = 13, nickname = "민수", cause = DeathCauses.Kraken });
+
+            Assert.AreEqual("영희님이 밤사이 사망했습니다.\n민수님이 크라켄에게 끌려가 사망했습니다.", ReportFormatter.NightSummary(r));
+        }
+
+        [Test]
+        public void deaths가_없는_예전_응답이면_습격_사망자를_쓴다()
+        {
+            var r = new NightResultDto { day = 2, killedPlayerId = 12, killedNickname = "영희" };
+
+            Assert.AreEqual(1, r.Deaths.Count);
+            Assert.AreEqual(DeathCauses.Attack, r.Deaths[0].cause);
+            Assert.AreEqual("영희님이 밤사이 사망했습니다.", ReportFormatter.NightSummary(r));
+        }
+
+        [Test]
+        public void 세이렌_결과()
+        {
+            var success = new ReportDto { type = ReportTypes.SeduceSuccess, targetId = 12, targetNickname = "영희" };
+            var fail = new ReportDto { type = ReportTypes.SeduceFail, targetId = 13, targetNickname = "민수" };
+            var seduced = new ReportDto { type = ReportTypes.Seduced };
+            seduced.players.Add(new PlayerRefDto { playerId = 11, nickname = "철수" });
+
+            Assert.AreEqual("영희님을 유혹했습니다. 영희님은 이제 세이렌 팀입니다. 다음 밤은 쉬어야 합니다.", ReportFormatter.Report(success));
+            Assert.AreEqual("민수님을 유혹하지 못했습니다. 민수님은 유혹할 수 없는 사람입니다.", ReportFormatter.Report(fail));
+            Assert.AreEqual(ReportFormatter.SeducedMessage + " 세이렌 팀: 철수님", ReportFormatter.Report(seduced));
+        }
+
+        [Test]
+        public void 크라켄_요리사_결과()
+        {
+            Assert.AreEqual("영희님에게 표식을 남겼습니다.",
+                ReportFormatter.Report(new ReportDto { type = ReportTypes.KrakenMark, targetId = 12, targetNickname = "영희" }));
+            Assert.AreEqual(ReportFormatter.KrakenMarkedMessage, ReportFormatter.Report(new ReportDto { type = ReportTypes.KrakenMarked }));
+            Assert.AreEqual("영희님의 투표를 막았습니다. 영희님은 다음 투표에 참여할 수 없습니다.",
+                ReportFormatter.Report(new ReportDto { type = ReportTypes.VoteBan, targetId = 12, targetNickname = "영희" }));
+            Assert.AreEqual(ReportFormatter.VoteBannedMessage, ReportFormatter.Report(new ReportDto { type = ReportTypes.VoteBanned }));
+        }
+
+        [Test]
+        public void 모든_개인_결과에_문구가_있다()
+        {
+            foreach (FieldInfo f in typeof(ReportTypes).GetFields(BindingFlags.Public | BindingFlags.Static).Where(x => x.IsLiteral))
+            {
+                var report = new ReportDto { type = (string)f.GetRawConstantValue(), targetId = 12, targetNickname = "영희", faction = Factions.Crew };
+                Assert.IsFalse(string.IsNullOrEmpty(ReportFormatter.Report(report)), f.Name);
+            }
+        }
+
+        [Test]
+        public void 중립_승리_문구()
+        {
+            Assert.AreEqual("세이렌 팀 승리", ReportFormatter.WinnerLine(Winners.Siren));
+            Assert.AreEqual("크라켄 승리", ReportFormatter.WinnerLine(Winners.Kraken));
+            Assert.AreEqual("유령 선장 승리", ReportFormatter.WinnerLine(Winners.GhostCaptain));
+            Assert.AreEqual("인어 승리", ReportFormatter.WinnerLine(Winners.Mermaid));
+        }
+
+        [Test]
+        public void 동료_줄에_세이렌_팀과_크라켄_표식을_보여_준다()
+        {
+            var state = NightWithCorpse();
+            var seduced = Me(11, RoleCodes.CrewSailor, null, -1);
+            seduced.team = Teams.Siren;
+            seduced.sirenTeamIds.Add(13);
+            var kraken = Me(11, "NEUTRAL_KRAKEN", ActionCodes.KrakenMark, -1);
+            kraken.krakenMarkIds.AddRange(new long[] { 12, 14 }); // 14는 이미 죽었다
+
+            Assert.AreEqual("세이렌 팀: 민수님", ReportFormatter.TeammatesLine(state, seduced));
+            Assert.AreEqual("표식: 영희님", ReportFormatter.TeammatesLine(state, kraken));
+        }
+
+        [Test]
+        public void 결과_목록은_유혹당한_사람을_표시한다()
+        {
+            var result = new GameResultDto { ended = true, winner = Winners.Siren, endReason = EndReasons.Win };
+            result.players.Add(new PlayerResultDto { playerId = 11, nickname = "철수", role = RoleCodes.CrewDoctor, roleName = "선의", alive = true, team = Teams.Siren });
+            result.players.Add(new PlayerResultDto { playerId = 12, nickname = "영희", role = "NEUTRAL_SIREN", roleName = "세이렌", alive = true, team = Teams.Siren });
+
+            CollectionAssert.AreEqual(new[] { "철수님 · 선의(세이렌 팀) · 생존", "영희님 · 세이렌 · 생존" }, ReportFormatter.ResultLines(result));
+        }
+
         // ---------------------------------------------------------------- 밤 결과
 
         [Test]

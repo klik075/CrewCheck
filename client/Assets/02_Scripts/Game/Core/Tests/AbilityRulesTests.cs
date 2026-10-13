@@ -27,6 +27,10 @@ namespace WhoisntCitizen.Game.Tests
         [TestCase(ActionCodes.ReadCorpseRole, false, false, 2)]
         [TestCase(ActionCodes.SelectAttackTarget, true, false, -1)]
         [TestCase(ActionCodes.WatchAction, true, false, -1)]
+        [TestCase(ActionCodes.BanVote, true, false, -1)]
+        [TestCase(ActionCodes.Seduce, true, false, -1)]
+        [TestCase(ActionCodes.KrakenMark, true, false, -1)]
+        [TestCase(ActionCodes.KrakenStrike, false, false, -1)]
         public void 규칙은_서버_ActionCode와_같다(string code, bool livingTarget, bool selfAllowed, int maxUses)
         {
             ActionRule rule = AbilityRules.Find(code);
@@ -34,6 +38,71 @@ namespace WhoisntCitizen.Game.Tests
             Assert.AreEqual(livingTarget, rule.LivingTarget);
             Assert.AreEqual(selfAllowed, rule.SelfAllowed);
             Assert.AreEqual(maxUses, rule.MaxUses);
+            Assert.AreEqual(code != ActionCodes.KrakenStrike, rule.NeedsTarget); // 크라켄 발동만 대상이 없다
+        }
+
+        // ---------------------------------------------------------------- 중립 직업
+
+        [Test]
+        public void 세이렌은_밤에_유혹할_수_있다()
+        {
+            var me = Me(11, "NEUTRAL_SIREN", ActionCodes.Seduce, -1);
+
+            Assert.AreEqual(AbilityBlock.None, AbilityRules.CheckNightAbility(NightAllAlive(), me, false));
+            CollectionAssert.AreEqual(new long[] { 12, 13 }, AbilityRules.NightTargets(NightAllAlive(), me).Select(p => p.playerId));
+        }
+
+        [Test]
+        public void 세이렌은_유혹에_성공한_다음_밤에_쉰다()
+        {
+            var me = Me(11, "NEUTRAL_SIREN", ActionCodes.Seduce, -1);
+            me.abilityAvailable = false;
+
+            Assert.AreEqual(AbilityBlock.Resting, AbilityRules.CheckNightAbility(NightAllAlive(), me, false));
+        }
+
+        [Test]
+        public void 서버가_못_쓴다고_해도_더_정확한_이유를_먼저_알린다()
+        {
+            var drunk = Me(11, RoleCodes.CrewDrunk, ActionCodes.ReadCorpseRole, 2);
+            drunk.abilityAvailable = false; // 사망자가 없어서
+
+            Assert.AreEqual(AbilityBlock.NoCorpse, AbilityRules.CheckNightAbility(NightAllAlive(), drunk, false));
+        }
+
+        [Test]
+        public void 크라켄은_이미_표식을_남긴_사람에게_다시_남길_수_없다()
+        {
+            var me = Me(11, "NEUTRAL_KRAKEN", ActionCodes.KrakenMark, -1);
+            me.krakenMarkIds.Add(12);
+
+            CollectionAssert.AreEqual(new long[] { 13 }, AbilityRules.NightTargets(NightAllAlive(), me).Select(p => p.playerId));
+            Assert.IsFalse(AbilityRules.IsValidNightTarget(NightAllAlive(), me, 12));
+            Assert.IsTrue(AbilityRules.IsValidNightTarget(NightAllAlive(), me, 13));
+        }
+
+        [Test]
+        public void 크라켄은_표식을_남긴_생존자가_있어야_발동할_수_있다()
+        {
+            var me = Me(11, "NEUTRAL_KRAKEN", ActionCodes.KrakenMark, -1);
+            Assert.IsFalse(AbilityRules.CanStrike(NightAllAlive(), me, AbilityBlock.None));
+
+            me.krakenMarkIds.Add(14); // /me 이후에 죽었다 (state가 더 새롭다)
+            Assert.IsFalse(AbilityRules.CanStrike(NightWithCorpse(), me, AbilityBlock.None));
+
+            me.krakenMarkIds.Add(12);
+            CollectionAssert.AreEqual(new long[] { 12 }, AbilityRules.KrakenMarks(NightWithCorpse(), me).Select(p => p.playerId));
+            Assert.IsTrue(AbilityRules.CanStrike(NightWithCorpse(), me, AbilityBlock.None));
+            Assert.IsFalse(AbilityRules.CanStrike(NightWithCorpse(), me, AbilityBlock.Dead));
+        }
+
+        [Test]
+        public void 크라켄이_아니면_표식_목록이_비어_있다()
+        {
+            var me = Me(11, RoleCodes.PirateRaider, ActionCodes.SelectAttackTarget, -1);
+            me.krakenMarkIds.Add(12);
+
+            Assert.AreEqual(0, AbilityRules.KrakenMarks(NightAllAlive(), me).Count);
         }
 
         [Test]
@@ -44,6 +113,24 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         // ---------------------------------------------------------------- 밤 능력 사용 가능 여부
+
+        [Test]
+        public void 요리사의_투표_금지는_그_밤_결과와_같은_날에만_간다()
+        {
+            var vote = State(GamePhases.Vote, 12, P(11, "철수", true), P(12, "영희", true));
+            vote.day = 2;
+            var banned = new NightResultDto { day = 2 };
+            banned.reports.Add(new ReportDto { type = ReportTypes.VoteBanned });
+            var yesterday = new NightResultDto { day = 1 };
+            yesterday.reports.Add(new ReportDto { type = ReportTypes.VoteBanned });
+            var other = new NightResultDto { day = 2 };
+            other.reports.Add(new ReportDto { type = ReportTypes.VoteBan, targetId = 12 }); // 내가 요리사로 남을 막았다
+
+            Assert.IsTrue(AbilityRules.IsVoteBanned(vote, banned));
+            Assert.IsFalse(AbilityRules.IsVoteBanned(vote, yesterday));
+            Assert.IsFalse(AbilityRules.IsVoteBanned(vote, other));
+            Assert.IsFalse(AbilityRules.IsVoteBanned(vote, null));
+        }
 
         [Test]
         public void 해적은_밤에_능력을_쓸_수_있다()

@@ -569,7 +569,7 @@ namespace WhoisntCitizen.GameUI
 
         private void OnLiveMessage(ChatMessage message)
         {
-            if (message == null || message.IsSystem || message.IsDead || message.nightChat) return;
+            if (message == null || message.IsSystem || message.IsDead || message.nightChat || message.sirenChat) return;
             if (long.TryParse(message.userId, out long userId)) ShowSpeech(userId, message.content);
         }
 
