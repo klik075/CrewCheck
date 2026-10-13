@@ -1,0 +1,715 @@
+package com.WhoisntCitizen_server.lobby.service;
+
+import com.WhoisntCitizen_server.common.event.RoomNoticeEvent;
+import com.WhoisntCitizen_server.common.exception.ForbiddenException;
+import com.WhoisntCitizen_server.common.exception.RoomKickedException;
+import com.WhoisntCitizen_server.common.exception.RoomPasswordException;
+import com.WhoisntCitizen_server.game.dto.GameParticipant;
+import com.WhoisntCitizen_server.game.dto.RoleSetup;
+import com.WhoisntCitizen_server.game.dto.StartGameResponse;
+import com.WhoisntCitizen_server.game.service.GameService;
+import com.WhoisntCitizen_server.game.service.RoleAssigner;
+import com.WhoisntCitizen_server.lobby.domain.room.Room;
+import com.WhoisntCitizen_server.lobby.domain.room.RoomPlayer;
+import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
+import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
+import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
+import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
+import com.WhoisntCitizen_server.lobby.dto.UpdateRoomSettingsRequestDto;
+import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomGameFinishedEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomGameStartingEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomHostChangedEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomPlayerKickedEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomPlayerJoinedEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomPlayerLeftEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomSettingsChangedEvent;
+import com.WhoisntCitizen_server.lobby.lock.RoomLock;
+import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
+import com.WhoisntCitizen_server.user.entity.User;
+import com.WhoisntCitizen_server.user.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Supplier;
+import java.util.regex.Pattern;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class RoomService {
+
+    // 인원 규칙은 게임 쪽(RoleAssigner) 값을 그대로 사용한다. 규칙을 바꿀 때 한 곳만 고치면 된다.
+    private static final int MIN_PLAYERS = RoleAssigner.MIN_PLAYERS;
+    private static final int MAX_PLAYERS = RoleAssigner.MAX_PLAYERS;
+
+    // 비밀방 비밀번호 규칙: 숫자(0~9)만, 최소 4자리, 최대 길이 제한 없음.
+    // 아라비아 숫자(0~9)만 허용한다는 의도가 바로 보이도록 [0-9]로 적는다.
+    static final int MIN_PASSWORD_LENGTH = 4;
+    private static final Pattern PASSWORD_PATTERN = Pattern.compile("[0-9]{" + MIN_PASSWORD_LENGTH + ",}");
+
+    // 방 검색: 검색어 최대 길이 (공백을 뺀 글자 수). Unity 검색 입력칸의 Character Limit과 맞춘다.
+    static final int MAX_SEARCH_KEYWORD_LENGTH = 30;
+    // 공백을 찾는 정규식 패턴을 미리 만들어 상수로 저장
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+    /*
+     * \s: 공백 문자 하나를 뜻함. 스페이스, 탭(\t), 줄바꿈(\n) 등이 해당
+     * +: 앞의 것이 1개 이상 연속된다는 뜻
+     * -> 합치면 "연속된 공백 덩어리".
+     * 자바 문자열 안에서는 \ 자체를 \\로 써야 해서 "\\s+"가 됐다. 정규식 엔진이 실제로 받는 값은 \s+
+     *
+     * static final로 둔 이유
+     *  Pattern.compile은 정규식을 해석하는 작업이라 비용이 있다. 검색할 때마다 새로 컴파일하지 않도록 클래스가 처음 로드될 때 한 번만 만들어 두고 계속 재사용.
+     *  text.replaceAll("\\s+", "")로 써도 결과는 같지만 이렇게 쓰면 호출할 때마다 패턴을 새로 컴파일한다.
+     */
+
+    private final LobbyRoomRepository roomRepository;
+    // 닉네임이 필요한 방 생성·입장에서만 User(프로필)를 조회한다. (findUser 참고)
+    private final UserRepository userRepository;
+    private final RoomLock roomLock; // 방 단위 잠금. 잠금 순서: 방 잠금 → 게임 잠금
+    private final GameService gameService;
+    // 입장/퇴장 이벤트 발행 (채팅의 ChatLobbyEventListener가 받아 "OOO님이 입장했습니다." 시스템 메시지를 남긴다)
+    private final ApplicationEventPublisher eventPublisher;
+
+    /*
+     * ── 이 서비스가 받는 userId ──────────────────────────────────────────────
+     * 모든 public 메서드는 "요청한 사람"을 userId(User.id, 프로필 id)로 받는다.
+     * 토큰(JWT)의 sub는 memberId(로그인 계정 id)이므로, 컨트롤러가 CurrentUserResolver로
+     * memberId → userId 변환을 끝낸 뒤 넘겨준다.
+     *
+     * 왜 서비스가 memberId를 받지 않나
+     *   - "토큰 → 나" 변환을 CurrentUserResolver 한 곳으로 모은다. (게임·투표·밤 컨트롤러와 같은 방식)
+     *     변환 방식이 바뀌어도(캐시, 토큰에 userId 넣기 등) Resolver 하나만 고치면 된다.
+     *   - 로비는 계정(Member)을 몰라도 된다. 방 참가자·방장·추방 목록·게임 참가자가 모두 userId 기준이기 때문.
+     *   - 나가기·준비·위임·추방·게임 시작은 userId만 있으면 되므로 DB를 읽지 않는다.
+     *     (이전에는 이 요청들도 매번 memberId로 User를 조회했다)
+     *
+     * 닉네임이 필요한 곳
+     *   - 방 생성·입장: 방 참가자 목록과 입장 알림에 닉네임이 들어가므로 findUser(userId)로 User를 조회한다.
+     *   - 나가기: 퇴장 알림 닉네임은 DB가 아니라 방 참가자 정보(RoomPlayer)에서 꺼낸다. 입장할 때 저장해 둔 값이다.
+     */
+
+    // 방 생성
+    public RoomResponseDto createRoom(Long userId, CreateRoomRequestDto request) {
+        // 제목·인원 규칙은 방 설정 변경(updateSettings)과 같은 검사를 쓴다.
+        validateTitle(request.getTitle());
+        validateMaxPlayers(request.getMaxPlayers());
+
+        // 비밀방이면 비밀번호 형식 검사 (숫자만, 4자리 이상). 공개방이면 비밀번호는 보내도 무시한다.
+        boolean privateRoom = request.isPrivateRoom();
+        if (privateRoom) validatePassword(request.getPassword());
+
+        // 방장 닉네임이 필요하므로 User(프로필)를 조회한다.
+        User user = findUser(userId);
+
+        // 새로운 룸 생성 (공개방이면 Room 생성자가 password를 null로 저장한다)
+        Long roomId = roomRepository.generateRoomId();
+        Room room = new Room(roomId, request.getTitle(), user.getId(), request.getMaxPlayers(),
+                privateRoom, request.getPassword());
+
+        // 방을 만든 사람은 자동으로 해당 방에 입장 (비밀방이어도 방장은 비밀번호를 입력하지 않는다)
+        room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
+
+        roomRepository.save(room);
+        eventPublisher.publishEvent(new RoomPlayerJoinedEvent(roomId, user.getId(), user.getNickname()));
+        return RoomResponseDto.from(room);
+    }
+
+    /**
+     * 방 참가. 공개방/비밀방 모두 이 메서드 하나로 처리한다.
+     *
+     * 검사 순서 (방 잠금 안에서)
+     *   1. 게임 중         → 409
+     *   2. 이미 참가 중     → 409  (비밀번호보다 먼저 검사: 이미 들어와 있는 사람은 비밀번호 없이도 "이미 참가 중"을 받아야 Unity의 CheckAlreadyJoined가 대기실로 돌려보낼 수 있다)
+     *   2-1. 추방된 사람    → 403 KICKED_FROM_ROOM  (비밀번호보다 먼저: 추방된 사람에게 비밀번호를 다시 묻지 않는다)
+     *   3. 비밀번호 불일치   → 403 WRONG_ROOM_PASSWORD  (공개방은 matchesPassword가 항상 true라 통과)
+     *   4. 정원 초과       → 409  (비밀번호보다 뒤: 비밀번호를 모르는 사람에게 방 인원 상태를 먼저 알려주지 않는다)
+     *
+     * 틀린 횟수 제한은 없다. 평문 비교라 금방 끝나므로 잠금 안에서 해도 다른 요청을 오래 막지 않는다.
+     *
+     * @param password 비밀방 비밀번호. 공개방이면 null이어도 된다. (무시됨)
+     */
+    public RoomResponseDto joinRoom(Long roomId, Long userId, String password) {
+        // 참가자 목록에 넣을 닉네임이 필요하므로 User(프로필)를 조회한다.
+        // DB 조회는 잠금 밖에서 먼저 해서 잠금을 쥐고 있는 시간을 줄인다.
+        User user = findUser(userId);
+
+        // 읽기 → 검사 → 추가 → 저장을 같은 방 잠금 안에서 처리 (동시 입장 시 덮어쓰기 방지)
+        RoomResponseDto joined = roomLock.withLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            // 게임은 시작할 때 참가자 명단을 고정하므로, 진행 중인 방에는 새로 들어올 수 없다.
+            if (room.isInGame()) throw new IllegalStateException("게임이 진행 중인 방입니다.");
+            if (room.containsPlayer(user.getId())) throw new IllegalStateException("이미 참가 중입니다.");
+            if (room.isKicked(user.getId())) throw new RoomKickedException(); // 추방된 사람
+            if (!room.matchesPassword(password)) throw new RoomPasswordException();
+            if (room.isFull()) throw new IllegalStateException("방이 가득 찼습니다.");
+
+            room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
+
+            roomRepository.save(room);
+            return RoomResponseDto.from(room);
+        });
+
+        // 이벤트는 잠금 밖에서 발행한다. (채팅 저장 때문에 방 잠금을 오래 쥐지 않도록)
+        eventPublisher.publishEvent(new RoomPlayerJoinedEvent(roomId, user.getId(), user.getNickname()));
+        return joined;
+    }
+
+    /**
+     * 방 나가기. DB를 읽지 않는다.
+     * 퇴장 알림에 쓸 닉네임은 방 참가자 정보(RoomPlayer)에서 꺼낸다. (입장할 때 User에서 복사해 둔 값)
+     * 방 안에 보이던 이름과 퇴장 알림의 이름이 항상 같다는 장점도 있다.
+     */
+    public void leaveRoom(Long roomId, Long userId) {
+        // 잠금 안에서 결과(방이 남았는지 + 나간 사람 닉네임)를 만들어 잠금 밖으로 가지고 나온다.
+        LeaveResult result = roomLock.withLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            if (!room.containsPlayer(userId)) throw new IllegalStateException("해당 방에 참가 중이지 않습니다.");
+            // 게임 중에 나가면 방에서는 빠지지만 게임에는 살아 있는 플레이어로 남아 진행이 꼬인다.
+            // 그래서 게임이 끝난 뒤에만 나갈 수 있다. 게임 중 앱을 끄는 등 연결이 끊기면
+            // 게임 쪽(InactivePlayerMonitor)이 사망 처리한 뒤 removeDepartedPlayers로 방에서 뺀다.
+            if (room.isInGame()) throw new IllegalStateException("게임 중에는 방을 나갈 수 없습니다.");
+
+            // 빼기 전에 닉네임을 꺼내 둔다. (위에서 containsPlayer를 확인했으므로 null이 아니다)
+            String nickname = room.findPlayer(userId).getNickname();
+            room.removePlayer(userId); // 방장이면 다음 사람에게 위임
+
+            // 아무도 없으면 방 삭제
+            if (room.isEmpty()) {
+                roomRepository.delete(roomId);
+                return new LeaveResult(false, nickname);
+            }
+            roomRepository.save(room);
+            return new LeaveResult(true, nickname);
+        });
+
+        // 방이 삭제된 경우에는 볼 사람이 없으므로 퇴장 알림을 남기지 않고, 방 채팅을 지우도록 알린다.
+        if (result.roomRemains()) {
+            eventPublisher.publishEvent(new RoomPlayerLeftEvent(roomId, userId, result.nickname()));
+        } else {
+            eventPublisher.publishEvent(new RoomDeletedEvent(roomId));
+        }
+    }
+
+    /**
+     * 방장 위임 (방장만). PUT /api/v1/rooms/{roomId}/host  body {"userId": 5}
+     * 새 방장의 준비 상태는 해제되고, 이전 방장은 준비 안 한 일반 참가자가 된다.
+     */
+    public void transferHost(Long roomId, Long userId, Long targetUserId) {
+
+        String newHostNickname = roomLock.withLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            checkHostAction(room, userId, targetUserId);
+
+            room.changeHost(targetUserId);
+            roomRepository.save(room);
+            return room.findPlayer(targetUserId).getNickname();
+        });
+
+        // 시스템 메세지
+        eventPublisher.publishEvent(new RoomHostChangedEvent(roomId, targetUserId, newHostNickname));
+    }
+
+    /**
+     * 플레이어 추방 (방장만). DELETE /api/v1/rooms/{roomId}/players/{userId}
+     * 추방된 사람은 방이 사라질 때까지 이 방에 다시 들어올 수 없다. (joinRoom에서 403 KICKED_FROM_ROOM)
+     *
+     * 검사 순서는 transferHost와 같다. (방장 아님 403 → 게임 중 409 → 본인 400 → 방에 없음 409)
+     * 게임 중에는 추방할 수 없다: 게임 참가자 명단은 시작할 때 고정되기 때문 (leaveRoom과 같은 이유)
+     */
+    public void kickPlayer(Long roomId, Long userId, Long targetUserId) {
+
+        String kickedNickname = roomLock.withLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            checkHostAction(room, userId, targetUserId);
+
+            String nickname = room.findPlayer(targetUserId).getNickname(); // 아직 방에 있을때 닉네임 저장
+            room.kick(targetUserId); // 방에서 추방
+            roomRepository.save(room); // 방장은 남아 있으므로 방이 비는 일은 없다
+            return nickname;
+        });
+
+        eventPublisher.publishEvent(new RoomPlayerKickedEvent(roomId, targetUserId, kickedNickname));
+    }
+
+    /** 방장 전용 기능(위임·추방) 공통 검사. 반드시 방 잠금 안에서 호출한다.
+     *  1. 방장이 아님        → 403 FORBIDDEN
+     *  2. 게임 중            → 409
+     *  3. 대상이 본인         → 400
+     *  4. 대상이 방에 없음     → 409  (그사이 나갔거나 추방됨)
+     */
+    private static void checkHostAction(Room room, Long userId, Long targetUserId) {
+        if (!userId.equals(room.getHostUserId())) throw new ForbiddenException("방장만 플레이어를 추방할 수 있습니다.");
+        if (room.isInGame()) throw new IllegalStateException("게임 중에는 할 수 없습니다.");
+        if (userId.equals(targetUserId)) throw new IllegalArgumentException("자기 자신은 추방할 수 없습니다.");
+        if (!room.containsPlayer(targetUserId)) throw new IllegalStateException("해당 플레이어가 방에 없습니다.");
+    }
+
+    /**
+     * 방 설정 변경 (방장만). PUT /api/v1/rooms/{roomId}/settings
+     * body {"title":"초보만","maxPlayers":10,"privateRoom":true,"password":"0427"}
+     *
+     * 설정 전체를 받아 그대로 적용한다. 비밀번호만 예외로, 비밀방을 비밀방으로 유지하면서 비어 있게 보내면 기존 비밀번호를 유지한다.
+     * (클라이언트는 현재 비밀번호를 모르기 때문. 규칙 표는 UpdateRoomSettingsRequestDto 참고)
+     * 참가자의 준비 상태, 추방 목록, 이미 들어와 있는 참가자는 그대로 둔다.
+     *
+     * 검사 순서 (방 잠금 안에서)
+     *   1. 방 없음                    → 400
+     *   2. 방장이 아님                 → 403
+     *   3. 게임 중                    → 409
+     *   4. 제목 없음 / 인원 범위 밖      → 400  (createRoom과 같은 규칙)
+     *   5. 최대 인원 < 현재 인원         → 409
+     *   6. 비밀번호가 필요한데 형식이 틀림 → 400
+     *
+     * 입장(joinRoom)과 같은 방 잠금을 쓰므로, 설정이 바뀐 뒤 처리되는 입장 요청은 새 설정(비밀번호, 정원)으로 검사된다.
+     * 실제로 바뀐 것이 있을 때만 저장하고 RoomSettingsChangedEvent를 발행한다. (채팅에 "방 설정이 변경되었습니다")
+     */
+    public void updateSettings(Long roomId, Long userId, UpdateRoomSettingsRequestDto request) {
+
+        RoomSettingsChangedEvent changed = roomLock.withLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            if (!userId.equals(room.getHostUserId())) throw new ForbiddenException("방장만 방 설정을 바꿀 수 있습니다.");
+            if (room.isInGame()) throw new IllegalStateException("게임 중에는 방 설정을 바꿀 수 없습니다.");
+
+            validateTitle(request.getTitle());
+            if (request.getMaxPlayers() == null) throw new IllegalArgumentException("최대 인원(maxPlayers)을 보내주세요.");
+            if (request.getPrivateRoom() == null) throw new IllegalArgumentException("비밀방 여부(privateRoom)를 보내주세요.");
+            int maxPlayers = request.getMaxPlayers();
+            boolean privateRoom = request.getPrivateRoom();
+            validateMaxPlayers(maxPlayers);
+            if (maxPlayers < room.getPlayers().size()) {
+                throw new IllegalStateException("현재 인원(" + room.getPlayers().size() + "명)보다 적게 설정할 수 없습니다.");
+            }
+
+            // 새 비밀번호 결정: null이면 기존 비밀번호 유지 (비밀방 → 비밀방 + 빈 값일 때만)
+            String newPassword = null;
+            if (privateRoom) {
+                String input = request.getPassword();
+                boolean keepPassword = room.isPrivateRoom() && (input == null || input.isBlank());
+                if (!keepPassword) {
+                    validatePassword(input); // 공개방 → 비밀방이면 비어 있어도 여기서 400
+                    newPassword = input;
+                }
+            }
+
+            RoomSettingsChangedEvent.Settings before = settingsOf(room);
+            // 비밀방 유지 + 다른 비밀번호일 때만 "비밀번호 변경". 비교는 반드시 matchesPassword로 한다. (암호화 대비)
+            boolean passwordChanged = room.isPrivateRoom() && privateRoom
+                    && newPassword != null && !room.matchesPassword(newPassword);
+
+            room.changeSettings(request.getTitle(), maxPlayers, privateRoom, newPassword);
+            RoomSettingsChangedEvent.Settings after = settingsOf(room);
+
+            if (before.equals(after) && !passwordChanged) return null; // 바뀐 것 없음: 저장·알림 생략
+            roomRepository.save(room);
+            return new RoomSettingsChangedEvent(roomId, before, after, passwordChanged);
+        });
+
+        // 이벤트는 잠금 밖에서 발행한다. (채팅 저장 때문에 방 잠금을 오래 쥐지 않도록)
+        if (changed != null) eventPublisher.publishEvent(changed);
+    }
+
+    /** 이벤트에 담을 방 설정 값 (비밀번호 제외) */
+    private static RoomSettingsChangedEvent.Settings settingsOf(Room room) {
+        return new RoomSettingsChangedEvent.Settings(room.getTitle(), room.getMaxPlayers(), room.isPrivateRoom());
+    }
+
+    /**
+     * 직업 배정 설정 변경 (방장만). PUT /api/v1/rooms/{roomId}/role-setup
+     * body {"mode":"CUSTOM","customCompositions":[{"playerCount":6,"roles":[...]}],"randomCandidates":[...]}
+     *
+     * 설정 전체를 받아 검증·정리한 뒤 그대로 저장한다. 게임 시작(startGame) 때 이 설정으로 직업을 배정한다.
+     * 지금 고른 모드가 아니어도 보낸 값은 모두 검증하고 저장한다. (나중에 모드만 바꿔도 바로 쓸 수 있도록)
+     * 참가자의 준비 상태는 방 설정 변경(updateSettings)과 같이 그대로 둔다.
+     *
+     * 검사 순서 (방 잠금 안에서)
+     *   1. 방 없음       → 400
+     *   2. 방장이 아님    → 403
+     *   3. 게임 중       → 409
+     *   4. 설정이 규칙에 맞지 않음 → 400  (GameService.normalizeRoleSetup)
+     *
+     * 바뀐 것이 없으면 저장하지 않는다. 저장하면 저장소가 room.changed를 보내 참가자들이 방을 다시 조회한다.
+     */
+    public void updateRoleSetup(Long roomId, Long userId, RoleSetup request) {
+
+        roomLock.runWithLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            if (!userId.equals(room.getHostUserId())) throw new ForbiddenException("방장만 직업 구성을 바꿀 수 있습니다.");
+            if (room.isInGame()) throw new IllegalStateException("게임 중에는 직업 구성을 바꿀 수 없습니다.");
+
+            RoleSetup roleSetup = gameService.normalizeRoleSetup(request);
+            if (roleSetup.equals(room.getRoleSetup())) return; // 바뀐 것 없음: 저장 생략
+
+            room.changeRoleSetup(roleSetup);
+            roomRepository.save(room);
+        });
+    }
+
+    /**
+     * 게임 중 연결이 끊겨 게임에서 내보낸 플레이어를 방에서 뺀다. (게임 쪽 사망 처리는 이미 끝난 상태)
+     * RoomGameListener가 PlayersDepartedEvent를 받아 호출한다. 방장이면 다음 사람에게 위임된다.
+     * 게임 종료 이벤트와 처리 순서가 바뀌어 방이 이미 대기 상태로 돌아갔어도 그대로 뺀다.
+     * 그사이 같은 방에서 다른 게임이 시작됐으면 무시한다.
+     */
+    public void removeDepartedPlayers(Long roomId, String gameId, List<Long> userIds) {
+        boolean deleted = roomLock.withLock(roomId, () -> {
+            Room room = roomRepository.findById(roomId);
+            if (room == null) return false;
+            if (room.isInGame() && !Objects.equals(room.getGameId(), gameId)) return false;
+
+            userIds.forEach(room::removePlayer);
+            if (room.isEmpty()) {
+                roomRepository.delete(roomId);
+                return true;
+            }
+            roomRepository.save(room);
+            return false;
+        });
+        if (deleted) {
+            eventPublisher.publishEvent(new RoomDeletedEvent(roomId));
+        }
+    }
+
+    /**
+     * 대기실에서 연결이 끊긴 참가자를 방에서 뺀다. RoomPresenceService가 주기적으로 호출한다.
+     *
+     * idleUserIds는 방 잠금 안에서 한 번 부른다. 잠금을 기다리는 사이 들어온 방 조회까지 반영한 최신 기록으로 판단하기 위해서다.
+     * (잠금 밖에서 판단한 목록을 그대로 쓰면, 그 사이 다시 조회한 사람을 빼 버릴 수 있다)
+     * 서버 여러 대가 같은 방을 동시에 검사해도, 먼저 잠금을 잡은 서버가 빼고 나머지는 이미 빠진 상태를 보게 된다.
+     *
+     * 처리 규칙
+     *  - 게임 중인 방은 건드리지 않는다. (게임 중 연결 끊김은 InactivePlayerMonitor → removeDepartedPlayers)
+     *  - 방장이 빠지면 남은 사람 중 가장 먼저 들어온 사람에게 위임된다. (Room.removePlayer)
+     *  - 나가기(leaveRoom)와 같은 이벤트를 발행한다: 방이 남으면 사람마다 RoomPlayerLeftEvent, 비면 방 삭제 + RoomDeletedEvent
+     *
+     * @param idleUserIds 연결이 끊긴 것으로 볼 userId 목록을 돌려준다. 방 잠금 안에서 호출된다.
+     * @return 실제로 뺀 userId 목록 (없으면 빈 목록)
+     */
+    public List<Long> removeIdlePlayers(Long roomId, Supplier<Set<Long>> idleUserIds) {
+        // 잠금 안에서 뺀 사람(닉네임 포함)을 담아 잠금 밖으로 가지고 나온다. (이벤트는 잠금 밖에서 발행)
+        List<RoomPlayer> removed = new ArrayList<>();
+
+        boolean deleted = roomLock.withLock(roomId, () -> {
+            Room room = roomRepository.findById(roomId);
+            if (room == null || room.isInGame()) return false;
+
+            Set<Long> idle = idleUserIds.get();
+            // 반복 중에 목록을 바꾸지 않도록 복사본을 돈다
+            for (RoomPlayer player : List.copyOf(room.getPlayers())) {
+                if (idle.contains(player.getUserId())) {
+                    room.removePlayer(player.getUserId()); // 방장이면 다음 사람에게 위임
+                    removed.add(player);
+                }
+            }
+            if (removed.isEmpty()) return false; // 그 사이 다시 조회했거나 이미 나간 경우
+
+            if (room.isEmpty()) {
+                roomRepository.delete(roomId);
+                return true;
+            }
+            roomRepository.save(room);
+            return false;
+        });
+
+        // 이벤트는 잠금 밖에서 발행한다. (채팅 저장 때문에 방 잠금을 오래 쥐지 않도록. leaveRoom과 같은 규칙)
+        // 방이 삭제된 경우에는 볼 사람이 없으므로 퇴장 알림을 남기지 않고, 방 채팅·접속 기록을 지우도록 알린다.
+        if (deleted) {
+            eventPublisher.publishEvent(new RoomDeletedEvent(roomId));
+        } else {
+            removed.forEach(p -> eventPublisher.publishEvent(new RoomPlayerLeftEvent(roomId, p.getUserId(), p.getNickname())));
+        }
+        return removed.stream().map(RoomPlayer::getUserId).toList();
+    }
+
+    /**
+     * 주기 검사용 방 읽기. 방이 없으면 null.
+     * 게임이 사라진 IN_GAME 방(서버 재시작으로 메모리 게임이 사라짐, 종료 이벤트 처리 실패 등)이면 WAITING으로 복구해서 돌려준다.
+     * 방 조회(getRoom)도 같은 복구를 하지만, 아무도 조회하지 않는 방(모두 떠난 방)은 여기서만 복구된다.
+     * 복구된 방은 이후 RoomPresenceService가 대기실 규칙으로 정리한다.
+     *
+     * 게임 중인 방이면 게임이 살아 있는지 확인하느라 게임 잠금을 잡는다. (GameService.keepsRoomInGame)
+     * 게임이 바쁘면 LockTimeoutException이 날 수 있고, 호출하는 쪽에서 이번 검사를 건너뛴다.
+     */
+    public Room loadRoomRecovered(Long roomId) {
+        Room room = roomRepository.findById(roomId);
+        return room == null ? null : recoverInListIfOrphaned(room);
+    }
+
+    /**
+     * 취소된 게임의 방 삭제. 결과 조회 시간이 지나 게임을 메모리에서 지울 때
+     * RoomGameListener가 CancelledGameExpiredEvent를 받아 호출한다.
+     * 방이 이미 없거나 다른 게임으로 넘어간 경우는 무시한다.
+     *
+     * @return 삭제했으면 true
+     */
+    public boolean deleteRoomOfCancelledGame(Long roomId, String gameId) {
+        boolean deleted = roomLock.withLock(roomId, () -> {
+            Room room = roomRepository.findById(roomId);
+            if (room == null || !Objects.equals(room.getGameId(), gameId)) return false;
+            roomRepository.delete(roomId);
+            return true;
+        });
+        if (deleted) {
+            eventPublisher.publishEvent(new RoomDeletedEvent(roomId));
+        }
+        return deleted;
+    }
+
+    /**
+     * 준비 / 준비 취소 (방장 제외 참가자).
+     * 입장·나가기·게임 시작과 같은 방 잠금 안에서 처리한다.
+     * 실패: 409 게임 중 / 참가 중이 아님 / 방장, 400 존재하지 않는 방
+     */
+    public void setReady(Long roomId, Long userId, boolean ready) {
+
+        roomLock.runWithLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            if (room.isInGame()) throw new IllegalStateException("게임 중에는 준비 상태를 바꿀 수 없습니다.");
+            if (!room.containsPlayer(userId)) throw new IllegalStateException("해당 방에 참가 중이지 않습니다.");
+            if (userId.equals(room.getHostUserId())) throw new IllegalStateException("방장은 준비할 필요가 없습니다.");
+
+            room.changeReady(userId, ready);
+            roomRepository.save(room);
+        });
+    }
+
+    // 게임 시작 (방장만)
+    public StartGameResponse startGame(Long roomId, Long userId) {
+
+        // 입장/나가기와 같은 방 잠금 안에서 처리: 시작 도중 누가 들어오거나 나가지 못한다.
+        return roomLock.withLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            if (!userId.equals(room.getHostUserId())) throw new ForbiddenException("방장만 게임을 시작할 수 있습니다.");
+            if (room.isInGame()) throw new IllegalStateException("이미 게임이 진행 중인 방입니다.");
+            // 사용자에게 빠르게 알려주기 위한 검사. 최종 인원 검사는 게임 쪽(RoleAssigner)이 한 번 더 한다.
+            if (room.getPlayers().size() < MIN_PLAYERS) throw new IllegalStateException("게임을 시작하려면 최소 " + MIN_PLAYERS + "명이 필요합니다.");
+            if (!room.allGuestsReady()) throw new IllegalStateException("모든 참가자가 준비해야 게임을 시작할 수 있습니다.");
+
+            // Room 참가자(userId = User.id)를 그대로 게임 참가자(playerId)로 넘긴다.
+            List<GameParticipant> participants = room.getPlayers().stream()
+                    .map(p -> new GameParticipant(p.getUserId(), p.getNickname()))
+                    .toList();
+
+            // 채팅: 여기부터 게임 중 메시지. 게임 생성이 곧바로 안내(역할 배정, 첫 밤)를 남기므로 그보다 먼저 알린다.
+            eventPublisher.publishEvent(new RoomGameStartingEvent(roomId));
+
+            // 게임을 먼저 만들고 성공했을 때만 방 상태를 바꾼다. 게임 생성이 실패하면 방은 WAITING 그대로다.
+            // 방장이 저장한 직업 배정 설정으로 배정한다. (저장한 적 없으면 null → 추천 구성)
+            StartGameResponse started = gameService.startGame(String.valueOf(roomId), participants, room.getRoleSetup());
+
+            room.startGame(started.gameId());
+            roomRepository.save(room);
+            return started;
+        });
+    }
+
+    /**
+     * 게임 종료 후 방 복귀: IN_GAME → WAITING, gameId 제거, 준비 상태 초기화.
+     * RoomGameListener가 GameEndedEvent를 받아 호출한다.
+     *
+     * @return 실제로 복귀 처리했으면 true, 무시했으면 false
+     *         (방이 이미 없음 / 이미 WAITING / 다른 게임의 이벤트인 경우 무시)
+     */
+    public boolean returnToWaiting(Long roomId, String gameId) {
+        return roomLock.withLock(roomId, () -> {
+            Room room = roomRepository.findById(roomId);
+            if (room == null) return false;                          // 게임 중 방이 사라진 경우
+            if (!room.isInGame()) return false;                      // 이미 복귀됨
+            if (!Objects.equals(room.getGameId(), gameId)) return false; // 다른(이전) 게임의 늦은 이벤트
+
+            room.finishGame();
+            roomRepository.save(room);
+            // 채팅: 게임 중 메시지를 지운다. 호출한 쪽(RoomGameListener)이 이 다음에 "대기실로 돌아왔습니다" 안내를 남긴다.
+            eventPublisher.publishEvent(new RoomGameFinishedEvent(roomId));
+            return true;
+        });
+    }
+
+    // 방 단건 조회 (대기 화면 polling용)
+    public RoomDetailResponseDto getRoom(Long roomId) {
+        // 읽기만 하는 요청이라 평소에는 잠금 없이 조회한다. (여러 참가자가 1초마다 polling해도 서로 기다리지 않음)
+        // 서버 재시작 등으로 게임이 사라진 방일 때만 잠금을 잡고 WAITING으로 복구한다.
+        Room room = recoverInListIfOrphaned(findRoom(roomId));
+        if (room == null) throw new IllegalArgumentException("존재하지 않는 방입니다."); // 복구 중 방이 삭제된 경우
+        return RoomDetailResponseDto.from(room, gameService.defaultRoleSetup());
+    }
+
+    // 현재 룸 참가자 조회
+    public List<RoomPlayerResponseDto> getPlayers(Long roomId) {
+        return findRoom(roomId).getPlayers()
+                .stream()
+                .map(RoomPlayerResponseDto::from)
+                .toList();
+    }
+
+    // 현재 룸 조회 (전체)
+    public List<RoomResponseDto> getRooms() {
+        return getRooms(null);
+    }
+
+    /**
+     * 방 목록 조회 + 제목 검색. GET /api/v1/rooms?keyword=초보
+     *
+     * 검색 규칙
+     *   - keyword가 null/공백뿐이면 전체 목록 (기존 동작과 같음)
+     *   - 제목에 keyword가 포함되면 결과에 넣는다 (부분 일치)
+     *   - 대소문자 무시, 공백 무시: "초보 만"으로 검색해도 "초보만" 방이 나온다
+     *   - 비밀방도 포함한다 (목록에서도 제목은 원래 보인다)
+     *   - keyword가 MAX_SEARCH_KEYWORD_LENGTH자를 넘으면 400
+     *
+     * Redis에 제목 인덱스는 없다. 원래 목록 조회가 방 전체를 읽는 구조라 메모리에서 필터만 추가한다.
+     */
+    public List<RoomResponseDto> getRooms(String keyword) {
+        String normalizedKeyword = normalizeSearchText(keyword);
+        if (normalizedKeyword.length() > MAX_SEARCH_KEYWORD_LENGTH) {
+            throw new IllegalArgumentException("검색어는 " + MAX_SEARCH_KEYWORD_LENGTH + "자 이하로 입력해주세요.");
+        }
+
+        Set<String> roomIds = roomRepository.findAllRoomIds();
+
+        if (roomIds == null || roomIds.isEmpty()) return List.of();
+
+        return roomIds.stream()
+                .map(Long::valueOf) //String을 Long으로 바꿈
+                .map(roomRepository::findById)// 각 id를 room으로 바꿈 Stream<String>에서 -> Stream<Room>이 됨
+                .filter(Objects::nonNull)
+                // 제목 검색은 복구보다 먼저: 복구는 잠금을 잡을 수 있는데, 검색에서 빠질 방까지 복구할 필요는 없다 (복구해도 제목은 그대로)
+                .filter(room -> titleMatches(room, normalizedKeyword))
+                .map(this::recoverInListIfOrphaned) // 서버 재시작 등으로 게임이 사라진 방은 WAITING으로 복구해서 보여준다
+                .filter(Objects::nonNull)           // 복구 중 방이 삭제된 경우 제외
+                .map(RoomResponseDto::from)// Room -> RoomResponseDto 변환
+                .toList();
+    }
+
+    /** 빈 검색어("")는 모든 방과 일치한다. */
+    private static boolean titleMatches(Room room, String normalizedKeyword) {
+        if (normalizedKeyword.isEmpty()) return true;
+        return normalizeSearchText(room.getTitle()).contains(normalizedKeyword);
+    }
+
+    /** 검색 비교용 정규화: 모든 공백 제거 + 소문자. null이면 "". */
+    static String normalizeSearchText(String text) {
+        if (text == null) return "";
+        return WHITESPACE.matcher(text).replaceAll("") // 공백 덩어리를 전부 ""로 바꿈(==삭제) ex:" 고수 전용 " → "고수전용"
+                .toLowerCase(Locale.ROOT);
+        /*
+        인자 없는 toLowerCase()는 서버가 돌아가는 컴퓨터의 언어 설정을 기준으로 소문자를 만든다.
+        예를들어 터키어 설정인 서버에서는 검색어 "mafia"와 제목 "MAFIA"가 일치하지 않게 된다.
+        같은 코드인데 서버 환경에 따라 검색 결과가 달라지는 버그다.
+
+        Locale.ROOT : "특정 언어 규칙을 쓰지 말고 중립 규칙으로 변환해라"
+            서버가 어느 나라 설정으로 돌아가든 항상 같은 결과가 나온다.
+            한글은 대소문자가 없어서 영향을 받지 않지만,
+            화면에 보여 줄 문장이 아니라 비교·검색·키 생성처럼 프로그램 내부에서 쓰는 문자열을 대소문자 변환할 때는
+            Locale.ROOT를 붙이는 게 자바의 관례라고 한다.
+        */
+    }
+
+    /**
+     * IN_GAME인데 그 게임이 메모리에 없거나 이미 끝난 방을 WAITING으로 되돌린다.
+     * - 서버 재시작: 진행 중인 게임(메모리)은 사라지지만 방(Redis)은 IN_GAME으로 남는다.
+     * - 종료 이벤트 처리 실패: 게임은 끝났는데 방 복귀가 안 된 경우.
+     * 취소된 게임의 방은 곧 삭제되므로 게임이 메모리에 남아 있는 동안은 되돌리지 않는다. (GameService.keepsRoomInGame)
+     * 반드시 해당 방의 잠금(roomLock) 안에서 호출한다.
+     *
+     * @return 복구했으면 true
+     */
+    private boolean recoverIfOrphaned(Room room) {
+        if (!room.isInGame() || gameService.keepsRoomInGame(room.getGameId())) {
+            return false;
+        }
+        log.warn("방 {}: 진행 중인 게임({})을 찾을 수 없어 대기 상태로 복구", room.getId(), room.getGameId());
+        room.finishGame();
+        roomRepository.save(room);
+        eventPublisher.publishEvent(new RoomGameFinishedEvent(room.getId())); // 채팅: 게임 중 메시지 정리 (안내보다 먼저)
+        eventPublisher.publishEvent(RoomNoticeEvent.of(room.getId(), "진행 중이던 게임을 찾을 수 없어 대기실로 돌아왔습니다."));
+        return true;
+    }
+
+    /** 조회용(방 목록, 방 단건): 복구가 필요한 방만 잠금을 잡고 다시 읽어서 복구한다. */
+    private Room recoverInListIfOrphaned(Room room) {
+        if (!room.isInGame() || gameService.keepsRoomInGame(room.getGameId())) {
+            return room; // 대부분의 방은 잠금 없이 그대로 반환
+        }
+        return roomLock.withLock(room.getId(), () -> {
+            Room latest = roomRepository.findById(room.getId()); // 잠금 안에서 최신 상태로 다시 확인
+            if (latest != null) {
+                recoverIfOrphaned(latest);
+            }
+            return latest;
+        });
+    }
+
+    /**
+     * 비밀방 비밀번호 형식 검사: 숫자만, 최소 4자리. 실패하면 400 BAD_REQUEST.
+     * Unity CreateRoomPopup도 같은 규칙으로 먼저 검사하지만, 최종 검증은 서버가 한다.
+     */
+    private static void validatePassword(String password) {
+        if (password == null || !PASSWORD_PATTERN.matcher(password).matches()) {
+            throw new IllegalArgumentException("비밀번호는 숫자 " + MIN_PASSWORD_LENGTH + "자리 이상이어야 합니다.");
+        }
+    }
+
+    /** 방 제목 검사 (방 생성·설정 변경 공통). 비어 있으면 400. */
+    private static void validateTitle(String title) {
+        if (title == null || title.isBlank()) {
+            throw new IllegalArgumentException("방 제목을 입력해주세요.");
+        }
+    }
+
+    /** 최대 인원 범위 검사 (방 생성·설정 변경 공통). MIN_PLAYERS~MAX_PLAYERS 밖이면 400. */
+    private static void validateMaxPlayers(int maxPlayers) {
+        if (maxPlayers < MIN_PLAYERS || maxPlayers > MAX_PLAYERS) {
+            throw new IllegalArgumentException("최대 인원은 " + MIN_PLAYERS + "~" + MAX_PLAYERS + "명이어야 합니다.");
+        }
+    }
+
+    private Room findRoom(Long roomId) {
+        Room room = roomRepository.findById(roomId);
+        if (room == null) throw new IllegalArgumentException("존재하지 않는 방입니다.");
+        return room;
+    }
+
+    /**
+     * userId(User.id)로 프로필을 찾는다. 닉네임이 필요한 방 생성·입장에서만 쓴다.
+     * 컨트롤러의 CurrentUserResolver가 이미 같은 유저를 찾았으므로 보통은 항상 있다.
+     * 그 사이 프로필이 지워진 경우 등을 대비해 없으면 400(IllegalArgumentException)으로 처리한다.
+     */
+    private User findUser(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
+    }
+
+    /**
+     * leaveRoom에서 방 잠금 안의 결과를 잠금 밖으로 가지고 나오기 위한 값.
+     * 이벤트(퇴장 알림/방 삭제)는 채팅 저장 때문에 잠금 밖에서 발행하므로, 필요한 값만 담아 나온다.
+     *
+     * @param roomRemains 나간 뒤에도 방이 남아 있으면 true, 마지막 사람이 나가 방이 삭제됐으면 false
+     * @param nickname    나간 사람의 닉네임 (퇴장 알림용)
+     */
+    private record LeaveResult(boolean roomRemains, String nickname) {
+    }
+}
