@@ -10,7 +10,7 @@
 | --- | --- |
 | 상단 HUD (페이즈, 남은 시간, 설정·지도 버튼) | 위에서 0–236 |
 | 무대 (낮 원탁, 밤 방) | 위에서 240–974 |
-| 공지 두루마리 ("공지" 패 + 두 줄) | 위에서 256–432, 무대 윗부분 위에 잠깐(3–6초) 떴다가 사라짐 |
+| 공지 상자 (왼쪽 "공지" 패 + 1–3줄) | 녹색 단순 사각형. 무대 왼쪽 위, 상단 UI 바로 아래(GameScene 246, GameScene2 408, GameScene3은 Play 때 [내 역할] 칩 바로 아래, GameScene4 392)에 잠깐(3–6초) 떴다가 사라짐. 글 길이에 맞춰 폭 300–1048 |
 | 채팅 창 (금테 하나: 탭·필터 / 채팅 기록 / 입력 바) | 위에서 978 ~ 아래에서 250 (화면이 길면 채팅 기록이 늘어남) |
 | 입력 바 (하단 시트의 TabBar, 채팅 창 맨 아래 줄) | 아래에서 252–392 |
 | 내 역할 패널 | 아래에서 0–252 |
@@ -86,7 +86,8 @@
   `GameHudChat`이 캔버스에 붙어 참조를 기억합니다) 위치·크기·색을 Scene 뷰에서 고치면 그대로 나옵니다.
   - 코드가 계속 만드는 것: 원탁·캐릭터·밤 방, 명단 안의 사람 칸(명단 칸 폭에 맞춰 나눔), 내 역할 칩의 초상(초상 칸 크기에 맞춤),
     채팅 줄, 투표 카드, 컷신, 팝업. 행동 줄의 글자와 버튼 표시도 Play 때 바뀝니다(굽기 직후의 글자는 배치용 견본).
-  - 공지(Notice)는 꺼진 채로 구워집니다. 켜서 자리를 고쳐도 Play 때 다시 끄고, 그 자리에서 떨어지듯 나타납니다.
+  - 공지 상자(NoticeBubble)는 꺼진 채로 구워지고, Play 때 글 길이에 맞춰 크기를 정해 [내 역할] 칩 바로 아래에 놓습니다.
+    공지 상자 없이 예전에 구운 씬은 Play 때 코드가 만들고, 남아 있는 두루마리(Notice)는 끕니다.
   - 하단 시트가 채팅 기록을 밀어 올리지 않게 GameBottomSheet의 `pushTargets`를 비웁니다. ChatLogPanel·GameBottomSheet를 고친 것은 그
     프리팹 인스턴스의 오버라이드로 씬에 남습니다.
   - 둥근 사각형·원 그림은 에셋입니다(`Resources/GameHud/HudRounded*.png`, `HudCircle.png`, `Tools/GameHudArt/MakeHudShapes.ps1`).
@@ -131,3 +132,13 @@
 
 한글 줄바꿈: `TMP Settings`의 `Use Modern Hangul Line Breaking Rules`를 켜 두어, 한글이 글자 중간이 아니라 띄어쓰기에서
 줄을 바꿉니다(프로젝트 전체 TextMeshPro에 적용).
+
+## 공지: 녹색 사각 공지 상자 (두루마리 대체)
+
+- 공개 안내(`GameScreen.ShowNotice` → `GameHudLayout.ShowNotice`)는 무대 왼쪽 위의 녹색 사각형 상자에 나옵니다.
+  왼쪽에 "공지" 패, 그 오른쪽에 1–3줄. 왼쪽 위 모서리에서 살짝 커지며 나타나고(0.25초), 3–6초 머문 뒤 조금 줄며 사라집니다.
+- 상자는 예전 두루마리 자리(채팅 기록 바로 위 순서)라 원탁과 밤 방 위에 뜹니다. 그림 없이 코드로 그립니다(Image 색 + Outline).
+- 회의 결과 보이스파이프는 뺐습니다. 보이스파이프와 그 말풍선 코드(`BuildVoicePipe`, `PlaceVoicePipeUnder` 등)는 `GameHudLayout`에
+  `[보이스파이프 제거 - 주석 처리]`로, 예전 두루마리 코드는 `[두루마리 공지 - 주석 처리]`로 남아 있습니다.
+- 지금 쓰지 않는 그림: `Resources/GameHud/VoicePipe.png`, `NoticeBubble.png`, `NoticeBubbleTail.png`(Resources 폴더라 빌드에 들어감),
+  만든 스크립트 `Tools/GameHudArt/make_voice_pipe.py`, `make_notice_bubble.py`. 주석을 되살릴 일이 없으면 지워도 됩니다.
