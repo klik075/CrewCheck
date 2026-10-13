@@ -37,6 +37,7 @@ ProfilerCaptures/
 *.csproj
 *.unityproj
 *.sln
+*.slnx
 *.suo
 *.tmp
 *.user
@@ -59,3 +60,7 @@ ProfilerCaptures/
 # Windows
 Thumbs.db
 Desktop.ini
+Assets/vFolders
+Assets/vFolders.meta
+Assets/vHierarchy
+Assets/vHierarchy.meta

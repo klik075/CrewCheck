@@ -1,0 +1,272 @@
+using System;
+using UnityEngine;
+using WhoisntCitizen.Lobby;
+using WhoisntCitizen.Network;
+using WhoisntCitizen.Network.Realtime;
+
+namespace WhoisntCitizen.Game
+{
+    /// <summary>
+    /// Game 씬의 게임 진행 담당 MonoBehaviour. 흐름은 GameSession(Core)이 하고, 여기서는 Unity 수명주기와 서버 선택만 맡는다.
+    /// - 실제 서버: Room 씬(대기실)에서 받은 RoomSession.GameId로 WaitingRoomController가 BeginGame(gameId)를 부른다.
+    /// - 가짜 서버(useFakeServer): 로그인·방 없이 BeginFakeGame()으로 바로 시작한다(Play만 누르면 된다).
+    /// - UI(G 단계)는 IGameView를 구현해 gameView에 넣고, 버튼은 SubmitNightAction·SkipNightAction·SkipDay·Vote를 부른다.
+    ///   gameView가 비어 있으면 같은 오브젝트·자식에서 IGameView를 찾고, 그래도 없으면 Console 로그(LogGameView)로 대신한다.
+    /// - 실시간 신호(실제 서버 게임만): 시작하면 RealtimeClient에 방을 알리고(EnterRoom),
+    ///   game.changed·Resynced가 오면 바로 GET(RequestPollNow), 신호를 받는 동안은 폴링을 15초 안전망으로 늦춘다.
+    ///   끊기면 pollIntervalSeconds(1초)로 돌아가므로 신호가 없어도 지금처럼 진행된다.
+    /// </summary>
+    public sealed class GameController : MonoBehaviour
+    {
+        [Header("화면 (IGameView를 구현한 컴포넌트)")]
+        [SerializeField] private MonoBehaviour gameView;
+        [SerializeField] private float pollIntervalSeconds = 1f;
+
+        [Header("개발용 가짜 서버")]
+        [SerializeField] private bool useFakeServer;
+        [SerializeField] private string fakeMyRole = RoleCodes.CrewCaptain;
+        [SerializeField] private bool fakeBotsAct = true;
+        [Tooltip("봇이 대상·투표를 고르는 난수 씨앗. 같은 값이면 매 판 같은 결과가 나온다. -1이면 판마다 바뀐다.")]
+        [SerializeField] private int fakeSeed = 42;
+        [Tooltip("⋮ 메뉴 \"가짜 서버: 연결 끊김\"으로 내보낼 플레이어 (102 해적 ~ 108 선원)")]
+        [SerializeField] private long fakeDisconnectPlayerId = 104;
+
+        private IGameView view;
+        private FakeGameApi fakeApi;
+        private bool closedRaised;
+        private RealtimeClient realtime;    // 실제 서버 게임에서 신호를 받는 동안만
+        private long realtimeRoomId;
+
+        /// <summary>진행 중인 게임. 대기실에 있으면 null.</summary>
+        public GameSession Session { get; private set; }
+
+        /// <summary>
+        /// 가짜 서버 게임인지. 게임이 진행 중이면 실제로 시작한 쪽(BeginGame / BeginFakeGame)을 따르고,
+        /// 게임 전에는 인스펙터 설정(useFakeServer)을 돌려준다.
+        /// (Room 씬에서 들어온 실제 게임이면 useFakeServer가 켜져 있어도 false → GameScreen이 공개 안내를 중복으로 남기지 않음)
+        /// </summary>
+        public bool UsesFakeServer
+        {
+            get { return Session != null ? fakeApi != null : useFakeServer; }
+        }
+
+        /// <summary>지금 진행 중인 게임이 가짜 서버 게임인지. Room 씬에서 넘어온 실제 게임이면 useFakeServer가 켜져 있어도 false.</summary>
+        public bool IsFakeGame
+        {
+            get { return fakeApi != null; }
+        }
+
+        /// <summary>서버에서 게임이 지워져(404) 닫혔다. WaitingRoomController가 받아서 대기실로 돌아간다.</summary>
+        public event Action GameClosed;
+
+        private void Awake()
+        {
+            view = gameView as IGameView;
+            if (gameView != null && view == null)
+            {
+                Debug.LogError("[Game] gameView에 넣은 컴포넌트가 IGameView를 구현하지 않습니다: " + gameView.GetType().Name);
+            }
+            if (view == null)
+            {
+                view = GetComponentInChildren<IGameView>(true);
+            }
+            if (view == null)
+            {
+                view = new LogGameView();
+            }
+        }
+
+        private void Update()
+        {
+            if (Session == null)
+            {
+                return;
+            }
+            Session.Tick();
+            if (Session.IsClosed && !closedRaised)
+            {
+                closedRaised = true;
+                if (GameClosed != null)
+                {
+                    GameClosed();
+                }
+            }
+        }
+
+        private void OnDestroy()
+        {
+            EndGame();
+        }
+
+        // ================================================================ 시작 · 종료
+
+        /// <summary>실제 서버의 게임을 시작한다 (대기실에서 방이 IN_GAME이 되면).</summary>
+        public void BeginGame(string gameId)
+        {
+            EndGame();
+            Session = new GameSession(new RealGameApi(), gameId, view, Clock, pollIntervalSeconds);
+            AttachRealtime(RoomSession.RoomId);
+        }
+
+        /// <summary>가짜 서버로 한 판을 시작한다 (개발용).</summary>
+        public void BeginFakeGame()
+        {
+            EndGame();
+            int seed = fakeSeed >= 0 ? fakeSeed : Environment.TickCount & int.MaxValue;
+            fakeApi = new FakeGameApi(new FakeGameOptions { MyRole = fakeMyRole, BotsAct = fakeBotsAct, Seed = seed }, Clock);
+            Session = new GameSession(fakeApi, FakeGameApi.FakeGameId, view, Clock, pollIntervalSeconds);
+        }
+
+        /// <summary>진행 중인 게임을 닫는다. 늦게 온 응답은 무시된다.</summary>
+        public void EndGame()
+        {
+            DetachRealtime();
+            if (Session != null)
+            {
+                Session.Close();
+            }
+            Session = null;
+            fakeApi = null;
+            closedRaised = false;
+        }
+
+        // ================================================================ 버튼에서 부르는 입력
+
+        public bool SubmitNightAction(long targetId)
+        {
+            return Session != null && Session.SubmitNightAction(targetId);
+        }
+
+        public bool SkipNightAction()
+        {
+            return Session != null && Session.SkipNightAction();
+        }
+
+        public bool SkipDay()
+        {
+            return Session != null && Session.SkipDay();
+        }
+
+        public bool Vote(long targetId)
+        {
+            return Session != null && Session.Vote(targetId);
+        }
+
+        /// <summary>투표. targetId 0 = 기권(표를 거둔다), confirm = 투표 완료(지금 상태로 고정). 보냈으면 true.</summary>
+        public bool Vote(long targetId, bool confirm)
+        {
+            return Session != null && Session.Vote(targetId, confirm);
+        }
+
+        /// <summary>개발용: 가짜 서버의 남은 시간을 건너뛴다. 인스펙터 ⋮ 메뉴에서도 부를 수 있다.</summary>
+        [ContextMenu("가짜 서버: 다음 페이즈로")]
+        public void SkipFakePhase()
+        {
+            if (fakeApi != null)
+            {
+                fakeApi.SkipToNextPhase();
+            }
+        }
+
+        /// <summary>개발용: fakeDisconnectPlayerId 플레이어의 연결이 끊긴 것처럼 처리한다 (서버의 60초 미접속 사망 처리).</summary>
+        [ContextMenu("가짜 서버: 연결 끊김")]
+        public void DisconnectFakePlayer()
+        {
+            if (fakeApi != null)
+            {
+                fakeApi.DisconnectPlayer(fakeDisconnectPlayerId);
+            }
+        }
+
+        /// <summary>개발용: 서버가 게임을 취소한 것처럼 끝낸다 (취소 결과 화면·로비 이동 확인용).</summary>
+        [ContextMenu("가짜 서버: 게임 취소")]
+        public void CancelFakeGame()
+        {
+            if (fakeApi != null)
+            {
+                fakeApi.CancelGame(EndReasons.CancelledNoDeaths);
+            }
+        }
+
+        // ================================================================ 실시간 신호
+
+        /// <summary>
+        /// 이 방의 신호를 받기 시작한다. 방은 Room 씬에서 이미 구독했을 수 있다 — 같은 방이면 EnterRoom은 아무것도 보내지 않는다.
+        /// 연결은 로그인할 때 RealtimeSession이 시작한다. 여기서는 방만 알린다.
+        /// </summary>
+        private void AttachRealtime(long roomId)
+        {
+            if (roomId <= 0)
+            {
+                Debug.LogWarning("[Game] 방 번호가 없어 실시간 신호 없이 폴링으로만 진행합니다.");
+                return;
+            }
+
+            realtime = RealtimeClient.Instance;
+            realtimeRoomId = roomId;
+            realtime.GameChanged += OnRealtimeGameChanged;
+            realtime.Resynced += OnRealtimeResynced;
+            realtime.StateChanged += OnRealtimeStateChanged;
+
+            realtime.EnterRoom(roomId);
+            ApplyPollInterval();
+        }
+
+        /// <summary>
+        /// 신호 받기를 그만둔다. 방 구독은 풀지 않는다 — 게임이 끝나면 같은 방의 Room 씬으로 돌아가기 때문이다.
+        /// (방을 나가는 경우의 LeaveRoom은 방 화면이 맡는다)
+        /// </summary>
+        private void DetachRealtime()
+        {
+            // 씬을 정리하는 중에 클라이언트를 새로 만들지 않도록 이미 만든 것만 쓴다.
+            RealtimeClient rt = realtime != null ? RealtimeClient.ExistingInstance : null;
+            if (rt != null)
+            {
+                rt.GameChanged -= OnRealtimeGameChanged;
+                rt.Resynced -= OnRealtimeResynced;
+                rt.StateChanged -= OnRealtimeStateChanged;
+            }
+            realtime = null;
+            realtimeRoomId = 0;
+        }
+
+        /// <summary>게임 상태가 바뀌었다는 신호 → 기다리지 않고 바로 GET. 다른 게임의 신호(이전 판 등)는 무시한다.</summary>
+        private void OnRealtimeGameChanged(string gameId, long phaseVersion)
+        {
+            if (Session != null && gameId == Session.GameId)
+            {
+                Session.RequestPollNow();
+            }
+        }
+
+        /// <summary>구독이 (다시) 확인됐다 → 구독 전·끊긴 동안 놓친 변경을 메우려고 한 번 GET.</summary>
+        private void OnRealtimeResynced(long roomId)
+        {
+            if (Session != null && roomId == realtimeRoomId)
+            {
+                Session.RequestPollNow();
+            }
+        }
+
+        private void OnRealtimeStateChanged(RealtimeState previous, RealtimeState next)
+        {
+            ApplyPollInterval();
+        }
+
+        /// <summary>이 방의 신호를 받는 중이면 15초(안전망), 아니면 원래 간격(pollIntervalSeconds).</summary>
+        private void ApplyPollInterval()
+        {
+            if (Session == null)
+            {
+                return;
+            }
+            bool signals = realtime != null && realtime.ReceivesSignalsFor(realtimeRoomId);
+            Session.SetPollInterval(RealtimePolling.IntervalSeconds(signals, pollIntervalSeconds));
+        }
+
+        private static double Clock()
+        {
+            return Time.realtimeSinceStartupAsDouble;
+        }
+    }
+}
