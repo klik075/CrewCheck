@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.lobby.controller;
 
+import com.WhoisntCitizen_server.game.dto.RoleSetup;
 import com.WhoisntCitizen_server.game.dto.StartGameResponse;
 import com.WhoisntCitizen_server.lobby.dto.CreateRoomRequestDto;
 import com.WhoisntCitizen_server.lobby.dto.JoinRoomRequestDto;
@@ -158,6 +159,26 @@ public class RoomController {
         if (request == null) throw new IllegalArgumentException("변경할 방 설정을 보내주세요.");
 
         roomService.updateSettings(roomId, currentUser.userId(jwt), request);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 직업 배정 설정 변경 (방장만). 성공 시 204.
+     * body: {"mode":"CUSTOM","customCompositions":[{"playerCount":6,"roles":["PIRATE_RAIDER", ...]}],"randomCandidates":["PIRATE_PARROT", ...]}
+     * 설정 전체를 보낸다. 저장한 설정은 방 단건 조회(GET /{roomId})의 roleSetup으로 보이고, 게임 시작 때 이 설정으로 배정한다.
+     * 선택지(직업 목록, 인원수별 추천 구성)는 GET /api/v1/role-setup/options.
+     * 실패: 403 방장 아님, 409 게임 중,
+     *       400 body 없음 / mode 없음·잘못된 값 / 없는 직업 / 인원수 범위(4~12) 밖 / 커스텀 구성 규칙 위반 / 존재하지 않는 방
+     */
+    @PutMapping("/{roomId}/role-setup")
+    public ResponseEntity<Void> updateRoleSetup(
+            @PathVariable Long roomId,
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody(required = false) RoleSetup request
+    ) {
+        if (request == null) throw new IllegalArgumentException("직업 배정 설정을 보내주세요.");
+
+        roomService.updateRoleSetup(roomId, currentUser.userId(jwt), request);
         return ResponseEntity.noContent().build();
     }
 

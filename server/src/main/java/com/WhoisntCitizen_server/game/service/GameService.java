@@ -62,7 +62,6 @@ public class GameService {
 
     /**
      * 1. 게임 시작 + 2. 역할 배정 → 첫 밤 진입 (서버 내부용). 추천 구성으로 배정한다.
-     * 로비의 방 시작 처리(RoomService)가 Room의 참가자 목록으로 호출한다.
      * 인원 수(4~12명)는 RoleAssigner가 검사한다.
      */
     public StartGameResponse startGame(String roomId, List<GameParticipant> participants) {
@@ -71,12 +70,25 @@ public class GameService {
 
     /**
      * 1. 게임 시작 + 2. 역할 배정 → 첫 밤 진입 (서버 내부용). 방의 직업 배정 설정으로 배정한다.
-     * 로비가 방에 RoleSetup을 저장하게 되면 위 메서드 대신 이것을 호출한다. roleSetup이 null이면 추천 구성.
-     * 설정은 방장이 저장할 때 RoleAssigner.normalize로 검증된 값이어야 한다. 게임 시작 때 다시 확인해서
+     * 로비의 방 시작 처리(RoomService)가 Room의 참가자 목록과 저장된 설정으로 호출한다. roleSetup이 null이면 추천 구성.
+     * 설정은 방장이 저장할 때 normalizeRoleSetup으로 검증된 값이어야 한다. 게임 시작 때 다시 확인해서
      * 지금 규칙에 맞지 않으면(서버 재시작 후 직업이 빠진 경우 등) GameRuleException(409)이 난다.
      */
     public StartGameResponse startGame(String roomId, List<GameParticipant> participants, RoleSetup roleSetup) {
         return start(roomId, participants, roleSetup, true);
+    }
+
+    /**
+     * 방장이 보낸 직업 배정 설정을 검증하고 방에 저장할 형태로 정리한다. (로비의 PUT /rooms/{roomId}/role-setup)
+     * 규칙에 맞지 않으면 IllegalArgumentException(400). 규칙은 RoleAssigner.normalize 참고.
+     */
+    public RoleSetup normalizeRoleSetup(RoleSetup setup) {
+        return roleAssigner.normalize(setup);
+    }
+
+    /** 설정을 저장한 적 없는 방의 직업 배정 설정: 추천 구성, 랜덤 후보는 특수 직업 전부. */
+    public RoleSetup defaultRoleSetup() {
+        return roleAssigner.defaultSetup();
     }
 
     private StartGameResponse start(String roomId, List<GameParticipant> participants, RoleSetup roleSetup,

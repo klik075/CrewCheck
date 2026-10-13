@@ -5,6 +5,7 @@ import com.WhoisntCitizen_server.common.exception.ForbiddenException;
 import com.WhoisntCitizen_server.common.exception.RoomKickedException;
 import com.WhoisntCitizen_server.common.exception.RoomPasswordException;
 import com.WhoisntCitizen_server.game.dto.GameParticipant;
+import com.WhoisntCitizen_server.game.dto.RoleSetup;
 import com.WhoisntCitizen_server.game.dto.StartGameResponse;
 import com.WhoisntCitizen_server.game.service.GameService;
 import com.WhoisntCitizen_server.game.service.RoleAssigner;
@@ -331,6 +332,39 @@ public class RoomService {
     }
 
     /**
+     * 직업 배정 설정 변경 (방장만). PUT /api/v1/rooms/{roomId}/role-setup
+     * body {"mode":"CUSTOM","customCompositions":[{"playerCount":6,"roles":[...]}],"randomCandidates":[...]}
+     *
+     * 설정 전체를 받아 검증·정리한 뒤 그대로 저장한다. 게임 시작(startGame) 때 이 설정으로 직업을 배정한다.
+     * 지금 고른 모드가 아니어도 보낸 값은 모두 검증하고 저장한다. (나중에 모드만 바꿔도 바로 쓸 수 있도록)
+     * 참가자의 준비 상태는 방 설정 변경(updateSettings)과 같이 그대로 둔다.
+     *
+     * 검사 순서 (방 잠금 안에서)
+     *   1. 방 없음       → 400
+     *   2. 방장이 아님    → 403
+     *   3. 게임 중       → 409
+     *   4. 설정이 규칙에 맞지 않음 → 400  (GameService.normalizeRoleSetup)
+     *
+     * 바뀐 것이 없으면 저장하지 않는다. 저장하면 저장소가 room.changed를 보내 참가자들이 방을 다시 조회한다.
+     */
+    public void updateRoleSetup(Long roomId, Long userId, RoleSetup request) {
+
+        roomLock.runWithLock(roomId, () -> {
+            Room room = findRoom(roomId);
+            recoverIfOrphaned(room);
+
+            if (!userId.equals(room.getHostUserId())) throw new ForbiddenException("방장만 직업 구성을 바꿀 수 있습니다.");
+            if (room.isInGame()) throw new IllegalStateException("게임 중에는 직업 구성을 바꿀 수 없습니다.");
+
+            RoleSetup roleSetup = gameService.normalizeRoleSetup(request);
+            if (roleSetup.equals(room.getRoleSetup())) return; // 바뀐 것 없음: 저장 생략
+
+            room.changeRoleSetup(roleSetup);
+            roomRepository.save(room);
+        });
+    }
+
+    /**
      * 게임 중 연결이 끊겨 게임에서 내보낸 플레이어를 방에서 뺀다. (게임 쪽 사망 처리는 이미 끝난 상태)
      * RoomGameListener가 PlayersDepartedEvent를 받아 호출한다. 방장이면 다음 사람에게 위임된다.
      * 게임 종료 이벤트와 처리 순서가 바뀌어 방이 이미 대기 상태로 돌아갔어도 그대로 뺀다.
@@ -483,7 +517,8 @@ public class RoomService {
             eventPublisher.publishEvent(new RoomGameStartingEvent(roomId));
 
             // 게임을 먼저 만들고 성공했을 때만 방 상태를 바꾼다. 게임 생성이 실패하면 방은 WAITING 그대로다.
-            StartGameResponse started = gameService.startGame(String.valueOf(roomId), participants);
+            // 방장이 저장한 직업 배정 설정으로 배정한다. (저장한 적 없으면 null → 추천 구성)
+            StartGameResponse started = gameService.startGame(String.valueOf(roomId), participants, room.getRoleSetup());
 
             room.startGame(started.gameId());
             roomRepository.save(room);
@@ -519,7 +554,7 @@ public class RoomService {
         // 서버 재시작 등으로 게임이 사라진 방일 때만 잠금을 잡고 WAITING으로 복구한다.
         Room room = recoverInListIfOrphaned(findRoom(roomId));
         if (room == null) throw new IllegalArgumentException("존재하지 않는 방입니다."); // 복구 중 방이 삭제된 경우
-        return RoomDetailResponseDto.from(room);
+        return RoomDetailResponseDto.from(room, gameService.defaultRoleSetup());
     }
 
     // 현재 룸 참가자 조회
