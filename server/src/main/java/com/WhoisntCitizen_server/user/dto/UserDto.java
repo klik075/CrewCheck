@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.user.dto;
 
+import com.WhoisntCitizen_server.common.validation.ValidNickname;
 import com.WhoisntCitizen_server.user.entity.User;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -77,8 +78,7 @@ public class UserDto {
 	@AllArgsConstructor
 	public static class UpdateNicknameRequest {
 		@NotBlank(message = "닉네임은 비어있을 수 없습니다.")
-		@Size(min = 2, max = 20, message = "닉네임은 2자 이상 20자 이하여야 합니다.")
-		@Pattern(regexp = "^[a-zA-Z0-9가-힣]+$", message = "닉네임은 한글, 영문, 숫자만 사용 가능합니다.")
+		@ValidNickname
 		private String nickname;
 	}
 }
