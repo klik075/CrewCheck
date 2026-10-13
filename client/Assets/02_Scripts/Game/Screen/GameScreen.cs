@@ -507,6 +507,11 @@ namespace WhoisntCitizen.Game
             PlayExecutionTransition(result); // 첫 0.8초는 테이블의 카드 더미를 그대로 보여 준다
         }
 
+        private bool IsFakeGame
+        {
+            get { return controller != null && controller.IsFakeGame; }
+        }
+
         public void ShowGameResult(GameResultDto result)
         {
             ShowNotice(ReportFormatter.ResultHeadline(result));
@@ -524,7 +529,7 @@ namespace WhoisntCitizen.Game
             }
             if (resultPanel != null)
             {
-                resultPanel.Show(result, Session != null ? Session.Me : null);
+                resultPanel.Show(result, Session != null ? Session.Me : null, !IsFakeGame); // 가짜 서버면 자동 복귀(=새 판) 안 함
             }
         }
 
@@ -983,7 +988,7 @@ namespace WhoisntCitizen.Game
             pendingGameResult = null;
             if (resultPanel != null)
             {
-                resultPanel.Show(result, Session != null ? Session.Me : null);
+                resultPanel.Show(result, Session != null ? Session.Me : null, !IsFakeGame); // 가짜 서버면 자동 복귀(=새 판) 안 함
             }
         }
 
