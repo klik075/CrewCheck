@@ -10,7 +10,8 @@ namespace WhoisntCitizen.Game
     /// Lays the game screen out as the pirate HUD (art: Resources/GameHud, cut by Tools/GameHudArt), at run time over the
     /// scene's own parts, so the scene file does not change. Places: <see cref="GameHudMetrics"/>.
     /// - Top: phase plaque (sun or moon + the phase title), timer panel (time left + bar), settings and map buttons.
-    /// - Notice scroll: each public announcement drops in over the top of the stage for a few seconds and goes away.
+    /// - Notice box: each public announcement pops up in a plain green rectangle at the stage's top left, right under
+    ///   the top UI, for a few seconds and goes away. (The old notice scroll and the voice pipe are commented out.)
     /// - Stage: the day table and the night room place themselves there.
     /// - Chat: <see cref="GameHudChat"/> (tabs and filter, rows, the input bar in one gold frame). The bottom sheet (chat
     ///   input bar + drawer) is lifted above the role panel. Their behaviour stays with the chat side.
@@ -33,8 +34,22 @@ namespace WhoisntCitizen.Game
         private static readonly Color Sun = new Color(1f, 0.55f, 0.18f);
         private static readonly Color Moon = new Color(0.2f, 0.25f, 0.48f);    // dark, to show on the parchment
         private static readonly Color DrawerBack = new Color(0.106f, 0.118f, 0.149f, 0.96f); // the drawer panels' own
-        private const float NoticeFadeIn = 0.3f, NoticeFadeOut = 0.5f;
+        // [두루마리 공지 - 주석 처리] private const float NoticeFadeIn = 0.3f, NoticeFadeOut = 0.5f;
         private const float NoticeMinSeconds = 3f, NoticeMaxSeconds = 6f;  // on screen, longer for longer text
+        // [보이스파이프 제거 - 주석 처리]
+        // // The voice pipe (VoicePipe.png 320x460 at half size) and its mouth, from its top-left corner. The art begins
+        // // PipeArtTop down (the bell's top edge); above that the box is empty.
+        // private const float PipeWidth = 160f, PipeHeight = 230f, PipeMouthX = 150f, PipeMouthY = 65f, PipeArtTop = 42f;
+        // private const float TailWidth = 34f, TailTip = 30f;
+        // The notice: a plain green rectangle at the stage's top left, the "공지" tag at its left, one to three lines.
+        private const float BubbleLeft = 16f, BubbleMaxWidth = 1048f, BubbleMinWidth = 300f, BubbleMinHeight = 84f, BubbleTextSize = 28f;
+        private const float BubblePadLeft = 108f, BubblePadRight = 26f, BubblePadTop = 14f, BubblePadBottom = 14f;
+        private const float BubblePop = 0.25f, BubbleFadeOut = 0.4f;
+        private static readonly Color BubbleFill = new Color32(26, 78, 52, 242);
+        private static readonly Color BubbleBorder = new Color32(118, 196, 144, 255);
+        private static readonly Color BubbleText = new Color32(206, 255, 214, 255);  // pale green on the green box
+        private static readonly Color TagFill = new Color32(12, 34, 24, 255);
+        private static readonly Color TagText = new Color32(150, 255, 178, 255);
 
         public event Action SettingsClicked;
         public event Action MapClicked;
@@ -43,9 +58,19 @@ namespace WhoisntCitizen.Game
         // Made by Create: at run time, or once in Edit mode by Bake (then saved with the scene and only wired by Build).
         [SerializeField, HideInInspector] private bool built;
         [SerializeField] private Image phaseIcon;
-        [SerializeField] private RectTransform timerFill, notice;
-        [SerializeField] private CanvasGroup noticeGroup;
-        [SerializeField] private TextMeshProUGUI noticeText;
+        [SerializeField] private RectTransform timerFill;
+        // [두루마리 공지 → 보이스파이프 말풍선으로 교체 - 주석 처리] 예전에 구운 씬(GameScene3)에 남은 두루마리는 Build에서 끄기만 한다
+        [SerializeField] private RectTransform notice;
+        // [SerializeField] private CanvasGroup noticeGroup;
+        // [SerializeField] private TextMeshProUGUI noticeText;
+        // [보이스파이프 제거 - 주석 처리] 보이스파이프(배경)와 그 입의 빛
+        // [SerializeField] private RectTransform voicePipe;
+        // [SerializeField] private Image pipeGlow;
+        // 공지 상자 (녹색 사각형)
+        [SerializeField] private RectTransform bubble;
+        [SerializeField] private CanvasGroup bubbleGroup;
+        [SerializeField] private TextMeshProUGUI bubbleText;
+        private float noticeTop = -1f; // PlaceNoticeUnder: from the canvas top (negative: GameHudMetrics.NoticeBoxTop)
         [SerializeField] private Button settingsButton, mapButton;
 
         private RectTransform canvas, sheet, sheetLift, rolePanel;
@@ -57,7 +82,7 @@ namespace WhoisntCitizen.Game
         private TMP_FontAsset font;
         private DesignSpriteCatalog portraits;
         private HudPopup popup;
-        private Vector2 noticeRest; // where the notice stays; it drops in from a little above
+        // [두루마리 공지 - 주석 처리] private Vector2 noticeRest; // where the notice stays; it drops in from a little above
         private float noticeShownAt = -1f, noticeSeconds;
         private float laidOutHeight = -1f;
         private bool wired;
@@ -86,11 +111,16 @@ namespace WhoisntCitizen.Game
             portraits = Resources.Load<DesignSpriteCatalog>(Art + "Portraits");
             if (settingsButton != null) settingsButton.onClick.AddListener(() => SettingsClicked?.Invoke());
             if (mapButton != null) mapButton.onClick.AddListener(() => MapClicked?.Invoke());
-            if (notice != null)
-            {
-                noticeRest = notice.anchoredPosition;
-                notice.gameObject.SetActive(false); // until the first announcement
-            }
+            // [두루마리 공지 → 보이스파이프 말풍선으로 교체 - 주석 처리]
+            // if (notice != null)
+            // {
+            //     noticeRest = notice.anchoredPosition;
+            //     notice.gameObject.SetActive(false); // until the first announcement
+            // }
+            if (notice != null) notice.gameObject.SetActive(false); // the scroll baked into an older scene: not used
+            // [보이스파이프 제거 - 주석 처리] if (voicePipe == null || bubble == null) BuildVoicePipe(chat);
+            if (bubble == null) BuildNoticeBox(chat); // a scene baked without it gets it here
+            if (bubble != null) bubble.gameObject.SetActive(false); // until the first announcement
             SetPhase(null);
             if (frame) LateUpdate();
         }
@@ -104,7 +134,8 @@ namespace WhoisntCitizen.Game
         {
             if (built) return;
             Create(phaseText, timerText, oldRoleCard, chat, null, labelFont, false);
-            if (noticeText != null) noticeText.text = "공지는 게임 중 여기에 잠깐 나타났다가 사라집니다."; // seen when turned on in the editor
+            // [두루마리 공지 - 주석 처리] if (noticeText != null) noticeText.text = "공지는 게임 중 여기에 잠깐 나타났다가 사라집니다.";
+            if (bubbleText != null) bubbleText.text = "공지는 게임 중 여기에 잠깐 나타났다가 사라집니다."; // seen when turned on in the editor
         }
 
         private void Create(TextMeshProUGUI phaseText, TextMeshProUGUI timerText, RectTransform oldRoleCard, RectTransform chat,
@@ -130,14 +161,18 @@ namespace WhoisntCitizen.Game
             if (oldRoleCard != null) oldRoleCard.gameObject.SetActive(false);
             if (!frame)
             {
-                BuildNotice(chat);
+                // BuildNotice(chat); // [두루마리 공지 - 주석 처리]
+                // BuildVoicePipe(chat); // [보이스파이프 제거 - 주석 처리]
+                BuildNoticeBox(chat);
                 SetPhase(null);
                 return;
             }
             chatWindow = gameObject.AddComponent<GameHudChat>();
             chatWindow.Build(canvas, chat, bottomSheet, bottomSheet != null ? bottomSheet.GetComponent<BottomTabController>() : null,
                 font, portraits, GameHudMetrics.ChatTop, GameHudMetrics.RolePanelHeight - 2f);
-            BuildNotice(chat);
+            // BuildNotice(chat); // [두루마리 공지 - 주석 처리]
+            // BuildVoicePipe(chat); // [보이스파이프 제거 - 주석 처리]
+            BuildNoticeBox(chat);
             if (bottomSheet != null) BuildInputBar(bottomSheet);
             BuildRolePanel(chat);
         }
@@ -159,20 +194,39 @@ namespace WhoisntCitizen.Game
             timerFill.anchorMax = new Vector2(left, 1f);
         }
 
-        /// <summary>The notice scroll drops in with this text, stays a few seconds and goes away. Empty hides it.</summary>
+        // [두루마리 공지 → 보이스파이프 말풍선으로 교체 - 주석 처리] ShowNotice
+        // /// <summary>The notice scroll drops in with this text, stays a few seconds and goes away. Empty hides it.</summary>
+        // public void ShowNotice(string text)
+        // {
+        //     if (notice == null) return;
+        //     if (noticeText != null) noticeText.text = text ?? string.Empty;
+        //     if (string.IsNullOrEmpty(text))
+        //     {
+        //         noticeShownAt = -1f;
+        //         notice.gameObject.SetActive(false);
+        //         return;
+        //     }
+        //     noticeShownAt = Time.unscaledTime;
+        //     noticeSeconds = Mathf.Clamp(2f + text.Length * 0.06f, NoticeMinSeconds, NoticeMaxSeconds);
+        //     notice.gameObject.SetActive(true);
+        //     UpdateNotice();
+        // }
+
+        /// <summary>The notice box pops in with this text, stays a few seconds and goes away. Empty hides it.</summary>
         public void ShowNotice(string text)
         {
-            if (notice == null) return;
-            if (noticeText != null) noticeText.text = text ?? string.Empty;
+            if (bubble == null) return;
             if (string.IsNullOrEmpty(text))
             {
                 noticeShownAt = -1f;
-                notice.gameObject.SetActive(false);
+                bubble.gameObject.SetActive(false);
                 return;
             }
+            if (bubbleText != null) bubbleText.text = text;
+            FitBubble(text);
             noticeShownAt = Time.unscaledTime;
             noticeSeconds = Mathf.Clamp(2f + text.Length * 0.06f, NoticeMinSeconds, NoticeMaxSeconds);
-            notice.gameObject.SetActive(true);
+            bubble.gameObject.SetActive(true);
             UpdateNotice();
         }
 
@@ -216,23 +270,82 @@ namespace WhoisntCitizen.Game
             if (chatWindow != null) chatWindow.SetSkins(skinOf);
         }
 
-        // Fades in while sliding down a little, stays, fades out; then it is off until the next announcement.
+        // [두루마리 공지 → 보이스파이프 말풍선으로 교체 - 주석 처리] UpdateNotice
+        // // Fades in while sliding down a little, stays, fades out; then it is off until the next announcement.
+        // private void UpdateNotice()
+        // {
+        //     if (noticeShownAt < 0f) return;
+        //     float t = Time.unscaledTime - noticeShownAt;
+        //     float shown = Mathf.Clamp01(t / NoticeFadeIn);
+        //     float gone = Mathf.Clamp01((t - NoticeFadeIn - noticeSeconds) / NoticeFadeOut);
+        //     if (gone >= 1f)
+        //     {
+        //         noticeShownAt = -1f;
+        //         notice.gameObject.SetActive(false);
+        //         return;
+        //     }
+        //     if (noticeGroup != null) noticeGroup.alpha = shown * (1f - gone);
+        //     float drop = (1f - shown) * (1f - shown) * 24f;
+        //     notice.anchoredPosition = noticeRest + new Vector2(0f, drop);
+        // }
+
+        // [보이스파이프 제거 - 주석 처리] 보이스파이프 입에서 튀어나오는 UpdateNotice
+        // // Pops out of the pipe's mouth (grows from the tail's tip with a little overshoot), stays, fades out while
+        // // shrinking a little; then it is off until the next announcement. The mouth glows while it speaks.
+        // private void UpdateNotice()
+        // {
+        //     if (noticeShownAt < 0f || bubble == null) return;
+        //     float t = Time.unscaledTime - noticeShownAt;
+        //     float pop = Mathf.Clamp01(t / BubblePop);
+        //     float gone = Mathf.Clamp01((t - BubblePop - noticeSeconds) / BubbleFadeOut);
+        //     if (gone >= 1f)
+        //     {
+        //         noticeShownAt = -1f;
+        //         bubble.gameObject.SetActive(false);
+        //         SetPipeGlow(0f);
+        //         return;
+        //     }
+        //     float scale = Mathf.LerpUnclamped(0.2f, 1f, EaseOutBack(pop)) * (1f - 0.08f * gone);
+        //     bubble.localScale = new Vector3(scale, scale, 1f);
+        //     float shown = Mathf.Clamp01(pop * 2f) * (1f - gone);
+        //     if (bubbleGroup != null) bubbleGroup.alpha = shown;
+        //     SetPipeGlow(shown);
+        // }
+
+        // Pops in (grows from its top-left corner with a little overshoot), stays, fades out while shrinking a little;
+        // then it is off until the next announcement.
         private void UpdateNotice()
         {
-            if (noticeShownAt < 0f) return;
+            if (noticeShownAt < 0f || bubble == null) return;
             float t = Time.unscaledTime - noticeShownAt;
-            float shown = Mathf.Clamp01(t / NoticeFadeIn);
-            float gone = Mathf.Clamp01((t - NoticeFadeIn - noticeSeconds) / NoticeFadeOut);
+            float pop = Mathf.Clamp01(t / BubblePop);
+            float gone = Mathf.Clamp01((t - BubblePop - noticeSeconds) / BubbleFadeOut);
             if (gone >= 1f)
             {
                 noticeShownAt = -1f;
-                notice.gameObject.SetActive(false);
+                bubble.gameObject.SetActive(false);
                 return;
             }
-            if (noticeGroup != null) noticeGroup.alpha = shown * (1f - gone);
-            float drop = (1f - shown) * (1f - shown) * 24f;
-            notice.anchoredPosition = noticeRest + new Vector2(0f, drop);
+            float scale = Mathf.LerpUnclamped(0.6f, 1f, EaseOutBack(pop)) * (1f - 0.05f * gone);
+            bubble.localScale = new Vector3(scale, scale, 1f);
+            if (bubbleGroup != null) bubbleGroup.alpha = Mathf.Clamp01(pop * 2f) * (1f - gone);
         }
+
+        private static float EaseOutBack(float x)
+        {
+            const float c1 = 1.70158f, c3 = c1 + 1f;
+            float k = x - 1f;
+            return 1f + c3 * k * k * k + c1 * k * k;
+        }
+
+        // [보이스파이프 제거 - 주석 처리] SetPipeGlow
+        // private void SetPipeGlow(float amount)
+        // {
+        //     if (pipeGlow == null) return;
+        //     Color c = pipeGlow.color;
+        //     c.a = 0.55f * amount;
+        //     pipeGlow.color = c;
+        // }
 
         // The drawer reaches up to the stage's bottom edge at most (its panels are laid out for MaxDrawerHeight and
         // scroll when it is shorter). Opening, the sheet comes down to the screen's bottom and the role panel slides
@@ -304,32 +417,188 @@ namespace WhoisntCitizen.Game
             mapButton = AddButton(Box(hud, "MapButton", 936f, 94f, 124f, 124f), Load("ButtonMap"), null);
         }
 
-        private void BuildNotice(RectTransform chat)
+        // [두루마리 공지 → 보이스파이프 말풍선으로 교체 - 주석 처리] BuildNotice
+        // private void BuildNotice(RectTransform chat)
+        // {
+        //     // Over the top of the stage: right above the chat, so the day table and the night room (which put themselves
+        //     // right above the chat later) end up under it, and the bottom sheet and the windows over it.
+        //     notice = Box(canvas, "Notice", 120f, GameHudMetrics.NoticeTop, 840f, GameHudMetrics.NoticeHeight);
+        //     if (chat != null) notice.SetSiblingIndex(chat.GetSiblingIndex() + 1);
+        //     noticeGroup = notice.gameObject.AddComponent<CanvasGroup>();
+        //     noticeGroup.blocksRaycasts = false;
+        //     noticeGroup.interactable = false;
+        //     Image scroll = AddImage(notice, Load("NoticeScroll"), Color.white);
+        //     Sliced(scroll, GameHudMetrics.NoticeHeight);
+        //     // The parchment between the rods is x 70–770, y 36–140: a faint compass at its right, the text in the middle
+        //     // (two lines), and the "공지" tag hanging on the top rail.
+        //     AddImage(Box(notice, "Compass", 664f, 46f, 84f, 84f), Icon("compass"), new Color(0.35f, 0.22f, 0.1f, 0.2f)).preserveAspect = true;
+        //     noticeText = NewText(notice, "NoticeText", 30f, Ink, FontStyles.Normal, TextAlignmentOptions.Center);
+        //     Inset(noticeText.rectTransform, 100f, 44f, 100f, 34f);
+        //     noticeText.textWrappingMode = TextWrappingModes.Normal;
+        //     noticeText.enableAutoSizing = true;
+        //     noticeText.fontSizeMin = 20f;
+        //     noticeText.fontSizeMax = 30f;
+        //     RectTransform tag = Box(notice, "NoticeTag", 360f, -10f, 120f, 46f);
+        //     HudShapes.Panel(tag, new Color(0.07f, 0.17f, 0.19f, 0.97f), new Color(0.78f, 0.58f, 0.27f), 10f);
+        //     TextMeshProUGUI title = NewText(tag, "Title", 23f, Gold, FontStyles.Bold, TextAlignmentOptions.Center);
+        //     Stretch(title.rectTransform, 0f, 0f, 0f, 0f);
+        //     title.text = "공지";
+        //     notice.gameObject.SetActive(false);
+        // }
+
+        // [보이스파이프 제거 - 주석 처리] 보이스파이프와 말풍선 (BuildVoicePipe, FitBubble, PlaceVoicePipeUnder, MouthOnCanvas)
+        // // ------------------------------------------------------------------ voice pipe notice
+        //
+        // // The voice pipe (a ship's speaking tube) is scenery at the left of the stage, right under the top UI
+        // // (GameHudMetrics.VoicePipeTop). Its art: Resources/GameHud/VoicePipe (Tools/GameHudArt/make_voice_pipe.py).
+        // // It sits right under the chat log, so the day table and the night room's figures (put right above the chat
+        // // later) stand in front of it, while the deck and the night backdrop (right above the screen background) stay
+        // // behind it. The bubble goes right above the chat log like the old scroll, so the table and the room end up under it.
+        // private void BuildVoicePipe(RectTransform chat)
+        // {
+        //     float top = GameHudMetrics.VoicePipeTop;
+        //     voicePipe = Box(canvas, "VoicePipe", 0f, top, PipeWidth, PipeHeight);
+        //     if (chat != null) voicePipe.SetSiblingIndex(chat.GetSiblingIndex());
+        //     Image pipe = AddImage(voicePipe, Load("VoicePipe"), Color.white);
+        //     pipe.preserveAspect = true;
+        //     // A warm light in the mouth while it speaks.
+        //     RectTransform glow = Box(voicePipe, "MouthGlow", PipeMouthX - 74f, PipeMouthY - 74f, 148f, 148f);
+        //     pipeGlow = AddImage(glow, NightFxSprites.Dot, new Color(1f, 0.78f, 0.42f, 0f));
+        //
+        //     bubble = Box(canvas, "NoticeBubble", PipeMouthX + TailWidth - 4f, top + PipeMouthY - TailTip, BubbleMaxWidth, BubbleMinHeight);
+        //     if (chat != null) bubble.SetSiblingIndex(chat.GetSiblingIndex() + 1);
+        //     bubbleGroup = bubble.gameObject.AddComponent<CanvasGroup>();
+        //     bubbleGroup.blocksRaycasts = false;
+        //     bubbleGroup.interactable = false;
+        //     // A square machine plate in green: riveted frame, chamfered corners (Tools/GameHudArt/make_notice_bubble.py).
+        //     Image plate = AddImage(bubble, Load("NoticeBubble"), Color.white);
+        //     plate.type = Image.Type.Sliced;
+        //     plate.pixelsPerUnitMultiplier = 2f; // the 32-px corners at 16 units
+        //     // The "공지" plate at the left, the text right of it.
+        //     RectTransform tag = Box(bubble, "NoticeTag", 16f, 0f, 78f, 34f);
+        //     tag.anchorMin = tag.anchorMax = tag.pivot = new Vector2(0f, 0.5f);
+        //     tag.anchoredPosition = new Vector2(16f, 0f);
+        //     HudShapes.Panel(tag, TagFill, TagLine, 4f);
+        //     TextMeshProUGUI title = NewText(tag, "Title", 21f, TagText, FontStyles.Bold, TextAlignmentOptions.Center);
+        //     Stretch(title.rectTransform, 0f, 0f, 0f, 0f);
+        //     title.text = "공지";
+        //     bubbleText = NewText(bubble, "NoticeText", BubbleTextSize, BubbleText, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+        //     Inset(bubbleText.rectTransform, BubblePadLeft, BubblePadTop, BubblePadRight, BubblePadBottom);
+        //     bubbleText.textWrappingMode = TextWrappingModes.Normal;
+        //     bubbleText.enableAutoSizing = true;
+        //     bubbleText.fontSizeMin = 20f;
+        //     bubbleText.fontSizeMax = BubbleTextSize;
+        //     // The tail points at the mouth; it lies over the bubble's left border (drawn after it), which it opens.
+        //     RectTransform tail = Box(bubble, "Tail", -TailWidth + 4f, TailTip - TailWidth * 20f / 64f, TailWidth, TailWidth); // tip at (3, 20) of 64
+        //     AddImage(tail, Load("NoticeBubbleTail"), Color.white).preserveAspect = true;
+        //     bubble.gameObject.SetActive(false);
+        // }
+        //
+        // // Sizes the bubble to the text (one to three lines, as wide as needed up to the screen's edge) and puts its tail
+        // // on the pipe's mouth, wherever the pipe is (a baked scene may have moved it). It grows from the tail's tip.
+        // private void FitBubble(string text)
+        // {
+        //     Vector2 mouth = MouthOnCanvas(); // x from the left, y from the top
+        //     float left = mouth.x + TailWidth - 4f;
+        //     float maxWidth = Mathf.Min(BubbleMaxWidth, canvas.rect.width - left - 20f);
+        //     float width = maxWidth, height = BubbleMinHeight;
+        //     if (bubbleText != null)
+        //     {
+        //         float lineHeight = BubbleTextSize * 1.33f;
+        //         Vector2 preferred = bubbleText.GetPreferredValues(text, maxWidth - BubblePadLeft - BubblePadRight, 0f);
+        //         width = Mathf.Clamp(preferred.x + BubblePadLeft + BubblePadRight + 4f, BubbleMinWidth, maxWidth);
+        //         height = Mathf.Max(BubbleMinHeight, Mathf.Min(preferred.y, lineHeight * 3f) + BubblePadTop + BubblePadBottom);
+        //     }
+        //     bubble.anchorMin = bubble.anchorMax = new Vector2(0f, 1f);
+        //     bubble.sizeDelta = new Vector2(width, height);
+        //     bubble.pivot = new Vector2(0f, 1f - TailTip / height);
+        //     bubble.anchoredPosition = new Vector2(left, -mouth.y);
+        // }
+        //
+        // /// <summary>
+        // /// Moves the voice pipe up or down so its art begins right under this (GameScene3: the [내 역할] chip, wherever the
+        // /// scene has it). The bubble follows the pipe's mouth.
+        // /// </summary>
+        // public void PlaceVoicePipeUnder(RectTransform above, float gap = 4f)
+        // {
+        //     if (voicePipe == null || above == null || canvas == null) return;
+        //     var corners = new Vector3[4];
+        //     above.GetWorldCorners(corners); // [0]: bottom left
+        //     float bottom = canvas.rect.yMax - canvas.InverseTransformPoint(corners[0]).y; // from the canvas top
+        //     voicePipe.anchorMin = voicePipe.anchorMax = voicePipe.pivot = new Vector2(0f, 1f);
+        //     voicePipe.anchoredPosition = new Vector2(voicePipe.anchoredPosition.x, -(bottom + gap - PipeArtTop));
+        // }
+        //
+        // private Vector2 MouthOnCanvas()
+        // {
+        //     if (voicePipe == null) return new Vector2(PipeMouthX, GameHudMetrics.VoicePipeTop + PipeMouthY);
+        //     Rect pipe = voicePipe.rect;
+        //     Vector3 local = new Vector3(pipe.xMin + PipeMouthX * pipe.width / PipeWidth, pipe.yMax - PipeMouthY * pipe.height / PipeHeight, 0f);
+        //     Vector2 onCanvas = canvas.InverseTransformPoint(voicePipe.TransformPoint(local));
+        //     Rect area = canvas.rect;
+        //     return new Vector2(onCanvas.x - area.xMin, area.yMax - onCanvas.y);
+        // }
+
+        // ------------------------------------------------------------------ notice box
+
+        // The notice: a plain green rectangle at the stage's top left, right under the top UI
+        // (GameHudMetrics.NoticeBoxTop; GameScene3: right under the [내 역할] chip, PlaceNoticeUnder). The "공지" tag at
+        // its left, one to three lines right of it. It goes right above the chat log like the old scroll, so the day table
+        // and the night room (put right above the chat later) end up under it.
+        private void BuildNoticeBox(RectTransform chat)
         {
-            // Over the top of the stage: right above the chat, so the day table and the night room (which put themselves
-            // right above the chat later) end up under it, and the bottom sheet and the windows over it.
-            notice = Box(canvas, "Notice", 120f, GameHudMetrics.NoticeTop, 840f, GameHudMetrics.NoticeHeight);
-            if (chat != null) notice.SetSiblingIndex(chat.GetSiblingIndex() + 1);
-            noticeGroup = notice.gameObject.AddComponent<CanvasGroup>();
-            noticeGroup.blocksRaycasts = false;
-            noticeGroup.interactable = false;
-            Image scroll = AddImage(notice, Load("NoticeScroll"), Color.white);
-            Sliced(scroll, GameHudMetrics.NoticeHeight);
-            // The parchment between the rods is x 70–770, y 36–140: a faint compass at its right, the text in the middle
-            // (two lines), and the "공지" tag hanging on the top rail.
-            AddImage(Box(notice, "Compass", 664f, 46f, 84f, 84f), Icon("compass"), new Color(0.35f, 0.22f, 0.1f, 0.2f)).preserveAspect = true;
-            noticeText = NewText(notice, "NoticeText", 30f, Ink, FontStyles.Normal, TextAlignmentOptions.Center);
-            Inset(noticeText.rectTransform, 100f, 44f, 100f, 34f);
-            noticeText.textWrappingMode = TextWrappingModes.Normal;
-            noticeText.enableAutoSizing = true;
-            noticeText.fontSizeMin = 20f;
-            noticeText.fontSizeMax = 30f;
-            RectTransform tag = Box(notice, "NoticeTag", 360f, -10f, 120f, 46f);
-            HudShapes.Panel(tag, new Color(0.07f, 0.17f, 0.19f, 0.97f), new Color(0.78f, 0.58f, 0.27f), 10f);
-            TextMeshProUGUI title = NewText(tag, "Title", 23f, Gold, FontStyles.Bold, TextAlignmentOptions.Center);
+            bubble = Box(canvas, "NoticeBubble", BubbleLeft, GameHudMetrics.NoticeBoxTop, BubbleMinWidth, BubbleMinHeight);
+            if (chat != null) bubble.SetSiblingIndex(chat.GetSiblingIndex() + 1);
+            bubbleGroup = bubble.gameObject.AddComponent<CanvasGroup>();
+            bubbleGroup.blocksRaycasts = false;
+            bubbleGroup.interactable = false;
+            // A plain rectangle: green fill with a thin light green border.
+            AddImage(bubble, null, BubbleFill);
+            Outline border = bubble.gameObject.AddComponent<Outline>();
+            border.effectColor = BubbleBorder;
+            border.effectDistance = new Vector2(2f, -2f);
+            // The "공지" tag at the left, the text right of it.
+            RectTransform tag = Box(bubble, "NoticeTag", 16f, 0f, 78f, 34f);
+            tag.anchorMin = tag.anchorMax = tag.pivot = new Vector2(0f, 0.5f);
+            tag.anchoredPosition = new Vector2(16f, 0f);
+            AddImage(tag, null, TagFill);
+            TextMeshProUGUI title = NewText(tag, "Title", 21f, TagText, FontStyles.Bold, TextAlignmentOptions.Center);
             Stretch(title.rectTransform, 0f, 0f, 0f, 0f);
             title.text = "공지";
-            notice.gameObject.SetActive(false);
+            bubbleText = NewText(bubble, "NoticeText", BubbleTextSize, BubbleText, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+            Inset(bubbleText.rectTransform, BubblePadLeft, BubblePadTop, BubblePadRight, BubblePadBottom);
+            bubbleText.textWrappingMode = TextWrappingModes.Normal;
+            bubbleText.enableAutoSizing = true;
+            bubbleText.fontSizeMin = 20f;
+            bubbleText.fontSizeMax = BubbleTextSize;
+            bubble.gameObject.SetActive(false);
+        }
+
+        // Sizes the box to the text (one to three lines, as wide as needed up to the screen's right edge) at its place.
+        private void FitBubble(string text)
+        {
+            float top = noticeTop >= 0f ? noticeTop : GameHudMetrics.NoticeBoxTop;
+            float maxWidth = Mathf.Min(BubbleMaxWidth, canvas.rect.width - BubbleLeft * 2f);
+            float width = maxWidth, height = BubbleMinHeight;
+            if (bubbleText != null)
+            {
+                float lineHeight = BubbleTextSize * 1.33f;
+                Vector2 preferred = bubbleText.GetPreferredValues(text, maxWidth - BubblePadLeft - BubblePadRight, 0f);
+                width = Mathf.Clamp(preferred.x + BubblePadLeft + BubblePadRight + 4f, BubbleMinWidth, maxWidth);
+                height = Mathf.Max(BubbleMinHeight, Mathf.Min(preferred.y, lineHeight * 3f) + BubblePadTop + BubblePadBottom);
+            }
+            bubble.anchorMin = bubble.anchorMax = bubble.pivot = new Vector2(0f, 1f);
+            bubble.sizeDelta = new Vector2(width, height);
+            bubble.anchoredPosition = new Vector2(BubbleLeft, -top);
+        }
+
+        /// <summary>Puts the notice right under this (GameScene3: the [내 역할] chip, wherever the scene has it).</summary>
+        public void PlaceNoticeUnder(RectTransform above, float gap = 6f)
+        {
+            if (above == null || canvas == null) return;
+            var corners = new Vector3[4];
+            above.GetWorldCorners(corners); // [0]: bottom left
+            noticeTop = canvas.rect.yMax - canvas.InverseTransformPoint(corners[0]).y + gap; // from the canvas top
         }
 
         private void BuildInputBar(RectTransform sheet)

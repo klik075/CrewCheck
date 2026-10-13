@@ -39,7 +39,7 @@ namespace WhoisntCitizen.Game
 
         protected override void OnBuild()
         {
-            Transform notice = ctx.Canvas.Find("Notice");
+            Transform notice = ctx.Canvas.Find("NoticeBubble") ?? ctx.Canvas.Find("Notice"); // the notice box
             int top = notice != null ? notice.GetSiblingIndex() : ctx.Canvas.childCount; // under the notice
 
             RectTransform steps = Box(ctx.Canvas, "PhaseSteps", 24f, StepsTop, 1032f, StepsHeight);

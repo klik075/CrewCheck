@@ -1267,7 +1267,7 @@ namespace WhoisntCitizen.Game
             return portraits[index % portraits.Length];
         }
 
-        /// <summary>공지 두루마리와 (Frame 밖의 배치면) 그 배치의 안내 줄에 공개 안내를 보여 준다.</summary>
+        /// <summary>보이스파이프 말풍선과 (Frame 밖의 배치면) 그 배치의 안내 줄에 공개 안내를 보여 준다.</summary>
         private void ShowNotice(string text)
         {
             if (hud != null) hud.ShowNotice(text);

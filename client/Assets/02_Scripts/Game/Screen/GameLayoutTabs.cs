@@ -126,6 +126,9 @@ namespace WhoisntCitizen.Game
         private void Wire()
         {
             if (roleChip != null) roleChip.onClick.AddListener(ShowRoleWindow);
+            // [보이스파이프 제거 - 주석 처리] if (roleChip != null && ctx.Hud != null) ctx.Hud.PlaceVoicePipeUnder((RectTransform)roleChip.transform);
+            // The notice box right under the [내 역할] chip (the scene may have moved the chip).
+            if (roleChip != null && ctx.Hud != null) ctx.Hud.PlaceNoticeUnder((RectTransform)roleChip.transform);
             if (primaryButton != null && primaryButton.button != null) primaryButton.button.onClick.AddListener(OnPrimary);
             if (secondaryButton != null && secondaryButton.button != null) secondaryButton.button.onClick.AddListener(OnSecondary);
             BuildChat(ChatArea);
@@ -197,7 +200,7 @@ namespace WhoisntCitizen.Game
 
         private void BuildRoleChip()
         {
-            Transform notice = ctx.Canvas.Find("Notice");
+            Transform notice = ctx.Canvas.Find("NoticeBubble") ?? ctx.Canvas.Find("Notice"); // the notice box (the old scroll in an older bake)
             RectTransform chip = Box(ctx.Canvas, "RoleChip", 16f, GameHudMetrics.HudHeight + 10f, 206f, 66f); // clear of the far seats' names
             if (notice != null) chip.SetSiblingIndex(notice.GetSiblingIndex()); // under the notice
             HudShapes.Panel(chip, Teal, GoldLine, 33f).raycastTarget = true;
