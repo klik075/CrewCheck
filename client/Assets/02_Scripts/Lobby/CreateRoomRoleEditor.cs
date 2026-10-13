@@ -8,7 +8,7 @@ using WhoisntCitizen.Game;
 
 namespace WhoisntCitizen.Lobby
 {
-    /// <summary>인원별 직업 구성을 임시 편집하고 적용 시에만 방 만들기 설정에 반영한다.</summary>
+    /// <summary>로비와 룸씬에서 인원별 직업 구성을 편집한다. 저장 성공 시에만 원본에 반영한다.</summary>
     public sealed class CreateRoomRoleEditor : MonoBehaviour
     {
         private RoleSetupDto source, draft;
@@ -16,22 +16,31 @@ namespace WhoisntCitizen.Lobby
         private RoleCompositionLayout view;
         private Action<string> showError;
         private Action onChanged;
+        private Action<RoleSetupDto, Action<string>> save;
+        private int revision;
+        private bool saving;
         private int playerCount;
         private string fixedMode;
         private bool opened;
 
         public bool IsOpen => opened && gameObject.activeInHierarchy && view != null && view.gameObject.activeSelf;
+        public bool IsSaving => saving;
 
-        public void Initialize(Action<string> onError, Action changed)
+        // save의 완료 콜백: null은 성공, 문자열은 화면에 표시할 오류.
+        public void Initialize(Action<string> onError, Action changed, Action<RoleSetupDto, Action<string>> saveSetup = null)
         {
             showError = onError;
             onChanged = changed;
+            save = saveSetup;
         }
 
         public void Open(RoleSetupDto roleSetup, RoleSetupOptionsDto roleOptions, int initialCount)
         {
             if (roleSetup == null || roleOptions == null) return;
             if (!EnsureView()) return;
+            revision++;
+            saving = false;
+            view.SetSaving(false);
             source = roleSetup;
             draft = roleSetup.Clone();
             options = roleOptions;
@@ -75,6 +84,8 @@ namespace WhoisntCitizen.Lobby
         /// <summary>X, 취소, ESC는 이번 편집을 버린다.</summary>
         public void Close()
         {
+            revision++;
+            saving = false;
             opened = false;
             source = null;
             draft = null;
@@ -84,7 +95,10 @@ namespace WhoisntCitizen.Lobby
 
         private void OnDisable()
         {
+            revision++;
+            saving = false;
             opened = false;
+            source = draft = null;
             if (view != null) view.gameObject.SetActive(false);
         }
 
@@ -95,14 +109,14 @@ namespace WhoisntCitizen.Lobby
 
         private void ChangeCount(int delta)
         {
-            if (draft == null) return;
+            if (draft == null || saving) return;
             playerCount = Mathf.Clamp(playerCount + delta, Minimum, Maximum);
             Render();
         }
 
         private void Recommend()
         {
-            if (draft == null) return;
+            if (draft == null || saving) return;
             RoleSetupRules.RemoveCustom(draft, playerCount);
             fixedMode = draft.customCompositions.Count > 0 ? RoleSetupModes.Custom : RoleSetupModes.Recommended;
             draft.mode = fixedMode;
@@ -111,7 +125,7 @@ namespace WhoisntCitizen.Lobby
 
         private void SetRandom(bool enabled)
         {
-            if (draft == null) return;
+            if (draft == null || saving) return;
             if (enabled && draft.mode != RoleSetupModes.Random) fixedMode = RoleSetupModes.Normalize(draft.mode);
             draft.mode = enabled ? RoleSetupModes.Random : fixedMode;
             Render();
@@ -119,7 +133,7 @@ namespace WhoisntCitizen.Lobby
 
         private void ChangeQuantity(string code, int delta)
         {
-            if (draft == null || draft.mode == RoleSetupModes.Random || RoleSetupRules.FindRole(options, code) == null) return;
+            if (draft == null || saving || draft.mode == RoleSetupModes.Random || RoleSetupRules.FindRole(options, code) == null) return;
             List<string> roles = RoleSetupRules.FixedComposition(draft, options, playerCount);
             if (delta > 0 ? !RoleSetupRules.CanAdd(roles, code) : !RoleSetupRules.CanRemove(roles, code)) return;
             roles = delta > 0 ? RoleSetupRules.Add(options, roles, code) : RoleSetupRules.Remove(options, roles, code);
@@ -130,7 +144,7 @@ namespace WhoisntCitizen.Lobby
 
         private void ChangeCandidate(string code, bool included)
         {
-            if (draft == null || options.randomCandidates == null || !options.randomCandidates.Contains(code)
+            if (draft == null || saving || options.randomCandidates == null || !options.randomCandidates.Contains(code)
                 || RoleSetupRules.FindRole(options, code)?.faction == Factions.Neutral) return;
             RoleSetupRules.SetCandidate(draft, options, code, included);
             Render();
@@ -154,7 +168,7 @@ namespace WhoisntCitizen.Lobby
 
         private void Apply()
         {
-            if (draft == null || source == null) return;
+            if (draft == null || source == null || saving) return;
             string problem = Problem();
             if (problem != null)
             {
@@ -162,6 +176,31 @@ namespace WhoisntCitizen.Lobby
                 return;
             }
             RoleSetupDto committed = draft.Clone();
+            if (save == null)
+            {
+                Commit(committed);
+                return;
+            }
+            saving = true;
+            view.SetSaving(true);
+            int requestRevision = ++revision;
+            save(committed.Clone(), error =>
+            {
+                if (this == null || !IsOpen || requestRevision != revision || !saving) return;
+                saving = false;
+                view.SetSaving(false);
+                if (error != null)
+                {
+                    Render();
+                    view.ShowSaveError(error);
+                    return;
+                }
+                Commit(committed);
+            });
+        }
+
+        private void Commit(RoleSetupDto committed)
+        {
             source.mode = committed.mode;
             source.customCompositions = committed.customCompositions;
             source.randomCandidates = committed.randomCandidates;

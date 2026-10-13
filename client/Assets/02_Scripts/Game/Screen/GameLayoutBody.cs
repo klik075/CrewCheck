@@ -46,15 +46,22 @@ namespace WhoisntCitizen.Game
         protected GameLayoutContext ctx;
         protected GameHudChat chatUi;
 
+        /// <summary>The layout's body on host: the one already there (a scene with the layout baked in), or a new one.</summary>
         public static GameLayoutBody Create(HudLayout layout, GameObject host)
         {
             switch (layout)
             {
-                case HudLayout.Stage: return host.AddComponent<GameLayoutStage>();
-                case HudLayout.Tabs: return host.AddComponent<GameLayoutTabs>();
-                case HudLayout.Sheet: return host.AddComponent<GameLayoutSheet>();
+                case HudLayout.Stage: return OnHost<GameLayoutStage>(host);
+                case HudLayout.Tabs: return OnHost<GameLayoutTabs>(host);
+                case HudLayout.Sheet: return OnHost<GameLayoutSheet>(host);
                 default: return null;
             }
+        }
+
+        private static T OnHost<T>(GameObject host) where T : GameLayoutBody
+        {
+            T body = host.GetComponent<T>();
+            return body != null ? body : host.AddComponent<T>();
         }
 
         public void Build(GameLayoutContext context)
@@ -108,9 +115,18 @@ namespace WhoisntCitizen.Game
         /// <summary>The chat rows and the input bar; the log goes where area says (see GameHudChat.BuildBare).</summary>
         protected void BuildChat(Func<Vector4> area)
         {
-            chatUi = gameObject.AddComponent<GameHudChat>();
+            chatUi = GetComponent<GameHudChat>(); // baked into the scene (BakeChat): only wired
+            if (chatUi == null) chatUi = gameObject.AddComponent<GameHudChat>();
             chatUi.BuildBare(ctx.Canvas, ctx.Chat, ctx.Sheet, ctx.BottomTab, ctx.Font, ctx.Hud.Portraits, area);
             chatUi.SetSkins(ctx.SkinOf);
+        }
+
+        /// <summary>Edit mode (the bake tool): BuildChat's styles and input bar into the scene, the log put at area once.</summary>
+        protected void BakeChat(Vector4 area)
+        {
+            chatUi = GetComponent<GameHudChat>();
+            if (chatUi == null) chatUi = gameObject.AddComponent<GameHudChat>();
+            chatUi.BakeBare(ctx.Canvas, ctx.Chat, ctx.Sheet, ctx.Font, area);
         }
 
         /// <summary>My role in the HUD's window: role, goal, faction, what it does, ability and teammates.</summary>
@@ -193,7 +209,7 @@ namespace WhoisntCitizen.Game
             text.fontSizeMax = 26f;
             text.text = label;
             Button button = rect.gameObject.AddComponent<Button>();
-            button.onClick.AddListener(() => onClick());
+            if (onClick != null) button.onClick.AddListener(() => onClick()); // null: wired later (a baked layout)
             return button;
         }
 

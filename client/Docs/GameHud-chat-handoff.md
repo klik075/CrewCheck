@@ -76,6 +76,23 @@
 - 씬 파일은 복사본이라 GameScene을 고쳐도 나머지에 저절로 들어가지 않습니다. 복사할 때의 GameScene 설정(가짜 서버 켜짐 등)을 그대로 갖고 있습니다.
 - Build Settings에는 넣지 않았습니다.
 
+### GameScene3: 화면을 에디터에서 고치기 (굽기 + 원탁 미리보기)
+
+- **게임 화면 굽기** (Tools > Game Scene > 게임 화면 굽기 (GameScene3), `Assets/Editor/GameLayoutBakeTool.cs`): Play 때 코드가
+  만들던 고정된 틀(상단 HUD, 공지, 내 역할 칩, 무대 아래 바탕·채팅 상자·행동 줄·명단 칸, 채팅 기록 자리, 입력 바)을 씬
+  오브젝트로 한 번 만들어 넣습니다. 저장하면 Play 때는 만들지 않고 그 오브젝트에 연결만 하므로(`GameHudLayout`·`GameLayoutTabs`·
+  `GameHudChat`이 캔버스에 붙어 참조를 기억합니다) 위치·크기·색을 Scene 뷰에서 고치면 그대로 나옵니다.
+  - 코드가 계속 만드는 것: 원탁·캐릭터·밤 방, 명단 안의 사람 칸(명단 칸 폭에 맞춰 나눔), 내 역할 칩의 초상(초상 칸 크기에 맞춤),
+    채팅 줄, 투표 카드, 컷신, 팝업. 행동 줄의 글자와 버튼 표시도 Play 때 바뀝니다(굽기 직후의 글자는 배치용 견본).
+  - 공지(Notice)는 꺼진 채로 구워집니다. 켜서 자리를 고쳐도 Play 때 다시 끄고, 그 자리에서 떨어지듯 나타납니다.
+  - 하단 시트가 채팅 기록을 밀어 올리지 않게 GameBottomSheet의 `pushTargets`를 비웁니다. ChatLogPanel·GameBottomSheet를 고친 것은 그
+    프리팹 인스턴스의 오버라이드로 씬에 남습니다.
+  - 둥근 사각형·원 그림은 에셋입니다(`Resources/GameHud/HudRounded*.png`, `HudCircle.png`, `Tools/GameHudArt/MakeHudShapes.ps1`).
+    실행 중에 만든 그림은 씬에 저장되지 않기 때문입니다.
+- **원탁 미리보기** (Tools > Game Scene > 원탁 미리보기 (Edit 모드), `Assets/Editor/RoundTablePreview.cs`): Play 전에도 갑판과
+  원탁, 견본 인원을 Play 때 자리에 띄웁니다. 씬에 저장되지 않고, 눌러도 선택되지 않습니다. 무대(갑판·원탁)의 자리와 크기는
+  `Resources/DayTable/RoundTableLayout`에서 고치며 바꾸는 즉시 다시 그려집니다(`previewPlayers`: 견본 인원).
+
 ## 에셋
 
 `Assets/Resources/GameHud/*.png`는 `Tools/GameHudArt/CutHudSheet.ps1`이 에셋 시트(`Tools/GameHudArt/HudSheet.png`)에서 잘라 만듭니다.

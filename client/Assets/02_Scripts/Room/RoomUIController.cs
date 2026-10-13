@@ -410,10 +410,10 @@ namespace WhoisntCitizen.Lobby
                 statusMessage?.ShowInfo("방 상태가 바뀌어 요청을 취소했습니다.");
             }
 
-            // 방 설정 팝업: 방장이 아니게 됐거나 게임이 시작되면 닫는다. (요청 중이면 응답을 기다린다 - 서버가 403/409로 막음)
+            // 권한/게임 상태가 바뀌면 저장 중인 직업 구성 오버레이도 닫고 늦은 응답을 무시한다.
             if (roomSettingsPopup != null && roomSettingsPopup.IsOpen)
             {
-                if (!canManage && !roomSettingsPopup.IsRequesting)
+                if (!canManage)
                 {
                     roomSettingsPopup.Close();
                     statusMessage?.ShowInfo("방 상태가 바뀌어 방 설정 창을 닫았습니다.");

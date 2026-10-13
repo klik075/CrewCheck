@@ -16,6 +16,8 @@ namespace WhoisntCitizen.Game
     /// - the input bar (the bottom sheet's tab bar): a parchment pill with a chat mark (a down arrow closing the drawer
     ///   while it is open) and the send button. The [+] button is hidden: the role panel opens the action drawer.
     /// What the chat says and sends stays with the chat side (<see cref="ChatLogView"/>, GameChatController).
+    /// The bare form (no window) can be baked into a scene (<see cref="BakeBare"/>): the log's place and the input bar's
+    /// look are then the scene's, and BuildBare only wires them.
     /// </summary>
     public sealed class GameHudChat : MonoBehaviour
     {
@@ -33,12 +35,18 @@ namespace WhoisntCitizen.Game
         private static readonly Color Cream = new Color(0.93f, 0.9f, 0.84f);
         private static readonly Color Muted = new Color(0.62f, 0.59f, 0.52f);
 
-        private RectTransform canvas, window, chat, dropdown, dropdownList, dropdownBlocker;
-        private CanvasGroup windowGroup, chatGroup;
-        private ChatLogView log;
+        // Made by BuildBare at run time, or once in Edit mode by BakeBare (then saved with the scene and only wired).
+        [SerializeField, HideInInspector] private bool baked;
+        [SerializeField] private RectTransform chat;
+        [SerializeField] private CanvasGroup chatGroup;
+        [SerializeField] private ChatLogView log;
+        [SerializeField] private TMP_InputField input;
+        [SerializeField] private Image chatMark;
+        [SerializeField] private Button chatMarkButton;
+
+        private RectTransform canvas, window, dropdown, dropdownList, dropdownBlocker;
+        private CanvasGroup windowGroup;
         private BottomTabController bottomTab;
-        private TMP_InputField input;
-        private Image chatMark;
         private TextMeshProUGUI filterLabel, emptyLabel;
         private TMP_FontAsset font;
         private DesignSpriteCatalog portraits;
@@ -90,28 +98,57 @@ namespace WhoisntCitizen.Game
             emptyLabel.textWrappingMode = TextWrappingModes.Normal;
 
             BuildTabs();
-            if (chat != null) TakeChat();
+            if (chat != null)
+            {
+                StyleChat();
+                ListenToChat();
+            }
             if (sheet != null) BuildInputBar(sheet);
+            WireInputBar();
             UpdateEmpty();
         }
 
         /// <summary>
         /// Without the window (no frame, tabs or filter): the rows and the input bar only, for layouts that place the chat
         /// themselves. area gives the log's insets in the canvas every frame (left, top from the top, right, bottom from
-        /// the bottom), so it can follow a moving panel.
+        /// the bottom), so it can follow a moving panel. Baked (BakeBare): only wires; the log stays where the scene has it.
         /// </summary>
         public void BuildBare(RectTransform canvasRect, RectTransform chatPanel, RectTransform sheet, BottomTabController tabController,
             TMP_FontAsset labelFont, DesignSpriteCatalog busts, Func<Vector4> area)
         {
             canvas = canvasRect;
-            chat = chatPanel;
             bottomTab = tabController;
             font = labelFont;
             portraits = busts;
-            logArea = area;
+            if (!baked)
+            {
+                chat = chatPanel;
+                logArea = area;
+                log = chat != null ? chat.GetComponent<ChatLogView>() : null;
+                if (chat != null) StyleChat();
+                if (sheet != null) BuildInputBar(sheet);
+            }
+            ListenToChat();
+            WireInputBar();
+        }
+
+        /// <summary>
+        /// Edit mode, once (Tools/Game Scene/게임 화면 굽기): BuildBare's styles and input bar in the scene, to be saved with
+        /// it, and the log put at area once (left, top from the top, right, bottom from the bottom) instead of every frame.
+        /// </summary>
+        public void BakeBare(RectTransform canvasRect, RectTransform chatPanel, RectTransform sheet, TMP_FontAsset labelFont, Vector4 area)
+        {
+            canvas = canvasRect;
+            font = labelFont;
+            chat = chatPanel;
             log = chat != null ? chat.GetComponent<ChatLogView>() : null;
-            if (chat != null) TakeChat();
+            if (chat != null)
+            {
+                StyleChat();
+                PlaceLog(area);
+            }
             if (sheet != null) BuildInputBar(sheet);
+            baked = true;
         }
 
         /// <summary>Shows or hides the chat log (it keeps receiving lines).</summary>
@@ -142,13 +179,19 @@ namespace WhoisntCitizen.Game
         private void LateUpdate()
         {
             // BottomTabController moves the chat's bottom edge with the sheet; the log stays on its band instead.
-            if (chat != null)
+            // Baked, the scene places the log (the bake tool also stops the sheet pushing it).
+            if (chat != null && !baked)
             {
-                Vector4 a = logArea != null ? logArea()
-                    : new Vector4(34f, GameHudMetrics.ChatTop + LogTop, 34f, GameHudMetrics.ChatBottom + 4f);
-                chat.offsetMin = new Vector2(a.x, a.w);
-                chat.offsetMax = new Vector2(-a.z, -a.y);
+                PlaceLog(logArea != null ? logArea()
+                    : new Vector4(34f, GameHudMetrics.ChatTop + LogTop, 34f, GameHudMetrics.ChatBottom + 4f));
             }
+        }
+
+        // Insets in the canvas: left, top from the top, right, bottom from the bottom.
+        private void PlaceLog(Vector4 a)
+        {
+            chat.offsetMin = new Vector2(a.x, a.w);
+            chat.offsetMax = new Vector2(-a.z, -a.y);
         }
 
         private void OnDestroy()
@@ -323,7 +366,7 @@ namespace WhoisntCitizen.Game
 
         // ------------------------------------------------------------------ log rows
 
-        private void TakeChat()
+        private void StyleChat()
         {
             // The log's own dark backings would hide the band: let it show through (they still catch drags).
             ScrollRect scroll = chat.GetComponentInChildren<ScrollRect>(true);
@@ -343,11 +386,13 @@ namespace WhoisntCitizen.Game
             }
             chatGroup = chat.GetComponent<CanvasGroup>();
             if (chatGroup == null) chatGroup = chat.gameObject.AddComponent<CanvasGroup>();
-            if (log != null)
-            {
-                log.RowFactory = BuildRow;
-                log.RowsChanged += UpdateEmpty;
-            }
+        }
+
+        private void ListenToChat()
+        {
+            if (log == null) return;
+            log.RowFactory = BuildRow;
+            log.RowsChanged += UpdateEmpty;
         }
 
         private RectTransform BuildRow(ChatEntry e)
@@ -476,7 +521,7 @@ namespace WhoisntCitizen.Game
                 disc.anchoredPosition = new Vector2(10f, 0f);
                 Image discImage = AddImage(disc, NightFxSprites.Circle, new Color(0.17f, 0.13f, 0.09f));
                 discImage.raycastTarget = true;
-                disc.gameObject.AddComponent<Button>().onClick.AddListener(OnChatMarkClicked);
+                chatMarkButton = disc.gameObject.AddComponent<Button>(); // WireInputBar listens to it
                 chatMark = AddImage(Box(disc, "Icon", 14f, 14f, 30f, 30f), Icon("chat_1"), Cream);
                 chatMark.preserveAspect = true;
                 RectTransform rule = Box(field, "Rule", 78f, 0f, 2f, 46f);
@@ -503,6 +548,11 @@ namespace WhoisntCitizen.Game
                 sendImage.preserveAspect = true;
                 foreach (TMP_Text text in send.GetComponentsInChildren<TMP_Text>(true)) text.gameObject.SetActive(false); // the art has the plane
             }
+        }
+
+        private void WireInputBar()
+        {
+            if (chatMarkButton != null) chatMarkButton.onClick.AddListener(OnChatMarkClicked);
         }
 
         // Closed: like tapping the field. Open (any drawer): closes it.
