@@ -41,6 +41,16 @@ namespace WhoisntCitizen.GameUI
         // Chair height with 12 seats; fewer seats scale it up (characterScale). Farther seats are a little smaller.
         private const float ChairHeight = 130f;
         private const float FarDepth = 0.9f, NearDepth = 1.1f;
+        // Speech bubbles (table coordinates): right over the speaker, on their name tag when it is over their head. If that
+        // place overlaps a bubble already shown, someone's face or a name tag, the nearest free one a little higher or to
+        // the side. Who speaks: the speaker's face on the bubble's corner, their name tag turned gold and a soft gold light
+        // behind them. The message is as big as it fits: a short line at SpeechSizeMax, a long one down to SpeechSizeMin,
+        // then cut.
+        private static readonly Vector2 BubbleSize = new Vector2(240f, 112f);
+        private const float BubbleGap = 10f, BustSize = 66f;
+        private const float SpeechSizeMax = 32f, SpeechSizeMin = 24f;
+        private const int SpeechLength = 40; // characters; the whole line stays in the chat
+        private static readonly Color SpeakingBack = new Color(0.98f, 0.8f, 0.42f, 0.97f), SpeakingName = new Color(0.2f, 0.12f, 0.04f);
 
         /// <summary>
         /// How a pose sits on its chair, in chair heights from the chair's floor point: where the character's pivot
@@ -95,13 +105,16 @@ namespace WhoisntCitizen.GameUI
             public RectTransform bubble;
             public TextMeshProUGUI speechText;
             public CanvasGroup speechGroup;
-            public Image speechLeader;
+            public Image speechBust;        // the speaker's face on the bubble's corner (its badge is hidden without one)
+            public Image speakingGlow;      // soft gold light behind the speaker
             public Outline speakingOutline;
             public float speechUntil;
         }
 
         private readonly Seat[] seats = new Seat[SeatCount];
         private readonly RectTransform[] cardSpots = new RectTransform[SeatCount]; // by seat index, on the table rim
+        private readonly List<Rect> placedBubbles = new List<Rect>(SeatCount);     // LayoutSpeech's bubbles so far
+        private DesignSpriteCatalog portraits;                                       // busts for the bubbles' faces
         private readonly List<PlayerViewDto> players = new List<PlayerViewDto>(SeatCount);
         private readonly Dictionary<long, ChibiCharacterSkin> skinOverrides = new Dictionary<long, ChibiCharacterSkin>();
         private readonly Dictionary<long, ChibiCharacterSkin> wornSkins = new Dictionary<long, ChibiCharacterSkin>();
@@ -156,6 +169,7 @@ namespace WhoisntCitizen.GameUI
             if (availableSkins == null) Array.Sort(skins, (a, b) => string.CompareOrdinal(a.name, b.name));
             tableSprite = Resources.Load<Sprite>("DayTable/RoundTable");
             previewSprite = Resources.Load<Sprite>("DayTable/PreviewCharacter");
+            portraits = Resources.Load<DesignSpriteCatalog>("GameHud/Portraits");
             capacity = Mathf.Clamp(maxPlayers, 4, SeatCount);
             ConfigureLayout();
             if (background != null)
@@ -565,12 +579,18 @@ namespace WhoisntCitizen.GameUI
             foreach (Seat seat in seats)
             {
                 if (seat == null || !seat.occupied || !seat.alive || seat.playerId != userId) continue;
-                seat.speechText.text = ShortText(seat.name.text, 10) + "\n" + ShortText(message, 40);
+                seat.speechText.text = ShortText(message, SpeechLength);
                 seat.speechUntil = Time.unscaledTime + 4.5f;
                 seat.speechGroup.alpha = 1f;
                 seat.bubble.gameObject.SetActive(true);
-                seat.speechLeader.gameObject.SetActive(true);
                 seat.speakingOutline.enabled = true;
+                seat.speakingGlow.color = new Color(1f, 0.82f, 0.35f, 0.8f);
+                seat.speakingGlow.gameObject.SetActive(true);
+                seat.name.color = new Color(SpeakingName.r, SpeakingName.g, SpeakingName.b, seat.name.alpha);
+                if (seat.nameBack != null) seat.nameBack.color = SpeakingBack;
+                Sprite bust = BustOf(seat.playerId);
+                seat.speechBust.sprite = bust;
+                seat.speechBust.transform.parent.parent.gameObject.SetActive(bust != null); // the badge
                 LayoutSpeech();
                 return;
             }
@@ -590,28 +610,32 @@ namespace WhoisntCitizen.GameUI
             seat.speakingOutline.effectDistance = new Vector2(2f, -2f);
             seat.speakingOutline.effectColor = new Color(1f, 0.8f, 0.25f, 0.6f);
             seat.speakingOutline.enabled = false;
-            seat.speechLeader = CreateImage("SpeechLeader_" + index, tableRoot, null, new Vector2(2f, 20f), Vector2.zero);
-            seat.speechLeader.color = new Color(0.95f, 0.76f, 0.38f, 0.85f);
-            Image panel = CreateImage("SpeechBubble_" + index, tableRoot, null, new Vector2(188f, 90f), Vector2.zero);
-            panel.color = new Color32(255, 244, 216, 255);
+            // A soft gold light behind the speaker (behind their chair too).
+            float glow = seat.figureHeight * 1.4f;
+            seat.speakingGlow = CreateImage("SpeakingGlow", seat.avatar.transform.parent, NightFxSprites.Dot, new Vector2(glow, glow),
+                seat.restingPosition + new Vector2(0f, seat.figureHeight * 0.5f));
+            seat.speakingGlow.preserveAspect = false;
+            seat.speakingGlow.transform.SetAsFirstSibling();
+            Image panel = CreateImage("SpeechBubble_" + index, tableRoot, null, BubbleSize, Vector2.zero);
+            HudShapes.Panel(panel.rectTransform, new Color32(255, 244, 216, 255), new Color32(110, 72, 30, 255), 16f);
             seat.bubble = panel.rectTransform;
             seat.speechGroup = panel.gameObject.AddComponent<CanvasGroup>();
             seat.speechGroup.blocksRaycasts = false;
             seat.speechGroup.interactable = false;
-            Outline border = panel.gameObject.AddComponent<Outline>();
-            border.effectColor = new Color32(110, 72, 30, 255);
-            border.effectDistance = new Vector2(2f, -2f);
             var textObject = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
             textObject.layer = gameObject.layer;
             var rect = (RectTransform)textObject.transform;
             rect.SetParent(panel.transform, false);
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
-            rect.offsetMin = new Vector2(10f, 7f);
-            rect.offsetMax = new Vector2(-10f, -7f);
+            rect.offsetMin = new Vector2(BustSize * 0.5f + 12f, 8f); // clear of the face on the top-left corner
+            rect.offsetMax = new Vector2(-14f, -8f);
             seat.speechText = textObject.GetComponent<TextMeshProUGUI>();
             if (font != null) seat.speechText.font = font;
-            seat.speechText.fontSize = 20f;
+            seat.speechText.fontSize = SpeechSizeMax;
+            seat.speechText.enableAutoSizing = true;
+            seat.speechText.fontSizeMin = SpeechSizeMin;
+            seat.speechText.fontSizeMax = SpeechSizeMax;
             seat.speechText.richText = false;
             seat.speechText.textWrappingMode = TextWrappingModes.Normal;
             seat.speechText.overflowMode = TextOverflowModes.Ellipsis;
@@ -619,15 +643,44 @@ namespace WhoisntCitizen.GameUI
             seat.speechText.color = new Color32(53, 35, 21, 255);
             seat.speechText.alignment = TextAlignmentOptions.Center;
             seat.speechText.raycastTarget = false;
+
+            // The speaker's face in a gold ring on the bubble's top-left corner (ShowSpeech puts in their bust).
+            var badge = (RectTransform)new GameObject("Speaker", typeof(RectTransform)).transform;
+            badge.gameObject.layer = gameObject.layer;
+            badge.SetParent(panel.transform, false);
+            badge.anchorMin = badge.anchorMax = new Vector2(0f, 1f);
+            badge.sizeDelta = new Vector2(BustSize, BustSize);
+            badge.anchoredPosition = new Vector2(10f, -12f);
+            Image disc = CreateImage("Disc", badge, NightFxSprites.Circle, new Vector2(BustSize, BustSize), Vector2.zero);
+            disc.color = new Color(0.12f, 0.14f, 0.18f);
+            disc.preserveAspect = false;
+            disc.gameObject.AddComponent<Mask>().showMaskGraphic = true;
+            seat.speechBust = CreateImage("Bust", disc.transform, null, Vector2.zero, Vector2.zero);
+            RectTransform bust = seat.speechBust.rectTransform;
+            bust.anchorMin = Vector2.zero;
+            bust.anchorMax = Vector2.one;
+            bust.offsetMin = new Vector2(-6f, -10f);
+            bust.offsetMax = new Vector2(6f, 2f);
+            Image ring = CreateImage("Ring", badge, null, new Vector2(BustSize + 6f, BustSize + 6f), Vector2.zero);
+            HudShapes.Panel(ring.rectTransform, new Color(0f, 0f, 0f, 0f), SpeakingBack, (BustSize + 6f) * 0.5f);
             HideSpeech(seat);
+        }
+
+        // The bust of the skin this player wears at the table (Resources/GameHud/Portraits), or null.
+        private Sprite BustOf(long playerId)
+        {
+            ChibiCharacterSkin skin = SkinOf(playerId);
+            return skin != null && portraits != null ? portraits.Find(skin.DesignId) : null;
         }
 
         private static void HideSpeech(Seat seat)
         {
             seat.speechUntil = 0f;
             if (seat.bubble != null) seat.bubble.gameObject.SetActive(false);
-            if (seat.speechLeader != null) seat.speechLeader.gameObject.SetActive(false);
             if (seat.speakingOutline != null) seat.speakingOutline.enabled = false;
+            if (seat.speakingGlow != null) seat.speakingGlow.gameObject.SetActive(false);
+            if (seat.name != null) seat.name.color = new Color(1f, 1f, 1f, seat.name.alpha);
+            if (seat.nameBack != null) seat.nameBack.color = new Color(NameBack.r, NameBack.g, NameBack.b, NameBack.a * seat.name.alpha);
         }
 
         private void ClearSpeech()
@@ -645,7 +698,7 @@ namespace WhoisntCitizen.GameUI
                 if (remaining <= 0f) { HideSpeech(seat); changed = true; continue; }
                 float alpha = Mathf.Clamp01(remaining / 0.4f);
                 seat.speechGroup.alpha = alpha;
-                Color line = seat.speechLeader.color; line.a = 0.85f * alpha; seat.speechLeader.color = line;
+                seat.speakingGlow.color = new Color(1f, 0.82f, 0.35f, 0.8f * alpha);
                 seat.speakingOutline.effectColor = new Color(1f, 0.8f, 0.25f, (0.4f + 0.15f * Mathf.Sin(now * 4f)) * alpha);
             }
             if (changed) LayoutSpeech();
@@ -653,41 +706,56 @@ namespace WhoisntCitizen.GameUI
 
         private void LayoutSpeech()
         {
-            // Reserve disjoint cells nearest each speaker; even twelve simultaneous bubbles cannot overlap.
-            var used = new bool[30];
+            // Each speaker in turn: their bubble right over them, or the nearest free place a little higher or to the
+            // side. Only if none is left does a bubble overlap (a face or a name tag first, then another bubble).
+            placedBubbles.Clear();
+            Vector2 half = BubbleSize * 0.5f;
             for (int i = 0; i < SeatCount; i++)
             {
                 Seat seat = seats[i];
                 if (seat == null || seat.speechUntil <= 0f) continue;
-                Vector2 head = HeadOf(seat);
-                Vector2 preferred = head + new Vector2(0f, 100f);
-                int best = -1; float distance = float.MaxValue;
-                for (int cell = 0; cell < used.Length; cell++)
+                Vector2 home = SpeakerTop(seat) + new Vector2(0f, BubbleGap + half.y);
+                Rect bestBounds = default; float bestScore = float.MaxValue;
+                for (int up = 0; up < 4; up++)
                 {
-                    if (used[cell]) continue;
-                    Vector2 candidate = new Vector2((cell % 5 - 2) * 200f, 355f - (cell / 5) * 110f);
-                    float score = (candidate - preferred).sqrMagnitude;
-                    Rect bounds = new Rect(candidate - new Vector2(96f, 47f), new Vector2(192f, 94f));
-                    for (int other = 0; other < SeatCount; other++)
+                    for (int side = 0; side < 9; side++)
                     {
-                        if (seats[other] == null || !seats[other].occupied) continue;
-                        Vector2 faceSize = new Vector2(0.8f, 0.55f) * seats[other].figureHeight;
-                        Rect face = new Rect(HeadOf(seats[other]) - faceSize * 0.5f, faceSize);
-                        if (bounds.Overlaps(face)) score += 1000000f;
+                        float dx = (side + 1) / 2 * 70f * (side % 2 == 1 ? -1f : 1f); // 0, -70, 70, -140, 140, ...
+                        Vector2 c = home + new Vector2(dx, up * 60f);
+                        c.x = Mathf.Clamp(c.x, -540f + half.x, 540f - half.x); // on the stage
+                        c.y = Mathf.Clamp(c.y, -TableHeight * 0.5f + half.y, TableHeight * 0.5f - half.y);
+                        var bounds = new Rect(c - half, BubbleSize);
+                        float score = (c - home).sqrMagnitude;
+                        foreach (Rect placed in placedBubbles) if (bounds.Overlaps(placed)) score += 1e9f;
+                        for (int other = 0; other < SeatCount; other++)
+                        {
+                            if (seats[other] == null || !seats[other].occupied) continue;
+                            Vector2 faceSize = new Vector2(0.8f, 0.55f) * seats[other].figureHeight;
+                            if (bounds.Overlaps(new Rect(HeadOf(seats[other]) - faceSize * 0.5f, faceSize))) score += 1e6f;
+                            if (bounds.Overlaps(TagRect(seats[other]))) score += 1e6f; // keep the name tags readable
+                        }
+                        if (score < bestScore) { bestScore = score; bestBounds = bounds; }
                     }
-                    if (score < distance) { distance = score; best = cell; }
                 }
-                used[best] = true;
-                Vector2 position = new Vector2((best % 5 - 2) * 200f, 355f - (best / 5) * 110f);
-                seat.bubble.anchoredPosition = position;
-                Vector2 end = position - new Vector2(0f, 45f);
-                Vector2 delta = end - head;
-                seat.speechLeader.rectTransform.anchoredPosition = (head + end) * 0.5f;
-                seat.speechLeader.rectTransform.sizeDelta = new Vector2(delta.magnitude, 2f);
-                seat.speechLeader.rectTransform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg);
+                placedBubbles.Add(bestBounds);
+                seat.bubble.anchoredPosition = bestBounds.center;
             }
-            // Draw every bubble above every connector.
             foreach (Seat seat in seats) if (seat != null && seat.bubble != null) seat.bubble.SetAsLastSibling();
+        }
+
+        // A seat's name tag in table coordinates.
+        private static Rect TagRect(Seat seat)
+        {
+            var tag = (RectTransform)seat.nameRoot.transform;
+            return new Rect(seat.anchor + tag.anchoredPosition - tag.sizeDelta * 0.5f, tag.sizeDelta);
+        }
+
+        // The top of a speaker: their (gold) name tag when it is over their head, else just over the head.
+        private static Vector2 SpeakerTop(Seat seat)
+        {
+            if (LayoutFor(seat.pose).behindChair) return HeadOf(seat) + new Vector2(0f, seat.figureHeight * 0.18f);
+            Rect tag = TagRect(seat);
+            return new Vector2(tag.center.x, tag.yMax);
         }
 
         private void AnimateSeats(float now)
@@ -703,7 +771,11 @@ namespace WhoisntCitizen.GameUI
             color.a *= arrival;
             seat.avatar.color = color;
             seat.name.alpha = arrival;
-            if (seat.nameBack != null) seat.nameBack.color = new Color(NameBack.r, NameBack.g, NameBack.b, NameBack.a * arrival);
+            if (seat.nameBack != null)
+            {
+                Color back = seat.speechUntil > 0f ? SpeakingBack : NameBack; // the speaker's tag stays gold
+                seat.nameBack.color = new Color(back.r, back.g, back.b, back.a * arrival);
+            }
 
             float stretch = animate && seat.alive
                 ? Mathf.Sin(now * 1.7f + seat.breathingPhase) * BreathingAmount * arrival
