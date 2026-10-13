@@ -239,6 +239,7 @@ namespace WhoisntCitizen.Game
             }
             if (resultPanel != null)
             {
+                resultPanel.SkinOf = dayTable.SkinOf;
                 resultPanel.BackRequested += OnBackRequested;
                 resultPanel.Hide();
             }

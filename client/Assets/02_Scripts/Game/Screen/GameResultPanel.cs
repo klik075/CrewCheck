@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using WhoisntCitizen.GameUI;
 
 namespace WhoisntCitizen.Game
 {
     /// <summary>
     /// 게임 결과 패널. 승리 진영, 내 승패, 전원의 실제 직업. "대기실로" 버튼을 누르면 BackRequested.
-    /// 자동 복귀가 켜져 있으면 패널이 뜬 뒤 autoReturnSeconds초가 지나면 버튼을 누른 것처럼 BackRequested를 낸다.
+    /// 자동 복귀가 켜져 있으면 등장 연출이 끝난 뒤 autoReturnSeconds초가 지나면 BackRequested를 낸다.
     /// </summary>
     public sealed class GameResultPanel : MonoBehaviour
     {
@@ -17,13 +18,20 @@ namespace WhoisntCitizen.Game
         [SerializeField] private TextMeshProUGUI outcomeText;
         [SerializeField] private TextMeshProUGUI playersText;
         [SerializeField] private Button backButton;
-        [Tooltip("결과 패널이 뜬 뒤 자동으로 대기실로 돌아가기까지의 시간(초). 0 이하면 자동 복귀하지 않는다.")]
+        [Tooltip("결과 등장 연출이 끝난 뒤 자동으로 대기실로 돌아가기까지의 시간(초). 0 이하면 자동 복귀하지 않는다.")]
         private float autoReturnSeconds = 20f;
 
         private readonly Dictionary<string, Sprite> backgrounds = new Dictionary<string, Sprite>();
         private Image backgroundImage;
         private AspectRatioFitter backgroundFit;
         private bool presentationReady;
+        private GameResultSequence sequence;
+        private GameResultCardView cardView;
+        private bool returnAfterIntro;
+        private bool returnRequested;
+
+        public Func<long, ChibiCharacterSkin> SkinOf { get; set; }
+        public bool IsIntroPlaying => sequence != null && sequence.IsPlaying;
 
         // 자동 복귀 카운트다운
         private bool counting;
@@ -75,6 +83,9 @@ namespace WhoisntCitizen.Game
         public void Show(GameResultDto result, MyRoleDto me, bool autoReturn = true)
         {
             if (result == null) return;
+            StopCountdown();
+            returnRequested = false;
+            returnAfterIntro = autoReturn && autoReturnSeconds > 0f;
             PreparePresentation();
             ShowBackground(result, me != null ? me.faction : null);
             if (winnerText != null)
@@ -92,8 +103,21 @@ namespace WhoisntCitizen.Game
             }
             Root.SetActive(true);
             Root.transform.SetAsLastSibling();
-            if (autoReturn && autoReturnSeconds > 0f) StartCountdown();
-            else StopCountdown();
+            cardView?.Show(result, me, SkinOf, backgroundImage.sprite != null);
+            sequence.Play(result, me, SkinOf, backgroundImage.sprite != null, OnIntroFinished);
+        }
+
+        public void SkipIntro() { if (sequence != null) sequence.Skip(); }
+
+        private void OnIntroFinished()
+        {
+            if (returnAfterIntro && Root.activeInHierarchy && !returnRequested) StartCountdown();
+        }
+
+        private void OnDisable()
+        {
+            StopCountdown();
+            if (sequence != null) sequence.Stop();
         }
 
         private void StartCountdown()
@@ -213,7 +237,18 @@ namespace WhoisntCitizen.Game
                 rect.pivot = new Vector2(0.5f, 0f);
                 rect.anchoredPosition = new Vector2(0f, 30f);
                 rect.sizeDelta = new Vector2(0f, 94f);
+                TextMeshProUGUI label = backButton.GetComponentInChildren<TextMeshProUGUI>(true);
+                if (label != null)
+                {
+                    label.enableAutoSizing = true;
+                    label.fontSizeMin = 20f;
+                    label.fontSizeMax = 36f;
+                }
             }
+            sequence = Root.GetComponent<GameResultSequence>();
+            if (sequence == null) sequence = Root.AddComponent<GameResultSequence>();
+            if (card != null) cardView = new GameResultCardView(card, winnerText, outcomeText, playersText, backButton);
+            sequence.Initialize(winnerText, outcomeText, playersText, backButton, cardView);
         }
 
         private static void PlaceAtTop(RectTransform rect, float top, float height)
@@ -228,11 +263,15 @@ namespace WhoisntCitizen.Game
         public void Hide()
         {
             StopCountdown();
+            if (sequence != null) sequence.Stop();
             Root.SetActive(false);
         }
 
         private void OnBackClicked()
         {
+            if (IsIntroPlaying) { SkipIntro(); return; }
+            if (returnRequested) return;
+            returnRequested = true;
             StopCountdown(); // 버튼과 타이머가 두 번 보내지 않게
             if (BackRequested != null)
             {
