@@ -1101,12 +1101,12 @@ namespace WhoisntCitizen.Game
             PlayTransition(info);
         }
 
-        /// <summary>죽은 사람: 닉네임과 테이블에서 입은 스킨(흉상·서 있는 모습). 직업은 서버가 알려 주지 않으므로 없다.</summary>
+        /// <summary>죽은 사람: 닉네임과 테이블에서 입은 스킨(흉상·널빤지 위 묶인 모습). 직업은 서버가 알려 주지 않으므로 없다.</summary>
         private void DescribeDead(DayTransitionInfo info, long playerId, string nickname)
         {
             info.Name = !string.IsNullOrEmpty(nickname) ? nickname : GameStateQueries.NicknameOf(Session != null ? Session.State : null, playerId);
             ChibiCharacterSkin skin = dayTable != null ? dayTable.SkinOf(playerId) : null;
-            info.Figure = skin != null ? skin.Standing : null;
+            info.Figure = skin != null ? skin.Bound : null;
             info.Portrait = skin != null && hud != null && hud.Portraits != null ? hud.Portraits.Find(skin.DesignId) : null;
             info.Mine = playerId == MyId;
         }

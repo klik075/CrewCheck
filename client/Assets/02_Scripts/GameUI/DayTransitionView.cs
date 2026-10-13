@@ -25,7 +25,7 @@ namespace WhoisntCitizen.GameUI
         public int Day;            // the night's day (the day that comes next), or the vote's day (the next night is Day + 1)
         public string Name;        // the dead player's nickname, without "님"
         public Sprite Portrait;    // the bust of the skin they wore at the table
-        public Sprite Figure;      // that skin standing (the plank)
+        public Sprite Figure;      // that skin bound with rope (the plank)
         public int Votes;          // executed: their votes
         public int TotalVotes;     // executed: every vote cast
         public string Reason;      // not executed: why ("동점이라 아무도 처형되지 않았습니다.")
