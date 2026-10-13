@@ -15,9 +15,27 @@ namespace WhoisntCitizen.Friend
         public int playCount;
         public int winCount;
         public double winRate;      // 서버 계산값 (단위 모호) → 화면에는 WinRatePercent를 쓴다.
+        public bool online;         // 접속 중인지 (status가 OFFLINE이 아니면 true)
+        public string status;       // OFFLINE / ONLINE / IN_ROOM(대기실) / IN_GAME(게임 중). 옛 서버 응답에는 없을 수 있다.
 
         /// <summary>승률(%). 승/판수로 직접 계산한다. (0~100)</summary>
         public double WinRatePercent => playCount <= 0 ? 0d : (double)winCount / playCount * 100d;
+
+        /// <summary>화면에 보여 줄 접속 상태 글자. status가 없으면 online 값으로 온라인/오프라인만 구분한다.</summary>
+        public string StatusLabel
+        {
+            get
+            {
+                switch (status)
+                {
+                    case "IN_GAME": return "게임 중";
+                    case "IN_ROOM": return "대기실";
+                    case "ONLINE": return "온라인";
+                    case "OFFLINE": return "오프라인";
+                    default: return online ? "온라인" : "오프라인";
+                }
+            }
+        }
     }
 
     /// <summary>받은 친구 요청 한 건. GET /api/friends/requests 응답 배열의 원소</summary>

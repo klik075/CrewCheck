@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -11,21 +10,34 @@ namespace WhoisntCitizen.Game
     /// <summary>
     /// The chat window of the pirate HUD, laid out at run time over the scene's chat log and bottom sheet (like
     /// <see cref="GameHudLayout"/>, which makes it). One gold frame holds, from the top:
-    /// - tabs (전체 / 시스템 / 귓속말) and the chat filter (only one player's chat), which filter the chat log;
-    /// - the chat log: each line a row with the sender's bust on a name tag, the message and the time;
+    /// - tabs (전체 / 시스템 / 일반 / 귓속말) and the chat filter (only one player's chat, on 전체 and 일반), which filter
+    ///   the chat log;
+    /// - the chat log: each line a row with the sender's bust on a name tag and the message (no time: the message gets
+    ///   the width, at a size a phone reads);
     /// - the input bar (the bottom sheet's tab bar): a parchment pill with a chat mark (a down arrow closing the drawer
     ///   while it is open) and the send button. The [+] button is hidden: the role panel opens the action drawer.
     /// What the chat says and sends stays with the chat side (<see cref="ChatLogView"/>, GameChatController).
     /// The bare form (no window) can be baked into a scene (<see cref="BakeBare"/>): the log's place and the input bar's
     /// look are then the scene's, and BuildBare only wires them.
+    /// In the nautical look (GameScene3, <see cref="NauticalHud"/>) the system and notice tags are framed plates, the rows'
+    /// rules gold with a star at their end, and the input bar the concept's pill, compass ring and framed send button.
     /// </summary>
     public sealed class GameHudChat : MonoBehaviour
     {
         private const string Icons = "Sprites/flaticon/white/128/";
         // In the window (canvas units from its top-left): the tab row, then the log.
         private const float TabTop = 32f, TabHeight = 56f, LogTop = 100f; // the tabs sit under the frame's top rail
-        // A row: name tag on the left, message in the middle, time on the right.
-        private const float RowPad = 6f, TagWidth = 200f, TagHeight = 44f, BodyLeft = 216f, BodyRight = 104f, BodyPad = 12f;
+        // AddTabRow (bare chat): the tab row inside the log's top edge; the rows scroll under it.
+        private const float BareTabTop = 6f, BareTabInset = 8f, BareLogTop = BareTabTop + TabHeight + 8f;
+        // A row: name tag on the left, then the message.
+        private const float RowPad = 6f, TagWidth = 216f, TagHeight = 52f, BodyLeft = 232f, BodyRight = 14f, BodyPad = 12f;
+        // The nautical input bar, in the tab bar (canvas units): the pill from PillLeft to PillRight from the bar's right,
+        // the chat mark's ring centred on the pill's left end, the send button's centre SendRight from the bar's right.
+        private const float PillLeft = 60f, PillRight = 138f, PillHeight = 67f, PillDrop = 4f, MarkSize = 82f, MarkX = 14f;
+        private const float SendRight = 85f, SendWidth = 91f, SendHeight = 81f;
+        // Text sizes in canvas units: the canvas is 1080 wide, so on a phone one unit is about 0.37 pt (30 ≈ 11 pt).
+        private const float NameSize = 26f, BodySize = 30f;
+        private const float BodyDilate = 0.12f; // the regular weight is thin on a phone: the message is drawn a little heavier
 
         private static readonly Color Gold = new Color(0.98f, 0.8f, 0.42f);
         private static readonly Color GoldLine = new Color(0.78f, 0.58f, 0.27f);
@@ -34,9 +46,13 @@ namespace WhoisntCitizen.Game
         private static readonly Color Teal = new Color(0.07f, 0.17f, 0.19f, 0.97f);
         private static readonly Color Cream = new Color(0.93f, 0.9f, 0.84f);
         private static readonly Color Muted = new Color(0.62f, 0.59f, 0.52f);
+        // Message text on the dark band, a little lighter than the window's own for the small size.
+        private static readonly Color BodyText = new Color(0.97f, 0.95f, 0.9f);
+        private static readonly Color SystemText = new Color(0.62f, 0.95f, 0.67f);
 
         // Made by BuildBare at run time, or once in Edit mode by BakeBare (then saved with the scene and only wired).
         [SerializeField, HideInInspector] private bool baked;
+        [SerializeField, HideInInspector] private bool nautical;
         [SerializeField] private RectTransform chat;
         [SerializeField] private CanvasGroup chatGroup;
         [SerializeField] private ChatLogView log;
@@ -44,7 +60,7 @@ namespace WhoisntCitizen.Game
         [SerializeField] private Image chatMark;
         [SerializeField] private Button chatMarkButton;
 
-        private RectTransform canvas, window, dropdown, dropdownList, dropdownBlocker;
+        private RectTransform canvas, window, dropdown, dropdownList, dropdownBlocker, filterButton;
         private CanvasGroup windowGroup;
         private BottomTabController bottomTab;
         private TextMeshProUGUI filterLabel, emptyLabel;
@@ -97,7 +113,7 @@ namespace WhoisntCitizen.Game
             Stretch(emptyLabel.rectTransform, 20f, 20f, 20f, 20f);
             emptyLabel.textWrappingMode = TextWrappingModes.Normal;
 
-            BuildTabs();
+            BuildTabs(window, TabTop, 24f);
             if (chat != null)
             {
                 StyleChat();
@@ -133,6 +149,26 @@ namespace WhoisntCitizen.Game
         }
 
         /// <summary>
+        /// After BuildBare (GameScene3): the tabs (전체 / 시스템 / 일반 / 귓속말) and the chat filter at the top of the chat
+        /// log, as in the framed window. They are made at run time inside the log (baked scenes too), and the log's viewport
+        /// starts under them, so the log keeps the place the layout or the scene gives it.
+        /// </summary>
+        public void AddTabRow()
+        {
+            if (chat == null || log == null || tabs.Count > 0) return;
+            ScrollRect scroll = chat.GetComponentInChildren<ScrollRect>(true);
+            RectTransform viewport = scroll != null ? scroll.viewport : null;
+            if (viewport != null) viewport.offsetMax = new Vector2(viewport.offsetMax.x, viewport.offsetMax.y - BareLogTop);
+
+            emptyLabel = NewText(chat, "Empty", 24f, Muted, FontStyles.Normal, TextAlignmentOptions.Center);
+            Stretch(emptyLabel.rectTransform, 20f, BareLogTop + 12f, 20f, 12f);
+            emptyLabel.textWrappingMode = TextWrappingModes.Normal;
+
+            BuildTabs(chat, BareTabTop, BareTabInset);
+            UpdateEmpty();
+        }
+
+        /// <summary>
         /// Edit mode, once (Tools/Game Scene/게임 화면 굽기): BuildBare's styles and input bar in the scene, to be saved with
         /// it, and the log put at area once (left, top from the top, right, bottom from the bottom) instead of every frame.
         /// </summary>
@@ -149,6 +185,25 @@ namespace WhoisntCitizen.Game
             }
             if (sheet != null) BuildInputBar(sheet);
             baked = true;
+        }
+
+        /// <summary>The nautical look (GameScene3) for the rows and the input bar. Before BuildBare or BakeBare.</summary>
+        public void SetNautical(bool on)
+        {
+            nautical = on;
+        }
+
+        /// <summary>
+        /// Edit mode (Tools/Game Scene/항해 시안 입히기): a bare chat baked before the nautical look dressed in it, the log
+        /// put at area (left, top from the top, right, bottom from the bottom: inside the window's frame).
+        /// </summary>
+        public void DressNautical(Vector4 area)
+        {
+            nautical = true;
+            if (chat != null) PlaceLog(area);
+            Transform tabBar = input != null ? input.transform.parent : null;
+            while (tabBar != null && tabBar.name != "TabBar") tabBar = tabBar.parent;
+            if (tabBar != null) DressInputBar(tabBar);
         }
 
         /// <summary>Shows or hides the chat log (it keeps receiving lines).</summary>
@@ -201,19 +256,23 @@ namespace WhoisntCitizen.Game
                 log.RowsChanged -= UpdateEmpty;
                 log.RowFactory = null;
             }
+            if (bodyMaterial != null) Destroy(bodyMaterial);
         }
 
         // ------------------------------------------------------------------ tabs and filter
 
-        private void BuildTabs()
+        // The tab row in parent: top from its top, inset from its left and right (the filter at the right end).
+        private void BuildTabs(RectTransform parent, float top, float inset)
         {
-            AddTab(ChatTab.All, "전체", "flag_1", 24f, 168f);
-            AddTab(ChatTab.System, "시스템", "notification", 198f, 150f);
-            AddTab(ChatTab.Whisper, "귓속말", "friend", 354f, 150f);
+            AddTab(parent, top, ChatTab.All, "전체", "flag_1", inset, 168f);
+            AddTab(parent, top, ChatTab.System, "시스템", "notification", inset + 174f, 150f);
+            AddTab(parent, top, ChatTab.General, "일반", "chat_1", inset + 330f, 150f);
+            AddTab(parent, top, ChatTab.Whisper, "귓속말", "friend", inset + 486f, 150f);
 
-            RectTransform filter = Box(window, "ChatFilter", 0f, TabTop, 206f, TabHeight);
+            RectTransform filter = Box(parent, "ChatFilter", 0f, top, 206f, TabHeight);
             filter.anchorMin = filter.anchorMax = filter.pivot = new Vector2(1f, 1f);
-            filter.anchoredPosition = new Vector2(-24f, -TabTop);
+            filter.anchoredPosition = new Vector2(-inset, -top);
+            filterButton = filter;
             HudShapes.Panel(filter, Teal, GoldLine, 12f).raycastTarget = true;
             filter.gameObject.AddComponent<Button>().onClick.AddListener(ToggleFilter);
             filterLabel = NewText(filter, "Label", 23f, Gold, FontStyles.Bold, TextAlignmentOptions.Center);
@@ -226,9 +285,9 @@ namespace WhoisntCitizen.Game
             ShowTab(ChatTab.All);
         }
 
-        private void AddTab(ChatTab kind, string text, string icon, float x, float width)
+        private void AddTab(RectTransform parent, float top, ChatTab kind, string text, string icon, float x, float width)
         {
-            RectTransform rect = Box(window, "Tab" + kind, x, TabTop, width, TabHeight);
+            RectTransform rect = Box(parent, "Tab" + kind, x, top, width, TabHeight);
             var tab = new Tab { fill = HudShapes.Panel(rect, Teal, GoldLine, 12f) };
             tab.fill.raycastTarget = true;
             tab.outline = rect.Find("Outline").GetComponent<Image>();
@@ -251,7 +310,8 @@ namespace WhoisntCitizen.Game
                 pair.Value.label.color = active ? Ink : Cream;
                 pair.Value.icon.color = active ? new Color(0.09f, 0.3f, 0.32f) : Cream;
             }
-            if (log != null) log.SetFilter(kind, kind == ChatTab.All ? log.SpeakerFilter : null);
+            // 전체 ↔ 일반을 오갈 때는 고른 플레이어를 그대로 둔다 (시스템·귓속말 탭에서는 풀림)
+            if (log != null) log.SetFilter(kind, ChatLogView.UsesSpeakerFilter(kind) ? log.SpeakerFilter : null);
             UpdateFilterLabel();
         }
 
@@ -261,11 +321,13 @@ namespace WhoisntCitizen.Game
             else OpenFilter();
         }
 
-        // The filter: every player who has chatted, or everyone. Picking one shows the 전체 tab with only their chat.
+        // The filter: every player who has chatted, or everyone. Picking one shows only their chat on the 일반 tab if that
+        // is open, else on the 전체 tab.
         private void OpenFilter()
         {
             if (log == null) return;
             if (dropdown == null) BuildDropdown();
+            PlaceDropdown();
             for (int i = dropdownList.childCount - 1; i >= 0; i--) Destroy(dropdownList.GetChild(i).gameObject);
             AddFilterRow("모든 플레이어", null);
             List<string> speakers = log.Speakers();
@@ -293,10 +355,9 @@ namespace WhoisntCitizen.Game
             AddImage(dropdownBlocker, null, new Color(0f, 0f, 0f, 0f)).raycastTarget = true; // a tap outside closes it
             dropdownBlocker.gameObject.AddComponent<Button>().onClick.AddListener(CloseFilter);
 
-            // Hangs from the filter button, right-aligned with it.
-            dropdown = Box(canvas, "ChatFilterList", 0f, GameHudMetrics.ChatTop + TabTop + TabHeight + 6f, 320f, 100f);
+            // Hangs from the filter button, right-aligned with it (PlaceDropdown).
+            dropdown = Box(canvas, "ChatFilterList", 0f, 0f, 320f, 100f);
             dropdown.anchorMin = dropdown.anchorMax = dropdown.pivot = new Vector2(1f, 1f);
-            dropdown.anchoredPosition = new Vector2(-34f, -(GameHudMetrics.ChatTop + TabTop + TabHeight + 6f));
             HudShapes.Panel(dropdown, new Color(0.06f, 0.12f, 0.13f, 0.98f), GoldLine, 12f).raycastTarget = true;
             RectTransform viewport = NewRect("Viewport", dropdown);
             Stretch(viewport, 8f, 8f, 8f, 8f);
@@ -319,11 +380,22 @@ namespace WhoisntCitizen.Game
             scroll.movementType = ScrollRect.MovementType.Clamped;
         }
 
+        // Right under the filter button, right edges lined up (the button's place depends on the layout).
+        private void PlaceDropdown()
+        {
+            if (filterButton == null) return;
+            var corners = new Vector3[4];
+            filterButton.GetWorldCorners(corners); // [3]: bottom right
+            Vector2 corner = canvas.InverseTransformPoint(corners[3]);
+            Rect area = canvas.rect;
+            dropdown.anchoredPosition = new Vector2(corner.x - area.xMax, corner.y - area.yMax - 6f);
+        }
+
         private void AddFilterRow(string text, string speaker, bool pickable = true)
         {
             RectTransform row = NewRect("Option", dropdownList);
             row.gameObject.AddComponent<LayoutElement>().preferredHeight = 54f;
-            bool chosen = pickable && log.Tab == ChatTab.All && log.SpeakerFilter == speaker;
+            bool chosen = pickable && ChatLogView.UsesSpeakerFilter(log.Tab) && log.SpeakerFilter == speaker;
             Image back = AddImage(row, HudShapes.Fill, chosen ? new Color(0.98f, 0.8f, 0.42f, 0.25f) : new Color(1f, 1f, 1f, 0f));
             back.type = Image.Type.Sliced;
             back.pixelsPerUnitMultiplier = 2f;
@@ -335,8 +407,9 @@ namespace WhoisntCitizen.Game
             row.gameObject.AddComponent<Button>().onClick.AddListener(() =>
             {
                 CloseFilter();
-                log.SetFilter(ChatTab.All, speaker);
-                ShowTab(ChatTab.All);
+                ChatTab target = log.Tab == ChatTab.General ? ChatTab.General : ChatTab.All;
+                log.SetFilter(target, speaker);
+                ShowTab(target);
             });
         }
 
@@ -357,6 +430,9 @@ namespace WhoisntCitizen.Game
             switch (log.Tab)
             {
                 case ChatTab.System: emptyLabel.text = "시스템 메시지가 없습니다."; break;
+                case ChatTab.General:
+                    emptyLabel.text = string.IsNullOrEmpty(log.SpeakerFilter) ? "아직 플레이어 채팅이 없습니다." : log.SpeakerFilter + "님의 채팅이 없습니다.";
+                    break;
                 case ChatTab.Whisper: emptyLabel.text = "받은 귓속말이 없습니다."; break;
                 default:
                     emptyLabel.text = string.IsNullOrEmpty(log.SpeakerFilter) ? "아직 메시지가 없습니다." : log.SpeakerFilter + "님의 채팅이 없습니다.";
@@ -413,52 +489,71 @@ namespace WhoisntCitizen.Game
                     nameColor = e.Dead ? new Color(0.25f, 0.24f, 0.22f) : Ink;
                     break;
             }
-            HudShapes.Panel(tag, tagFill, tagLine, 12f);
+            if (nautical && (e.Kind == ChatEntryKind.System || e.Kind == ChatEntryKind.Notice))
+                NauticalHud.Plate(AddImage(tag, null, Color.white), "ChatTag", TagHeight); // the concept's framed plate
+            else HudShapes.Panel(tag, tagFill, tagLine, 12f);
             if (e.Kind == ChatEntryKind.Player || e.Kind == ChatEntryKind.Whisper) AddAvatar(tag, e);
             else
             {
-                Image mark = AddImage(Box(tag, "Mark", 12f, 9f, 26f, 26f),
+                Image mark = AddImage(Box(tag, "Mark", 12f, 11f, 30f, 30f),
                     Icon(e.Kind == ChatEntryKind.System ? "notification" : e.Nickname == "알림" ? "exclamation" : "info"), nameColor);
                 mark.preserveAspect = true;
             }
-            TextMeshProUGUI name = NewText(tag, "Name", 21f, nameColor, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
-            Stretch(name.rectTransform, 55f, 2f, 10f, 2f);
-            name.enableAutoSizing = true;
-            name.fontSizeMin = 15f;
-            name.fontSizeMax = 21f;
+            TextMeshProUGUI name = NewText(tag, "Name", NameSize, nameColor, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
+            Stretch(name.rectTransform, 62f, 2f, 10f, 2f);
+            name.enableAutoSizing = true; // a long nickname shrinks, but not below what a phone still reads
+            name.fontSizeMin = 22f;
+            name.fontSizeMax = NameSize;
             name.text = string.IsNullOrEmpty(e.Nickname) ? "안내" : e.Nickname;
 
-            // The message, wrapped between the tag and the time; the row grows with it (ChatRowLayout).
-            Color bodyColor = e.TextColor ?? (e.Kind == ChatEntryKind.System ? new Color(0.55f, 0.9f, 0.6f) : Cream);
-            TextMeshProUGUI body = NewText(row, "Message", 24f, bodyColor, FontStyles.Normal, TextAlignmentOptions.TopLeft);
+            // The message, wrapped right of the tag; the row grows with it (ChatRowLayout).
+            Color bodyColor = e.TextColor ?? (e.Kind == ChatEntryKind.System ? SystemText : BodyText);
+            TextMeshProUGUI body = NewText(row, "Message", BodySize, bodyColor, FontStyles.Normal, TextAlignmentOptions.TopLeft);
+            body.fontSharedMaterial = BodyMaterial(body);
             Stretch(body.rectTransform, BodyLeft, BodyPad, BodyRight, BodyPad);
             body.textWrappingMode = TextWrappingModes.Normal;
             body.overflowMode = TextOverflowModes.Overflow;
             body.richText = string.IsNullOrEmpty(e.Text); // a plain line from AddLine keeps its tags
             body.text = string.IsNullOrEmpty(e.Text) ? e.Rich ?? string.Empty : e.Text;
 
-            RectTransform timeBox = Box(row, "TimeBox", 0f, RowPad, BodyRight - 8f, TagHeight);
-            timeBox.anchorMin = timeBox.anchorMax = timeBox.pivot = new Vector2(1f, 1f);
-            timeBox.anchoredPosition = new Vector2(-4f, -RowPad);
-            TextMeshProUGUI time = NewText(timeBox, "Time", 17f, Muted, FontStyles.Normal, TextAlignmentOptions.MidlineRight);
-            Stretch(time.rectTransform, 0f, 0f, 0f, 0f);
-            time.text = e.Time.HasValue ? e.Time.Value.ToString("tt hh:mm", CultureInfo.InvariantCulture) : string.Empty;
-
             RectTransform rule = NewRect("Rule", row);
             rule.anchorMin = new Vector2(0f, 0f);
             rule.anchorMax = new Vector2(1f, 0f);
             rule.pivot = new Vector2(0.5f, 0f);
             rule.sizeDelta = new Vector2(0f, 2f);
-            AddImage(rule, null, new Color(GoldLine.r, GoldLine.g, GoldLine.b, 0.18f));
+            AddImage(rule, null, nautical ? NauticalHud.Rule : new Color(GoldLine.r, GoldLine.g, GoldLine.b, 0.18f));
+            if (nautical)
+            {
+                RectTransform star = NewRect("Star", row); // on the rule's right end
+                star.anchorMin = star.anchorMax = new Vector2(1f, 0f);
+                star.pivot = new Vector2(0.5f, 0.5f);
+                star.anchoredPosition = new Vector2(-16f, 1f);
+                NauticalHud.Whole(AddImage(star, null, Color.white), "RuleStar");
+                star.sizeDelta = star.GetComponent<Image>().sprite != null
+                    ? star.GetComponent<Image>().sprite.rect.size / NauticalHud.ChatScale : new Vector2(29f, 19f);
+            }
 
             row.gameObject.AddComponent<ChatRowLayout>().Setup(body, BodyLeft, BodyRight, BodyPad, BodyPad, TagHeight + RowPad * 2f);
             return row;
         }
 
+        // The font's own material drawn a little heavier (BodyDilate), shared by every message. Made once, on first use.
+        private Material bodyMaterial;
+
+        private Material BodyMaterial(TMP_Text text)
+        {
+            if (bodyMaterial == null && text.fontSharedMaterial != null)
+            {
+                bodyMaterial = new Material(text.fontSharedMaterial) { name = text.fontSharedMaterial.name + " (Chat)" };
+                bodyMaterial.SetFloat(ShaderUtilities.ID_FaceDilate, BodyDilate);
+            }
+            return bodyMaterial != null ? bodyMaterial : text.fontSharedMaterial;
+        }
+
         // The sender's bust in a ring at the tag's left end; without a known skin, their initial on a coloured disc.
         private void AddAvatar(RectTransform tag, ChatEntry e)
         {
-            RectTransform round = Box(tag, "Avatar", 3f, 2f, 40f, 40f);
+            RectTransform round = Box(tag, "Avatar", 3f, 2f, 48f, 48f);
             ChibiCharacterSkin skin = skinOf != null && e.SenderId > 0 ? skinOf(e.SenderId) : null;
             Sprite bust = skin != null && portraits != null ? portraits.Find(skin.DesignId) : null;
             float hue = string.IsNullOrEmpty(e.Nickname) ? 0f : (e.Nickname.GetHashCode() & 0xFFFF) / 65535f;
@@ -467,17 +562,17 @@ namespace WhoisntCitizen.Game
             if (bust != null)
             {
                 RectTransform face = NewRect("Bust", round);
-                Stretch(face, -3f, -1f, -3f, -5f);
+                Stretch(face, -4f, -1f, -4f, -6f);
                 AddImage(face, bust, e.Dead ? new Color(0.6f, 0.6f, 0.6f) : Color.white).preserveAspect = true;
             }
             else
             {
-                TextMeshProUGUI initial = NewText(round, "Initial", 22f, Color.white, FontStyles.Bold, TextAlignmentOptions.Center);
+                TextMeshProUGUI initial = NewText(round, "Initial", 26f, Color.white, FontStyles.Bold, TextAlignmentOptions.Center);
                 Stretch(initial.rectTransform, 0f, 0f, 0f, 0f);
                 initial.text = string.IsNullOrEmpty(e.Nickname) ? "?" : e.Nickname.Substring(0, 1);
             }
-            RectTransform ring = Box(tag, "Ring", 1f, 0f, 44f, 44f);
-            HudShapes.Panel(ring, new Color(0f, 0f, 0f, 0f), e.Mine ? Gold : GoldLine, 22f); // a rounded square this round is a circle
+            RectTransform ring = Box(tag, "Ring", 1f, 0f, 52f, 52f);
+            HudShapes.Panel(ring, new Color(0f, 0f, 0f, 0f), e.Mine ? Gold : GoldLine, 26f); // a rounded square this round is a circle
         }
 
         // ------------------------------------------------------------------ input bar
@@ -486,6 +581,11 @@ namespace WhoisntCitizen.Game
         {
             Transform tabBar = sheet.Find("TabBar");
             if (tabBar == null) return;
+            if (nautical)
+            {
+                DressInputBar(tabBar);
+                return;
+            }
             Transform plus = tabBar.Find("PlusButton");
             if (plus != null) plus.gameObject.SetActive(false);
 
@@ -548,6 +648,109 @@ namespace WhoisntCitizen.Game
                 sendImage.preserveAspect = true;
                 foreach (TMP_Text text in send.GetComponentsInChildren<TMP_Text>(true)) text.gameObject.SetActive(false); // the art has the plane
             }
+        }
+
+        // The nautical input bar: the parchment pill (the concept's, its ends kept), the chat mark on the compass-pointed
+        // ring over its left end, the smiley, the framed send button. Made new or over a bar baked in the old look (its
+        // rule beside the mark and the pill's outline come off).
+        private void DressInputBar(Transform tabBar)
+        {
+            Transform plus = tabBar.Find("PlusButton");
+            if (plus != null) plus.gameObject.SetActive(false);
+
+            input = tabBar.GetComponentInChildren<TMP_InputField>(true);
+            if (input != null)
+            {
+                var field = (RectTransform)input.transform;
+                field.anchorMin = new Vector2(0f, 0.5f);
+                field.anchorMax = new Vector2(1f, 0.5f);
+                field.offsetMin = new Vector2(PillLeft, -PillHeight * 0.5f - PillDrop);
+                field.offsetMax = new Vector2(-PillRight, PillHeight * 0.5f - PillDrop);
+                Image pill = field.GetComponent<Image>();
+                if (pill == null) pill = field.gameObject.AddComponent<Image>();
+                NauticalHud.Plate(pill, "InputPill", PillHeight).raycastTarget = true;
+                RemoveChild(field, "Outline");
+                RemoveChild(field, "Rule");
+                if (input.textViewport != null)
+                {
+                    input.textViewport.offsetMin = new Vector2(MarkX + MarkSize * 0.5f + 12f, input.textViewport.offsetMin.y);
+                    input.textViewport.offsetMax = new Vector2(-64f, input.textViewport.offsetMax.y);
+                }
+                if (!baked) // a baked bar keeps its texts as the scene has them
+                {
+                    if (input.textComponent != null)
+                    {
+                        input.textComponent.color = Ink;
+                        input.textComponent.fontSize = 28f;
+                    }
+                    if (input.placeholder is TMP_Text hint)
+                    {
+                        hint.text = "메시지를 입력하세요...";
+                        hint.color = new Color(0.45f, 0.36f, 0.25f, 0.85f);
+                        hint.fontSize = 28f;
+                    }
+                }
+
+                RectTransform disc = Child(field, "ChatMark");
+                disc.anchorMin = disc.anchorMax = new Vector2(0f, 0.5f);
+                disc.pivot = new Vector2(0.5f, 0.5f);
+                disc.anchoredPosition = new Vector2(MarkX, 0f);
+                disc.sizeDelta = new Vector2(MarkSize, MarkSize);
+                Image ring = disc.GetComponent<Image>();
+                if (ring == null) ring = disc.gameObject.AddComponent<Image>();
+                NauticalHud.Whole(ring, "ChatDisc").raycastTarget = true;
+                chatMarkButton = disc.GetComponent<Button>();
+                if (chatMarkButton == null) chatMarkButton = disc.gameObject.AddComponent<Button>(); // WireInputBar listens to it
+                RectTransform mark = Child(disc, "Icon");
+                mark.anchorMin = mark.anchorMax = mark.pivot = new Vector2(0.5f, 0.5f);
+                mark.anchoredPosition = Vector2.zero;
+                mark.sizeDelta = new Vector2(34f, 34f);
+                chatMark = mark.GetComponent<Image>();
+                if (chatMark == null) chatMark = mark.gameObject.AddComponent<Image>();
+                chatMark.sprite = Icon("chat_1");
+                chatMark.color = Cream;
+                chatMark.preserveAspect = true;
+                chatMark.raycastTarget = false;
+
+                RectTransform smile = Child(field, "Smiley");
+                smile.anchorMin = smile.anchorMax = smile.pivot = new Vector2(1f, 0.5f);
+                smile.anchoredPosition = new Vector2(-18f, 0f);
+                smile.sizeDelta = new Vector2(40f, 40f);
+                Image face = smile.GetComponent<Image>();
+                if (face == null) face = smile.gameObject.AddComponent<Image>();
+                face.sprite = Icon("emoji_smiley");
+                face.color = new Color(0.22f, 0.16f, 0.09f);
+                face.preserveAspect = true;
+                face.raycastTarget = false;
+            }
+
+            Transform send = tabBar.Find("SendButton");
+            Image sendImage = send != null ? send.GetComponent<Image>() : null;
+            if (sendImage != null)
+            {
+                var sendRect = (RectTransform)send;
+                sendRect.anchorMin = sendRect.anchorMax = new Vector2(1f, 0.5f);
+                sendRect.pivot = new Vector2(0.5f, 0.5f);
+                sendRect.anchoredPosition = new Vector2(-SendRight, -PillDrop);
+                sendRect.sizeDelta = new Vector2(SendWidth, SendHeight);
+                NauticalHud.Whole(sendImage, "SendButton");
+                foreach (TMP_Text text in send.GetComponentsInChildren<TMP_Text>(true)) text.gameObject.SetActive(false); // the art has the plane
+            }
+        }
+
+        // The child of that name, or a new one.
+        private static RectTransform Child(Transform parent, string name)
+        {
+            Transform child = parent.Find(name);
+            return child != null ? (RectTransform)child : NewRect(name, parent);
+        }
+
+        private static void RemoveChild(Transform parent, string name)
+        {
+            Transform child = parent.Find(name);
+            if (child == null) return;
+            if (Application.isPlaying) Destroy(child.gameObject);
+            else DestroyImmediate(child.gameObject);
         }
 
         private void WireInputBar()

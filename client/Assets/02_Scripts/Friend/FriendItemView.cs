@@ -16,7 +16,14 @@ namespace WhoisntCitizen.Friend
         [SerializeField] private TMP_Text nicknameText;
         [Tooltip("레벨/전적 표시. 예) Lv.3 · 12전 7승 · 58.3%")]
         [SerializeField] private TMP_Text recordText;
+        [Tooltip("(선택) 접속 상태 표시. 예) ● 온라인 / ● 게임 중. 비워 두면 닉네임 옆에 붙여 보여 준다.")]
+        [SerializeField] private TMP_Text statusText;
         [SerializeField] private Button removeButton;
+
+        // 접속 상태 색 (오프라인은 회색, 온라인은 초록, 대기실·게임 중은 주황)
+        private static readonly Color OfflineColor = new Color(0.55f, 0.55f, 0.55f);
+        private static readonly Color OnlineColor = new Color(0.30f, 0.80f, 0.35f);
+        private static readonly Color BusyColor = new Color(0.95f, 0.65f, 0.20f);
 
         private FriendResponse friend;
         private Action<FriendResponse> onRemove;
@@ -39,9 +46,25 @@ namespace WhoisntCitizen.Friend
             friend = data;
             onRemove = onRemoveClicked;
 
-            if (nicknameText != null) nicknameText.text = data.nickname;
+            string statusRichText = $"<color=#{ColorUtility.ToHtmlStringRGB(StatusColor(data))}>● {data.StatusLabel}</color>";
+
+            if (nicknameText != null)
+                nicknameText.text = statusText != null ? data.nickname : $"{data.nickname}  {statusRichText}";
+            if (statusText != null) statusText.text = statusRichText;
             if (recordText != null)
                 recordText.text = $"Lv.{data.level} · {data.playCount}전 {data.winCount}승 · {data.WinRatePercent:0.#}%";
+        }
+
+        private static Color StatusColor(FriendResponse data)
+        {
+            switch (data.status)
+            {
+                case "IN_GAME":
+                case "IN_ROOM": return BusyColor;
+                case "ONLINE": return OnlineColor;
+                case "OFFLINE": return OfflineColor;
+                default: return data.online ? OnlineColor : OfflineColor;
+            }
         }
 
         /// <summary>요청 중에 다른 항목을 누르지 못하도록 버튼을 잠그거나 푼다.</summary>
