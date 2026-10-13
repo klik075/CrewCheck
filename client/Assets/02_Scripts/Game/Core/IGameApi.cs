@@ -18,8 +18,11 @@ namespace WhoisntCitizen.Game
         /// <summary>GET /api/v1/games/{gameId}/me — 밤이 시작될 때마다 다시 받는다(남은 횟수·동료가 바뀜).</summary>
         void GetMe(string gameId, Action<GameApiResult<MyRoleDto>> onDone);
 
-        /// <summary>POST /api/v1/games/{gameId}/night-actions {"targetId": 대상} — 판정 전까지 다시 내면 덮어쓴다.</summary>
-        void SubmitNightAction(string gameId, long targetId, Action<GameApiResult<NightActionResultDto>> onDone);
+        /// <summary>
+        /// POST /api/v1/games/{gameId}/night-actions {"targetId": 대상, "actionCode": 고른 능력} — 판정 전까지 다시 내면 덮어쓴다.
+        /// actionCode가 null이면 직업의 기본 능력. 크라켄 발동만 KRAKEN_STRIKE이고 그때 targetId는 0(대상 없음)이다.
+        /// </summary>
+        void SubmitNightAction(string gameId, long targetId, string actionCode, Action<GameApiResult<NightActionResultDto>> onDone);
 
         /// <summary>POST /api/v1/games/{gameId}/night-actions/skip — 이번 밤 능력을 쓰지 않는다.</summary>
         void SkipNightAction(string gameId, Action<GameApiResult<NightActionResultDto>> onDone);

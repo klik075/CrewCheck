@@ -42,7 +42,7 @@ namespace WhoisntCitizen.Game.Tests
 
         private static GameApiResult<NightActionResultDto> Act(FakeGameApi api, long targetId)
         {
-            return Call<NightActionResultDto>(cb => api.SubmitNightAction(Id, targetId, cb));
+            return Call<NightActionResultDto>(cb => api.SubmitNightAction(Id, targetId, null, cb));
         }
 
         private static GameApiResult<VoteResultDto> VoteFor(FakeGameApi api, long targetId)

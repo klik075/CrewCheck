@@ -235,9 +235,10 @@ namespace WhoisntCitizen.Game
         {
             if (roleName == null || me == null) return;
             roleName.text = me.roleName ?? string.Empty;
-            roleGoal.text = RoleInfoText.Goal(me.role, me.faction);
-            factionTitle.text = RoleInfoText.FactionName(me.faction);
-            factionIcon.sprite = Icon(me.faction == Factions.Pirate ? "skull" : me.faction == Factions.Neutral ? "star_and_moon" : "anchor");
+            roleGoal.text = RoleInfoText.Goal(me);
+            factionTitle.text = RoleInfoText.TeamName(me);
+            factionIcon.sprite = Icon(me.faction == Factions.Pirate ? "skull"
+                : me.faction == Factions.Neutral || me.IsSirenTeam ? "star_and_moon" : "anchor"); // 유혹당한 선원도 세이렌 쪽
             string body = RoleInfoText.Description(me.role);
             if (me.HasAbility) body += "\n능력: " + GameScreenText.AbilityLine(me);
             string mates = ReportFormatter.TeammatesLine(state, me);

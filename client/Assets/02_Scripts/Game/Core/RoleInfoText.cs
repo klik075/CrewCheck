@@ -49,6 +49,18 @@ namespace WhoisntCitizen.Game
             }
         }
 
+        /// <summary>내 역할 패널의 진영 줄. 세이렌 팀(세이렌, 유혹당한 사람)이면 직업의 진영 대신 "세이렌 팀".</summary>
+        public static string TeamName(MyRoleDto me)
+        {
+            return me.IsSirenTeam ? "세이렌 팀" : FactionName(me.faction);
+        }
+
+        /// <summary>내 역할 패널의 한 줄 목표. 유혹당했으면 직업과 상관없이 세이렌 팀의 목표.</summary>
+        public static string Goal(MyRoleDto me)
+        {
+            return me.IsSirenTeam ? Goal("NEUTRAL_SIREN", Factions.Neutral) : Goal(me.role, me.faction);
+        }
+
         /// <summary>내 역할 패널의 한 줄 목표. 중립은 직업마다, 나머지는 진영마다 다르다.</summary>
         public static string Goal(string roleCode, string faction)
         {

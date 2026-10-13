@@ -54,9 +54,9 @@ namespace WhoisntCitizen.Game.Tests
             Handle("GetMe", onDone, cb => inner.GetMe(gameId, cb));
         }
 
-        public void SubmitNightAction(string gameId, long targetId, Action<GameApiResult<NightActionResultDto>> onDone)
+        public void SubmitNightAction(string gameId, long targetId, string actionCode, Action<GameApiResult<NightActionResultDto>> onDone)
         {
-            Handle("SubmitNightAction", onDone, cb => inner.SubmitNightAction(gameId, targetId, cb));
+            Handle("SubmitNightAction", onDone, cb => inner.SubmitNightAction(gameId, targetId, actionCode, cb));
         }
 
         public void SkipNightAction(string gameId, Action<GameApiResult<NightActionResultDto>> onDone)
@@ -120,6 +120,68 @@ namespace WhoisntCitizen.Game.Tests
             {
                 run();
             }
+        }
+    }
+
+    /// <summary>
+    /// 정해 둔 상태·내 역할·밤 결과만 돌려주고 밤 행동·투표 요청을 기록하는 서버 (가짜 서버에 없는 직업: 세이렌·크라켄·요리사).
+    /// 밤 행동과 투표는 모두 받아 준다. 판정은 하지 않는다.
+    /// </summary>
+    public sealed class ScriptedGameApi : IGameApi
+    {
+        public GameStateDto State;
+        public MyRoleDto Me;
+        public NightResultDto NightResult; // null이면 밤 결과 조회는 실패한다
+        public readonly List<KeyValuePair<long, string>> NightActions = new List<KeyValuePair<long, string>>(); // (targetId, actionCode)
+        public readonly List<long> Votes = new List<long>(); // targetId
+
+        public void GetState(string gameId, Action<GameApiResult<GameStateDto>> onDone)
+        {
+            onDone(GameApiResult<GameStateDto>.Ok(State));
+        }
+
+        public void GetMe(string gameId, Action<GameApiResult<MyRoleDto>> onDone)
+        {
+            onDone(GameApiResult<MyRoleDto>.Ok(Me));
+        }
+
+        public void SubmitNightAction(string gameId, long targetId, string actionCode, Action<GameApiResult<NightActionResultDto>> onDone)
+        {
+            NightActions.Add(new KeyValuePair<long, string>(targetId, actionCode));
+            onDone(GameApiResult<NightActionResultDto>.Ok(
+                new NightActionResultDto { accepted = true, phase = State.phase, phaseVersion = State.phaseVersion }));
+        }
+
+        public void SkipNightAction(string gameId, Action<GameApiResult<NightActionResultDto>> onDone)
+        {
+            NightActions.Add(new KeyValuePair<long, string>(0, "SKIP"));
+            onDone(GameApiResult<NightActionResultDto>.Ok(
+                new NightActionResultDto { accepted = true, phase = State.phase, phaseVersion = State.phaseVersion }));
+        }
+
+        public void SkipDay(string gameId, Action<GameApiResult<DaySkipResultDto>> onDone) { Unused(onDone); }
+        public void GetNightResult(string gameId, Action<GameApiResult<NightResultDto>> onDone)
+        {
+            if (NightResult == null)
+            {
+                Unused(onDone);
+                return;
+            }
+            onDone(GameApiResult<NightResultDto>.Ok(NightResult));
+        }
+
+        public void Vote(string gameId, long targetId, bool confirm, Action<GameApiResult<VoteResultDto>> onDone)
+        {
+            Votes.Add(targetId);
+            onDone(GameApiResult<VoteResultDto>.Ok(new VoteResultDto { accepted = true, phase = State.phase, phaseVersion = State.phaseVersion }));
+        }
+        public void GetExecutionResult(string gameId, Action<GameApiResult<ExecutionResultDto>> onDone) { Unused(onDone); }
+        public void GetResult(string gameId, Action<GameApiResult<GameResultDto>> onDone) { Unused(onDone); }
+        public void GetRoleSetupOptions(Action<GameApiResult<RoleSetupOptionsDto>> onDone) { Unused(onDone); }
+
+        private static void Unused<T>(Action<GameApiResult<T>> onDone) where T : class
+        {
+            onDone(GameApiResult<T>.Fail(0, null, "테스트에서 쓰지 않는 API입니다."));
         }
     }
 

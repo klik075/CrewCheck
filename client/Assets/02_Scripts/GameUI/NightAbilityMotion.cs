@@ -43,6 +43,10 @@ namespace WhoisntCitizen.GameUI
                 case ActionCodes.WatchVisitors: return new Color(1f, 0.95f, 0.72f);
                 case ActionCodes.Block: return new Color(0.62f, 0.86f, 1f);
                 case ActionCodes.ReadCorpseRole: return new Color(0.45f, 0.75f, 1f);
+                case ActionCodes.BanVote: return new Color(1f, 0.72f, 0.45f);
+                case ActionCodes.Seduce: return new Color(0.95f, 0.55f, 0.85f);
+                case ActionCodes.KrakenMark: return new Color(0.35f, 0.9f, 0.8f);
+                case ActionCodes.KrakenStrike: return new Color(0.2f, 0.65f, 0.6f);
                 default: return new Color(0.85f, 0.88f, 1f);
             }
         }

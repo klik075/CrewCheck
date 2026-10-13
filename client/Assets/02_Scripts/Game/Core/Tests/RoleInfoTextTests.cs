@@ -62,6 +62,18 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 유혹당하면_세이렌_팀의_진영과_목표를_보여_준다()
+        {
+            var seduced = new MyRoleDto { playerId = 11, role = RoleCodes.CrewDoctor, faction = Factions.Crew, team = Teams.Siren };
+            var crew = new MyRoleDto { playerId = 12, role = RoleCodes.CrewDoctor, faction = Factions.Crew, team = Teams.Crew };
+
+            Assert.AreEqual("세이렌 팀", RoleInfoText.TeamName(seduced));
+            Assert.AreEqual(RoleInfoText.Goal("NEUTRAL_SIREN", Factions.Neutral), RoleInfoText.Goal(seduced));
+            Assert.AreEqual("선원 진영", RoleInfoText.TeamName(crew));
+            Assert.AreEqual("해적을 찾아내세요", RoleInfoText.Goal(crew));
+        }
+
+        [Test]
         public void 모든_서버_직업에_설명이_있다()
         {
             string[] codes =

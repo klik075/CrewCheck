@@ -87,15 +87,14 @@ namespace WhoisntCitizen.Game
             returnRequested = false;
             returnAfterIntro = autoReturn && autoReturnSeconds > 0f;
             PreparePresentation();
-            ShowBackground(result, me != null ? me.faction : null);
+            ShowBackground(result, me);
             if (winnerText != null)
             {
-                winnerText.text = !result.IsCancelled && result.winner == Factions.Neutral
-                    ? "개인 승리" : ReportFormatter.ResultHeadline(result);
+                winnerText.text = ReportFormatter.ResultHeadline(result); // 예: "크라켄 승리", "세이렌 팀 승리"
             }
             if (outcomeText != null)
             {
-                outcomeText.text = GameScreenText.ResultOutcome(result, me != null ? me.faction : null);
+                outcomeText.text = GameScreenText.ResultOutcome(result, me);
             }
             if (playersText != null)
             {
@@ -144,29 +143,32 @@ namespace WhoisntCitizen.Game
             backLabel.text = backLabelText + "\n(" + seconds + "초뒤 자동 복귀)";
         }
 
-        /// <summary>Uses the local player's outcome, not simply the winning faction. Cancelled/unknown results have no win/loss art.</summary>
-        public static string BackgroundName(GameResultDto result, string myFaction)
+        /// <summary>
+        /// Uses the local player's outcome (the server's winnerIds), not the faction: a seduced sailor wins with the siren
+        /// team, and the neutral roles win alone. Siren, kraken, ghost captain and mermaid wins use the personal art.
+        /// Cancelled/unknown results have no win/loss art.
+        /// </summary>
+        public static string BackgroundName(GameResultDto result, MyRoleDto me)
         {
-            if (result == null || !result.ended || result.IsCancelled || !KnownFaction(result.winner) || !KnownFaction(myFaction))
+            if (result == null || me == null || !result.ended || result.IsCancelled || !KnownWinner(result.winner))
                 return null;
-            if (result.winner != myFaction) return "Defeat";
+            if (!GameStateQueries.IsWinner(result, me.playerId, me.faction)) return "Defeat";
             switch (result.winner)
             {
-                case Factions.Crew: return "CrewVictory";
-                case Factions.Pirate: return "PirateVictory";
-                case Factions.Neutral: return "PersonalVictory";
-                default: return null;
+                case Winners.Crew: return "CrewVictory";
+                case Winners.Pirate: return "PirateVictory";
+                default: return "PersonalVictory";
             }
         }
 
-        private static bool KnownFaction(string faction)
+        private static bool KnownWinner(string winner)
         {
-            return faction == Factions.Crew || faction == Factions.Pirate || faction == Factions.Neutral;
+            return winner == Winners.Crew || winner == Winners.Pirate || Winners.IsPersonal(winner);
         }
 
-        private void ShowBackground(GameResultDto result, string myFaction)
+        private void ShowBackground(GameResultDto result, MyRoleDto me)
         {
-            string name = BackgroundName(result, myFaction);
+            string name = BackgroundName(result, me);
             Sprite sprite = null;
             if (name != null && !backgrounds.TryGetValue(name, out sprite))
             {

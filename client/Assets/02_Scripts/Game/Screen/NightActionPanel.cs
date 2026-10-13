@@ -11,6 +11,7 @@ namespace WhoisntCitizen.Game
     /// 밤 능력 대상 고르기. VotePanelController(feat/vote)와 같은 방식으로 PlayerProfileItem 프리팹을 Grid 아래에 만든다.
     /// 서버 통신은 하지 않는다. 확정·넘기기는 이벤트로 넘기고, GameScreen이 GameController로 보낸다.
     /// 누구를 고를 수 있는지는 AbilityRules(서버 규칙과 같음)가 정한다: 해적은 동료도, 선의·망루지기는 자기 자신도, 주정뱅이는 사망자만.
+    /// 크라켄: 대상을 고르면 [표식], 고르지 않았고 표식을 남긴 생존자가 있으면 같은 버튼이 [발동](대상 없음)이 된다.
     /// 하단 시트 Drawer 안에 VotePanel과 나란히 두면, 밤에는 GameScreen이 이 패널을 대신 보여 준다.
     /// </summary>
     public sealed class NightActionPanel : MonoBehaviour
@@ -33,6 +34,9 @@ namespace WhoisntCitizen.Game
         private bool usable;
         private long selectedId;  // 화면에서 고른 대상 (0 = 없음)
         private long chosenId;    // 서버가 받아 준 대상 (0 = 없음)
+        private bool strikeAvailable; // 크라켄이 발동할 수 있음 (표식을 남긴 생존자가 있음)
+        private bool struck;          // 크라켄이 이번 밤 발동을 골랐고 서버가 받아 줌
+        private string actionName = string.Empty;
         private GameSession lastSession;
 
         /// <summary>화면에 고른 것으로 보이는 대상: 지금 고른 대상, 없으면 서버가 받아 준 대상 (0 = 없음).</summary>
@@ -53,7 +57,28 @@ namespace WhoisntCitizen.Game
             get { return usable && selectedId != 0 && selectedId != chosenId; }
         }
 
-        /// <summary>[확정]을 누른 것과 같다 (패널 대신 다른 화면의 버튼에서).</summary>
+        /// <summary>크라켄이 [확정] 자리의 [발동]을 누를 수 있는지: 대상을 고르지 않았고, 표식을 남긴 생존자가 있고, 아직 발동을 고르지 않았다.</summary>
+        public bool CanStrike
+        {
+            get { return usable && strikeAvailable && selectedId == 0 && !struck; }
+        }
+
+        /// <summary>
+        /// [확정] 자리 버튼의 이름. 크라켄이 대상을 고르지 않았으면 "발동"(골랐으면 "발동함"), 아니면 능력 이름(이미 받아 준 대상이 있으면 "~ 변경").
+        /// </summary>
+        public string ConfirmLabel
+        {
+            get
+            {
+                if (selectedId == 0 && (strikeAvailable || struck))
+                {
+                    return struck ? "발동함" : ReportFormatter.ActionName(ActionCodes.KrakenStrike);
+                }
+                return chosenId != 0 || struck ? actionName + " 변경" : actionName;
+            }
+        }
+
+        /// <summary>[확정]을 누른 것과 같다 (패널 대신 다른 화면의 버튼에서). 크라켄이 대상 없이 누르면 발동.</summary>
         public void Confirm()
         {
             OnConfirmClicked();
@@ -80,6 +105,9 @@ namespace WhoisntCitizen.Game
 
         /// <summary>이번 밤 능력을 쓰지 않음</summary>
         public event Action Skipped;
+
+        /// <summary>크라켄 발동 (대상 없음)</summary>
+        public event Action Struck;
 
         /// <summary>playerId → 초상화. VotePanelController.PortraitResolver와 같은 것을 넣는다.</summary>
         public Func<long, Sprite> PortraitResolver { get; set; }
@@ -128,6 +156,9 @@ namespace WhoisntCitizen.Game
             AbilityBlock block = session.NightAbility;
             usable = block == AbilityBlock.None;
             chosenId = session.MyNightTarget;
+            strikeAvailable = session.CanStrike;
+            struck = session.StruckTonight;
+            actionName = ReportFormatter.ActionName(me.actionCode);
 
             targetable.Clear();
             foreach (PlayerViewDto p in session.NightTargets)
@@ -147,15 +178,7 @@ namespace WhoisntCitizen.Game
                 item.SetClickable(usable && targetable.Contains(item.PlayerId));
             }
 
-            string action = ReportFormatter.ActionName(me.actionCode);
-            if (confirmButton != null)
-            {
-                confirmButton.interactable = usable && selectedId != 0 && selectedId != chosenId;
-            }
-            if (confirmButtonText != null)
-            {
-                confirmButtonText.text = chosenId != 0 ? action + " 변경" : action;
-            }
+            RefreshConfirm();
             if (skipButton != null)
             {
                 skipButton.interactable = usable && !session.SkippedTonight;
@@ -163,8 +186,20 @@ namespace WhoisntCitizen.Game
             if (statusText != null)
             {
                 long shownTarget = selectedId != 0 ? selectedId : chosenId;
-                statusText.text = GameScreenText.NoRichText(
-                    GameScreenText.NightStatus(block, me.actionCode, shownTarget, session.SkippedTonight, state));
+                statusText.text = GameScreenText.NoRichText(GameScreenText.NightStatus(block, me.actionCode, shownTarget,
+                    session.SkippedTonight, state, struck, session.KrakenMarks.Count));
+            }
+        }
+
+        private void RefreshConfirm()
+        {
+            if (confirmButton != null)
+            {
+                confirmButton.interactable = CanConfirm || CanStrike;
+            }
+            if (confirmButtonText != null)
+            {
+                confirmButtonText.text = ConfirmLabel;
             }
         }
 
@@ -215,9 +250,13 @@ namespace WhoisntCitizen.Game
 
         private void OnConfirmClicked()
         {
-            if (usable && selectedId != 0 && Confirmed != null)
+            if (usable && selectedId != 0)
             {
-                Confirmed(selectedId);
+                if (Confirmed != null) Confirmed(selectedId);
+            }
+            else if (CanStrike)
+            {
+                if (Struck != null) Struck();
             }
         }
 
@@ -236,10 +275,7 @@ namespace WhoisntCitizen.Game
             {
                 item.SetSelected(item.PlayerId == shown);
             }
-            if (confirmButton != null)
-            {
-                confirmButton.interactable = usable && selectedId != 0 && selectedId != chosenId;
-            }
+            RefreshConfirm();
         }
     }
 }

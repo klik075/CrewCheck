@@ -734,15 +734,19 @@ namespace WhoisntCitizen.Game
                     if (me == null) break;
                     AbilityBlock block = session.NightAbility;
                     long shown = ctx.NightPanel != null ? ctx.NightPanel.ShownTarget : session.MyNightTarget;
-                    Split(GameScreenText.NightStatus(block, me.actionCode, shown, session.SkippedTonight, state), ref s);
+                    int marks = session.KrakenMarks.Count;
+                    Split(GameScreenText.NightStatus(block, me.actionCode, shown, session.SkippedTonight, state, session.StruckTonight, marks), ref s);
                     if (block != AbilityBlock.None) break;
                     bool picked = ctx.NightPanel != null && ctx.NightPanel.CanConfirm;
+                    bool strike = ctx.NightPanel != null && ctx.NightPanel.CanStrike; // 크라켄: 대상 없이 누르면 발동
                     if (picked) s.sub = "오른쪽 버튼을 누르면 확정됩니다.";
-                    else if (shown == 0 && !session.SkippedTonight) s.sub = "아래 명단에서 대상을 누르세요.";
+                    else if (strike) s.sub = "명단에서 표식할 대상을 누르거나, [발동]으로 " + marks + "명을 끌고 갑니다.";
+                    else if (shown == 0 && !session.SkippedTonight && !session.StruckTonight) s.sub = "아래 명단에서 대상을 누르세요.";
                     s.secondary = session.SkippedTonight ? "넘김" : "넘기기";
                     s.secondaryOn = !session.SkippedTonight;
-                    s.primary = ReportFormatter.ActionName(me.actionCode) + (session.MyNightTarget != 0 ? " 변경" : string.Empty);
-                    s.primaryOn = picked;
+                    s.primary = ctx.NightPanel != null ? ctx.NightPanel.ConfirmLabel
+                        : ReportFormatter.ActionName(me.actionCode) + (session.MyNightTarget != 0 ? " 변경" : string.Empty);
+                    s.primaryOn = picked || strike;
                     break;
                 }
                 case GamePhases.Vote:
@@ -750,7 +754,7 @@ namespace WhoisntCitizen.Game
                     s.chip = "투표";
                     if (!session.CanVote)
                     {
-                        s.title = "사망한 플레이어는 투표할 수 없습니다.";
+                        s.title = session.VoteBannedToday ? ReportFormatter.VoteBannedMessage : "사망한 플레이어는 투표할 수 없습니다.";
                         break;
                     }
                     if (ctx.VoteHand == null || !ctx.VoteHand.IsShown)

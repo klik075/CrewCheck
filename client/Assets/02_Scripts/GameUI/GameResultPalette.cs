@@ -20,6 +20,24 @@ namespace WhoisntCitizen.GameUI
             }
         }
 
+        /// <summary>The winner's accent (Winners): crew and pirate colors, the neutral color for the siren team and solo wins.</summary>
+        internal static Color ForWinner(string winner)
+        {
+            switch (winner)
+            {
+                case Winners.Crew: return ForFaction(Factions.Crew);
+                case Winners.Pirate: return ForFaction(Factions.Pirate);
+                default: return Winners.IsPersonal(winner) ? ForFaction(Factions.Neutral) : Muted;
+            }
+        }
+
+        /// <summary>The color side a result row belongs to: a seduced player is on the siren (neutral) side whatever the role.</summary>
+        internal static string FactionForPlayer(PlayerResultDto player)
+        {
+            if (player == null) return null;
+            return player.team == Teams.Siren ? Factions.Neutral : FactionForRole(player.role);
+        }
+
         internal static string FactionForRole(string role)
         {
             if (string.IsNullOrEmpty(role)) return null;

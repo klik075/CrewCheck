@@ -20,10 +20,11 @@ namespace WhoisntCitizen.Game
             ApiClient.Get<MyRoleDto>(GameApiPaths.Me(gameId), r => Reply(onDone, r));
         }
 
-        public void SubmitNightAction(string gameId, long targetId, Action<GameApiResult<NightActionResultDto>> onDone)
+        public void SubmitNightAction(string gameId, long targetId, string actionCode, Action<GameApiResult<NightActionResultDto>> onDone)
         {
             // body는 DTO 객체로 넘긴다. ApiClient가 JsonUtility.ToJson으로 직렬화한다(문자열을 넘기면 {}가 간다).
-            var body = new TargetRequestDto { targetId = targetId };
+            // actionCode가 null이면 ""로 가고, 서버는 빈 값을 직업의 기본 능력으로 본다.
+            var body = new TargetRequestDto { targetId = targetId, actionCode = actionCode };
             ApiClient.Post<NightActionResultDto>(GameApiPaths.NightActions(gameId), body, r => Reply(onDone, r));
         }
 

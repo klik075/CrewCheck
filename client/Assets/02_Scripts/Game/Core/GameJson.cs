@@ -18,13 +18,13 @@ namespace WhoisntCitizen.Game
         }
 
         /// <summary>
-        /// 밤 능력·투표 요청 body. {"targetId":5}
+        /// 밤 능력 요청 body. {"targetId":5,"actionCode":""} (actionCode가 비면 서버는 직업의 기본 능력으로 본다)
         /// ApiClient.Post는 body를 object로 받아 JsonUtility.ToJson으로 다시 직렬화하므로, 이 문자열 대신 TargetRequestDto 객체를 넘긴다.
         /// 문자열을 넘기면 {}가 전송된다.
         /// </summary>
-        public static string TargetBody(long targetId)
+        public static string TargetBody(long targetId, string actionCode = null)
         {
-            return JsonUtility.ToJson(new TargetRequestDto { targetId = targetId });
+            return JsonUtility.ToJson(new TargetRequestDto { targetId = targetId, actionCode = actionCode });
         }
 
         /// <summary>

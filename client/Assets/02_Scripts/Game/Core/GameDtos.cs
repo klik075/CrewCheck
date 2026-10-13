@@ -15,11 +15,12 @@ namespace WhoisntCitizen.Game
 
     // ---------------------------------------------------------------- 요청
 
-    /// <summary>밤 능력·투표 요청 body: {"targetId": 대상 userId}</summary>
+    /// <summary>밤 능력 요청 body: {"targetId": 대상 userId, "actionCode": 고른 능력}</summary>
     [Serializable]
     public class TargetRequestDto
     {
-        public long targetId;
+        public long targetId;       // 대상이 없는 능력(크라켄 발동)이면 0 (서버가 무시한다)
+        public string actionCode;   // ActionCodes. 비우면(JsonUtility는 null을 ""로 보낸다) 직업의 기본 능력. 크라켄 발동만 KRAKEN_STRIKE
     }
 
     // ---------------------------------------------------------------- 게임 상태 GET /games/{id}
@@ -34,7 +35,7 @@ namespace WhoisntCitizen.Game
         public string serverTime;   // 응답을 만든 서버 시각. 남은 시간 = phaseEndsAt - serverTime
         public long phaseVersion;   // 페이즈가 바뀔 때마다 증가. 이 값이 바뀌면 화면을 전환한다
         public List<PlayerViewDto> players = new List<PlayerViewDto>();
-        public string winner;       // Factions. 끝나기 전이나 취소된 게임이면 null
+        public string winner;       // Winners. 끝나기 전이나 취소된 게임이면 null
         public string endReason;    // EndReasons. 끝나기 전에는 null
     }
 
@@ -61,9 +62,16 @@ namespace WhoisntCitizen.Game
         public bool alive;
         public List<long> mafiaTeammateIds = new List<long>(); // 알고 있는 해적 진영 동료(사망자 포함)
         public bool contacted;      // 앵무새가 해적과 접선했는지
+        public string team;         // Teams. 지금 속한 팀. 유혹당하면 직업은 그대로이고 SIREN이 된다
+        public List<long> sirenTeamIds = new List<long>(); // 세이렌 팀이면 다른 세이렌 팀원(사망자 포함)
+        public List<long> krakenMarkIds = new List<long>(); // 크라켄이면 표식을 남긴 생존자
+        public bool abilityAvailable = true; // 이번 밤(밤이 아니면 다음 밤)에 능력을 쓸 수 있는지. 세이렌은 유혹에 성공한 다음 밤에 false
 
         public bool HasAbility => !string.IsNullOrEmpty(actionCode);
         public bool IsUnlimited => remainingUses < 0;
+
+        /// <summary>세이렌 팀인지 (세이렌 본인 또는 유혹당한 사람).</summary>
+        public bool IsSirenTeam => team == Teams.Siren;
     }
 
     // ---------------------------------------------------------------- 밤 능력 POST /night-actions, /night-actions/skip
@@ -99,12 +107,40 @@ namespace WhoisntCitizen.Game
     public class NightResultDto
     {
         public int day;
-        public long killedPlayerId;     // 0이면 사망자 없음
+        public long killedPlayerId;     // 해적의 습격으로 죽은 사람. 0이면 없음 (크라켄에게 죽은 사람은 deaths에만 있다)
         public string killedNickname;
         public bool protectedByDoctor;  // 선의 보호로 살았는지 (전체 공개)
         public List<ReportDto> reports = new List<ReportDto>(); // 내 개인 결과만
+        public List<DeathDto> deaths = new List<DeathDto>();    // 그날 밤 죽은 사람 전원과 원인 (습격 먼저, 크라켄 다음)
 
-        public bool HasKill => killedPlayerId != 0;
+        public bool HasKill => Deaths.Count > 0;
+
+        /// <summary>그날 밤 죽은 사람. deaths가 없는 예전 응답이면 습격 사망자(killedPlayerId)만.</summary>
+        public List<DeathDto> Deaths
+        {
+            get
+            {
+                if (deaths != null && deaths.Count > 0)
+                {
+                    return deaths;
+                }
+                var killed = new List<DeathDto>();
+                if (killedPlayerId != 0)
+                {
+                    killed.Add(new DeathDto { playerId = killedPlayerId, nickname = killedNickname, cause = DeathCauses.Attack });
+                }
+                return killed;
+            }
+        }
+    }
+
+    /// <summary>밤사이 죽은 사람 한 명.</summary>
+    [Serializable]
+    public class DeathDto
+    {
+        public long playerId;
+        public string nickname;
+        public string cause;            // DeathCauses (ATTACK = 해적, KRAKEN = 크라켄)
     }
 
     /// <summary>개인 결과 한 건. type에 따라 채워지는 필드가 다르다.</summary>
@@ -117,7 +153,7 @@ namespace WhoisntCitizen.Game
         public string faction;          // FACTION: 대상의 진영
         public string roleCode;         // CORPSE_ROLE: 시체의 직업
         public string roleName;         // CORPSE_ROLE
-        public List<PlayerRefDto> players = new List<PlayerRefDto>(); // VISITORS: 방문자
+        public List<PlayerRefDto> players = new List<PlayerRefDto>(); // VISITORS: 방문자, SEDUCED: 세이렌 팀 동료
         public List<ActionViewDto> actions = new List<ActionViewDto>(); // ACTIONS: 대상이 한 행동
     }
 
@@ -181,10 +217,11 @@ namespace WhoisntCitizen.Game
     public class GameResultDto
     {
         public bool ended;              // false면 아직 진행 중 (players는 비어 있음)
-        public string winner;           // Factions. 취소된 게임이면 null
+        public string winner;           // Winners. 취소된 게임이면 null
         public string endReason;        // EndReasons
         public int lastDay;
         public List<PlayerResultDto> players = new List<PlayerResultDto>();
+        public List<long> winnerIds = new List<long>(); // 실제로 이긴 사람 (팀 승리면 그 팀 전원(사망자 포함), 단독 승리면 그 사람만)
 
         /// <summary>승리 팀 없이 취소된 게임 (전적 미반영, 방도 곧 사라진다)</summary>
         public bool IsCancelled => EndReasons.IsCancelled(endReason);
@@ -199,6 +236,8 @@ namespace WhoisntCitizen.Game
         public string role;             // RoleCodes (실제 직업)
         public string roleName;
         public bool alive;
+        public string team;             // Teams. 끝났을 때의 팀 (유혹당했으면 SIREN)
+        public bool win;                // 이긴 사람인지
     }
 
     // ---------------------------------------------------------------- 직업 목록 GET /api/v1/roles (code 오름차순, ?faction=CREW|PIRATE로 거를 수 있음)

@@ -114,9 +114,13 @@ namespace WhoisntCitizen.Game
         }
 
         /// <summary>
-        /// 밤 능력 패널 안내. 쓸 수 없으면 이유, 넘겼으면 넘김, 이미 골랐으면 고른 대상, 아니면 고르라는 안내.
+        /// 밤 능력 패널 안내. 쓸 수 없으면 이유, 넘겼으면 넘김, 크라켄이 발동을 골랐으면 발동, 이미 골랐으면 고른 대상,
+        /// 아니면 고르라는 안내(크라켄이 발동할 수 있으면 발동도 함께).
         /// </summary>
-        public static string NightStatus(AbilityBlock block, string actionCode, long chosenTargetId, bool skipped, GameStateDto state)
+        /// <param name="struck">크라켄이 이번 밤 발동(KRAKEN_STRIKE)을 골랐는지</param>
+        /// <param name="marks">크라켄이 표식을 남긴 생존자 수 (발동하면 끌려가는 사람 수). 크라켄이 아니면 0</param>
+        public static string NightStatus(AbilityBlock block, string actionCode, long chosenTargetId, bool skipped, GameStateDto state,
+            bool struck = false, int marks = 0)
         {
             if (block != AbilityBlock.None)
             {
@@ -126,12 +130,26 @@ namespace WhoisntCitizen.Game
             {
                 return SkippedTonight;
             }
+            if (struck && chosenTargetId == 0)
+            {
+                return StrikeLine(marks) + "\n대상을 누르면 표식으로 바꿀 수 있습니다.";
+            }
             string action = ReportFormatter.ActionName(actionCode);
             if (chosenTargetId != 0)
             {
                 return action + " 대상: " + GameStateQueries.NicknameOf(state, chosenTargetId) + "님\n다른 사람을 골라 바꿀 수 있습니다.";
             }
+            if (marks > 0)
+            {
+                return action + " 대상을 고르세요.\n또는 [발동]으로 표식을 남긴 " + marks + "명을 끌고 갑니다.";
+            }
             return action + " 대상을 고르세요.";
+        }
+
+        /// <summary>크라켄 발동 안내 한 줄. 예: "발동: 표식을 남긴 2명을 바다로 끌고 갑니다."</summary>
+        public static string StrikeLine(int marks)
+        {
+            return "발동: 표식을 남긴 " + marks + "명을 바다로 끌고 갑니다.";
         }
 
         /// <summary>넘긴 인원 표시. 예: "(3/5)". 인원을 모르면 빈 문자열.</summary>
@@ -173,8 +191,9 @@ namespace WhoisntCitizen.Game
             return "토론을 넘겼습니다. " + DaySkipCount(result);
         }
 
-        /// <summary>밤 행동이 접수됐을 때 채팅 기록에 남길 문구. 접선이면 접선 알림.</summary>
-        public static string ActionAccepted(NightActionResultDto result, string actionCode, long chosenTargetId, bool skipped, GameStateDto state)
+        /// <summary>밤 행동이 접수됐을 때 채팅 기록에 남길 문구. 접선이면 접선 알림, 크라켄 발동이면 발동 안내.</summary>
+        public static string ActionAccepted(NightActionResultDto result, string actionCode, long chosenTargetId, bool skipped, GameStateDto state,
+            bool struck = false, int marks = 0)
         {
             string contact = ReportFormatter.ContactMessage(state, result.contactedPirateIds);
             if (!string.IsNullOrEmpty(contact))
@@ -184,6 +203,10 @@ namespace WhoisntCitizen.Game
             if (skipped)
             {
                 return SkippedTonight;
+            }
+            if (struck)
+            {
+                return StrikeLine(marks);
             }
             return ReportFormatter.ActionName(actionCode) + " 대상으로 " + GameStateQueries.NicknameOf(state, chosenTargetId) + "님을 골랐습니다.";
         }
@@ -217,20 +240,21 @@ namespace WhoisntCitizen.Game
                 : "투표 시간이 끝났습니다. 뽑아 둔 " + drawnNickname + "님에게 투표한 것으로 처리됩니다.";
         }
 
-        /// <summary>결과 화면의 내 승패. 취소된 게임이면 무효.</summary>
-        public static string ResultOutcome(GameResultDto result, string myFaction)
+        /// <summary>
+        /// 결과 화면의 내 승패. 취소된 게임이면 무효. 내가 이겼는지는 진영이 아니라 서버의 승자 목록으로 판단한다
+        /// (GameStateQueries.IsWinner: 유혹당한 선원, 혼자 이기는 중립). 나를 모르거나 승자가 없으면 빈 문자열.
+        /// </summary>
+        public static string ResultOutcome(GameResultDto result, MyRoleDto me)
         {
-            return result.IsCancelled ? "무효 (전적 미반영)" : Outcome(result.winner, myFaction);
-        }
-
-        /// <summary>내 진영이 이겼는지. 원숭이도 보이는 진영(선원)과 실제 진영이 같아서 /me의 faction으로 판단한다.</summary>
-        public static string Outcome(string winner, string myFaction)
-        {
-            if (string.IsNullOrEmpty(winner) || string.IsNullOrEmpty(myFaction))
+            if (result.IsCancelled)
+            {
+                return "무효 (전적 미반영)";
+            }
+            if (me == null || string.IsNullOrEmpty(result.winner))
             {
                 return string.Empty;
             }
-            return winner == myFaction ? "승리" : "패배";
+            return GameStateQueries.IsWinner(result, me.playerId, me.faction) ? "승리" : "패배";
         }
 
         /// <summary>득표 한 줄. 예: "득표: 철수님 3표, 영희님 1표". 투표가 없으면 빈 문자열. (서버 채팅 안내에는 득표 수가 없다)</summary>
