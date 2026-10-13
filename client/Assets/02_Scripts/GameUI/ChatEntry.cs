@@ -26,8 +26,9 @@ namespace WhoisntCitizen.GameUI
 
     public enum ChatTab
     {
-        All,
-        System,
-        Whisper,
+        All,     // 모든 줄
+        System,  // 시스템·안내·알림 줄
+        General, // 플레이어 채팅만 (사망자 채팅·밤 해적 채팅 포함)
+        Whisper, // 귓속말 줄
     }
 }

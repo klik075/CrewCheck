@@ -11,7 +11,7 @@ namespace WhoisntCitizen.Game
     /// (always shown), one action line, and a strip of every player at the bottom. Nothing covers the stage.
     /// - Stage: the deck picture is raised so its sea stays behind the top HUD and the table stands on the planks.
     ///   My role chip sits at its top left (tap for my role in the HUD's window).
-    /// - Chat: the log and the input bar, no tabs or filter.
+    /// - Chat: the tabs (전체 / 시스템 / 일반 / 귓속말) and the chat filter on top, the log, and the input bar.
     /// - Action line: only what can be done now, with small buttons: day skip by day, the night ability at night
     ///   (target picked in the strip), the vote (picked in the strip, the card hand stays hidden), otherwise the latest
     ///   announcement. The bottom drawer and its panels are not shown; the line drives the panels instead.
@@ -129,6 +129,7 @@ namespace WhoisntCitizen.Game
             if (primaryButton != null && primaryButton.button != null) primaryButton.button.onClick.AddListener(OnPrimary);
             if (secondaryButton != null && secondaryButton.button != null) secondaryButton.button.onClick.AddListener(OnSecondary);
             BuildChat(ChatArea);
+            if (chatUi != null) chatUi.AddTabRow(); // the tabs and filter at the log's top (made at run time, baked too)
             if (ctx.Sheet != null) HideDrawer();
             // The card hand keeps the vote but is not shown: the strip picks, the action line confirms.
             if (ctx.VoteHand != null)
