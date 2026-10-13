@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.member.dto;
 
+import com.WhoisntCitizen_server.common.validation.ValidNickname;
 import com.WhoisntCitizen_server.member.entity.AuthProvider;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -29,7 +30,7 @@ public class MemberDto {
 		private String password;
 
 		@NotBlank(message = "닉네임은 필수 입력값입니다.")
-		@Size(min = 2, max = 10, message = "닉네임은 2~10자여야 합니다.")
+		@ValidNickname
 		private String nickname;
 	}
 
