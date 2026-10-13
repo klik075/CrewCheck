@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.lobby.domain.room;
 
+import com.WhoisntCitizen_server.game.dto.RoleSetup;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -47,6 +48,14 @@ public class Room {
      * 필드 기본값이 있어서 이 필드가 없던 예전 Redis 데이터를 읽어도 빈 목록이 된다.
      */
     private List<Long> kickedUserIds = new ArrayList<>();
+
+    // ---------- 직업 배정 설정 ----------
+
+    /**
+     * 방장이 저장한 직업 배정 설정. 저장한 적 없으면 null이고 추천 구성으로 배정한다.
+     * 필드가 없던 예전 Redis 데이터를 읽어도 null → 추천 구성.
+     */
+    private RoleSetup roleSetup;
 
     /** 공개방 생성 */
     public Room(Long id, String title, Long hostUserId, int maxPlayers) {
@@ -132,6 +141,14 @@ public class Room {
         this.privateRoom = privateRoom;
         if (!privateRoom) this.password = null;
         else if (newPassword != null) this.password = newPassword;
+    }
+
+    /**
+     * 직업 배정 설정을 통째로 바꾼다. 권한·게임 중 여부 검사와 설정 검증(GameService.normalizeRoleSetup)은
+     * RoomService.updateRoleSetup에서 끝낸 뒤 호출한다. 참가자의 준비 상태는 그대로 둔다.
+     */
+    public void changeRoleSetup(RoleSetup roleSetup) {
+        this.roleSetup = roleSetup;
     }
 
     // ---------- 방장 위임 / 추방 ----------
