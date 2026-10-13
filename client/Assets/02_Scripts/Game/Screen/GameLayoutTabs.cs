@@ -28,13 +28,15 @@ namespace WhoisntCitizen.Game
         private const float StripHeight = 236f, ActionHeight = 140f, InputBar = 140f, Gap = 8f;
         private const float ActionBottom = StripHeight + Gap, ChatBottom = ActionBottom + ActionHeight + Gap;
         private const float PanelHeight = ActionBottom + ActionHeight; // the night panel's frame: the action line and the strip
+        // Over the chat window's foot (its frame's bottom ornaments): the chat log's bottom and the input bar's.
+        private const float LogAboveFoot = ChatBottom + InputBar - 20f - PanelHeight, InputAboveFoot = ChatBottom + 4f - PanelHeight;
         private const float DeckAspect = 1672f / 941f; // DayTable/Deck, raised by RoundTableLayout.deckRaise so its sea is behind the HUD
         // The action line on the night panel's head (canvas units from the line's top-left; the panel is 12 wider each side).
         private const float SecondaryWidth = 140f, PrimaryWidth = 214f, ButtonHeight = 84f, ButtonGap = 11f, ButtonRight = 24f, ButtonDrop = 10f;
         private const float TextRight = ButtonRight + PrimaryWidth + ButtonGap + SecondaryWidth + 12f;
         private const float TitleRight = 420f; // the title ends about the moon in the panel's harbour
         // The strip: a portrait ring (with its anchor badge) and a name plate per player, at most this far apart.
-        private const float SlotSpacing = 129f, StripMargin = 26f, PlateWidth = 111f, PlateHeight = 39f;
+        private const float SlotSpacing = 129f, StripMargin = 26f, PlateWidth = 116f, PlateHeight = 39f;
         private const float PlateBelowCentre = 67f; // from the ring's centre to the plate's top
         private static readonly Color Pick = new Color(1f, 0.82f, 0.3f), Target = new Color(0.92f, 0.3f, 0.24f);
 
@@ -120,6 +122,7 @@ namespace WhoisntCitizen.Game
             Dress();
             GameHudChat chat = GetComponent<GameHudChat>();
             if (chat != null) chat.DressNautical(ChatArea());
+            if (transform.Find("BottomSheetLift") is RectTransform lift) PlaceInputBar(lift);
         }
 
         private void Create(bool bake)
@@ -162,17 +165,60 @@ namespace WhoisntCitizen.Game
                 hand.interactable = false;
             }
             background = ctx.Canvas.Find("Background") as RectTransform;
+            // A scene dressed before the window's backing was added gets it now.
+            if (backdrop != null && backdrop.Find("ChatBox") is RectTransform box && box.Find("Inside") == null) Inside(box);
             Transform rule = actionTitle != null ? actionTitle.transform.parent.Find("TitleRule") : null;
             if (rule != null) titleRule = rule.gameObject;
         }
 
-        // The chat log inside the chat window's frame (under its top rail, from the backdrop's top: the stage's bottom, or
-        // where the scene has it), down to just over the input bar (left, top from the top, right, bottom from the bottom).
+        // The chat window (ChatBox) in the canvas, wherever the scene puts it and however big: its insets from the canvas's
+        // left, top, right and bottom. Without one (an older bake), where Dress puts it: the backdrop's top to the night panel.
+        private Vector4 ChatWindow()
+        {
+            var canvas = (RectTransform)transform; // on the game canvas, as GameScreen is
+            if (backdrop == null || !(backdrop.Find("ChatBox") is RectTransform box))
+            {
+                float top = backdrop != null ? -backdrop.offsetMax.y : GameHudMetrics.StageBottom;
+                return new Vector4(0f, top, 0f, PanelHeight);
+            }
+            box.GetWorldCorners(corners);
+            Vector3 min = canvas.InverseTransformPoint(corners[0]), max = canvas.InverseTransformPoint(corners[2]);
+            Rect r = canvas.rect;
+            return new Vector4(min.x - r.xMin, r.yMax - max.y, r.xMax - max.x, min.y - r.yMin);
+        }
+
+        // The chat log fills the chat window inside its frame (under its top rail, the tab row first), down to just over the
+        // input bar on the window's foot (left, top from the top, right, bottom from the bottom).
         private Vector4 ChatArea()
         {
-            float top = backdrop != null ? -backdrop.offsetMax.y : GameHudMetrics.StageBottom;
-            return new Vector4(28f, top + 40f, 28f, ChatBottom + InputBar - 20f);
+            Vector4 w = ChatWindow();
+            return new Vector4(w.x + 28f, w.y + 40f, w.z + 28f, w.w + LogAboveFoot);
         }
+
+        // The input bar (the lifted bottom sheet) on the chat window's foot, inside its frame.
+        private void PlaceInputBar(RectTransform lift)
+        {
+            Vector4 w = ChatWindow();
+            lift.offsetMin = new Vector2(w.x + 12f, w.w + InputAboveFoot);
+            lift.offsetMax = new Vector2(-(w.z + 12f), lift.offsetMax.y);
+        }
+
+        // The chat log and the input bar follow the chat window: resizing it in the scene gives the chat that room. The
+        // drawer's sheet, tab bar and log keep their own places otherwise (the bake tool stopped the sheet pushing the log).
+        private void FitChat()
+        {
+            Vector4 area = ChatArea();
+            if (area == fittedArea) return;
+            fittedArea = area;
+            if (ctx.Chat != null)
+            {
+                ctx.Chat.offsetMin = new Vector2(area.x, area.w);
+                ctx.Chat.offsetMax = new Vector2(-area.z, -area.y);
+            }
+            if (ctx.Sheet != null && ctx.Sheet.parent is RectTransform lift && lift.name == "BottomSheetLift") PlaceInputBar(lift);
+        }
+
+        private Vector4 fittedArea = new Vector4(-1f, -1f, -1f, -1f);
 
         /// <summary>
         /// Everything under the stage lies on one night-blue backdrop, the colour the nautical frames were drawn on (the
@@ -194,10 +240,13 @@ namespace WhoisntCitizen.Game
         /// 입히기 calls it on GameScene3, then <see cref="GameHudChat.DressNautical"/>): the chat window's frame and harbour
         /// over the backdrop from the stage down to the night panel, the night panel's frame under the action line and the
         /// strip, and the badge, texts and buttons put where the concept has them. Old panels and outlines are taken off.
+        /// Dressed once already (the night panel is there), the parts keep the places and sizes the scene gives them; only
+        /// the pictures and colours are put on again.
         /// </summary>
         public void Dress()
         {
             if (backdrop == null) return;
+            bool place = backdrop.Find("NightPanel") == null;
             Image back = backdrop.GetComponent<Image>();
             if (back != null) back.color = NauticalHud.Backdrop;
             Transform oldRule = backdrop.Find("Rule");
@@ -207,16 +256,20 @@ namespace WhoisntCitizen.Game
             if (backdrop.Find("ChatBox") is RectTransform chatBox)
             {
                 TakeOffPanel(chatBox, true);
-                Stretch(chatBox, 0f, 0f, 0f, PanelHeight);
-                Image harbor = Part(chatBox, "Harbor", 0);
+                Inside(chatBox);
+                Image harbor = Part(chatBox, "Harbor", 1);
                 NauticalHud.Whole(harbor, "ChatHarbor");
-                RectTransform h = harbor.rectTransform;
-                h.anchorMin = h.anchorMax = h.pivot = new Vector2(1f, 0f);
-                h.sizeDelta = harbor.sprite != null ? harbor.sprite.rect.size / NauticalHud.ChatScale : new Vector2(460f, 301f);
-                h.anchoredPosition = new Vector2(-55f / NauticalHud.ChatScale, 209f / NauticalHud.ChatScale);
-                Image frame = Part(chatBox, "Frame", 1);
-                Stretch(frame.rectTransform, 0f, 0f, 0f, 0f);
+                Image frame = Part(chatBox, "Frame", 2);
                 NauticalHud.Sliced(frame, "ChatFrame", NauticalHud.ChatScale);
+                if (place)
+                {
+                    Stretch(chatBox, 0f, 0f, 0f, PanelHeight);
+                    RectTransform h = harbor.rectTransform;
+                    h.anchorMin = h.anchorMax = h.pivot = new Vector2(1f, 0f);
+                    h.sizeDelta = harbor.sprite != null ? harbor.sprite.rect.size / NauticalHud.ChatScale : new Vector2(460f, 301f);
+                    h.anchoredPosition = new Vector2(-55f / NauticalHud.ChatScale, 209f / NauticalHud.ChatScale);
+                    Stretch(frame.rectTransform, 0f, 0f, 0f, 0f);
+                }
             }
 
             RectTransform line = actionTitle != null ? actionTitle.rectTransform.parent as RectTransform : null;
@@ -224,28 +277,34 @@ namespace WhoisntCitizen.Game
             {
                 // The night panel: one frame round the action line and the strip, the harbour in its head.
                 Image panel = Part(backdrop, "NightPanel", line.GetSiblingIndex());
-                RectTransform p = panel.rectTransform;
-                p.anchorMin = Vector2.zero;
-                p.anchorMax = new Vector2(1f, 0f);
-                p.pivot = new Vector2(0.5f, 0f);
-                p.offsetMin = Vector2.zero;
-                p.offsetMax = new Vector2(0f, PanelHeight);
+                if (place)
+                {
+                    RectTransform p = panel.rectTransform;
+                    p.anchorMin = Vector2.zero;
+                    p.anchorMax = new Vector2(1f, 0f);
+                    p.pivot = new Vector2(0.5f, 0f);
+                    p.offsetMin = Vector2.zero;
+                    p.offsetMax = new Vector2(0f, PanelHeight);
+                }
                 NauticalHud.Sliced(panel, "NightPanel", NauticalHud.NightScale);
                 TakeOffPanel(line, true);
             }
             if (actionChip != null && actionChip.rectTransform.parent is RectTransform chip)
             {
-                At(chip, 25f, 33f, 170f, 46f);
+                if (place)
+                {
+                    At(chip, 25f, 33f, 170f, 46f);
+                    Stretch(actionChip.rectTransform, 56f, 3f, 16f, 3f);
+                }
                 Image badge = chip.GetComponent<Image>();
-                if (badge != null) NauticalHud.Plate(badge, "Badge", 46f);
+                if (badge != null) NauticalHud.Plate(badge, "Badge", chip.rect.height);
                 RemoveChild(chip, "Outline");
-                Stretch(actionChip.rectTransform, 56f, 3f, 16f, 3f);
                 actionChip.color = NauticalHud.Ink;
             }
             // The text sizes stay as they are (set for a phone to read); only places and colours change.
             if (actionTitle != null)
             {
-                Place(actionTitle.rectTransform, 206f, 22f, TitleRight, 52f);
+                if (place) Place(actionTitle.rectTransform, 206f, 22f, TitleRight, 52f);
                 actionTitle.color = NauticalHud.Title;
             }
             if (line != null)
@@ -254,18 +313,21 @@ namespace WhoisntCitizen.Game
                 Image rule = Part(line, "TitleRule", 0);
                 NauticalHud.Whole(rule, "TitleRule");
                 Vector2 size = rule.sprite != null ? rule.sprite.rect.size / NauticalHud.NightScale : new Vector2(457f, 24f);
-                At(rule.rectTransform, 430f / NauticalHud.NightScale - 12f, 148f / NauticalHud.NightScale, size.x, size.y);
+                if (place) At(rule.rectTransform, 430f / NauticalHud.NightScale - 12f, 148f / NauticalHud.NightScale, size.x, size.y);
             }
             if (actionSub != null)
             {
                 // One line sits under the head's rule; a long one takes two lines over it.
-                Place(actionSub.rectTransform, 64f, 74f, TextRight, 64f);
-                actionSub.alignment = TextAlignmentOptions.MidlineLeft;
+                if (place)
+                {
+                    Place(actionSub.rectTransform, 64f, 74f, TextRight, 64f);
+                    actionSub.alignment = TextAlignmentOptions.MidlineLeft;
+                }
                 actionSub.textWrappingMode = TextWrappingModes.Normal;
                 actionSub.color = NauticalHud.Sub;
             }
-            DressButton(primaryButton, "ButtonGold", ButtonRight, PrimaryWidth, NauticalHud.Ink);
-            DressButton(secondaryButton, "ButtonTeal", ButtonRight + PrimaryWidth + ButtonGap, SecondaryWidth, NauticalHud.Title);
+            DressButton(primaryButton, "ButtonGold", ButtonRight, PrimaryWidth, NauticalHud.Ink, place);
+            DressButton(secondaryButton, "ButtonTeal", ButtonRight + PrimaryWidth + ButtonGap, SecondaryWidth, NauticalHud.Title, place);
 
             if (strip != null)
             {
@@ -275,18 +337,29 @@ namespace WhoisntCitizen.Game
             rosterKey = null; // the strip's people are made again in the new look
         }
 
-        private static void DressButton(ActionButton b, string sprite, float right, float width, Color label)
+        // Night blue inside the chat window's frame lines, so a window made taller over the stage is not see-through.
+        private static void Inside(RectTransform chatBox)
+        {
+            Image inside = Part(chatBox, "Inside", 0);
+            inside.sprite = null;
+            inside.color = NauticalHud.Backdrop;
+            Stretch(inside.rectTransform, 20f, 22f, 20f, 28f);
+        }
+
+        private static void DressButton(ActionButton b, string sprite, float right, float width, Color label, bool place)
         {
             if (b == null || b.rect == null) return;
-            b.rect.anchorMin = b.rect.anchorMax = b.rect.pivot = new Vector2(1f, 0.5f);
-            b.rect.anchoredPosition = new Vector2(-right, -ButtonDrop);
-            b.rect.sizeDelta = new Vector2(width, ButtonHeight);
+            if (place)
+            {
+                b.rect.anchorMin = b.rect.anchorMax = b.rect.pivot = new Vector2(1f, 0.5f);
+                b.rect.anchoredPosition = new Vector2(-right, -ButtonDrop);
+                b.rect.sizeDelta = new Vector2(width, ButtonHeight);
+                if (b.label != null) Stretch(b.label.rectTransform, 22f, 6f, 22f, 6f); // clear of the frame's corners
+            }
             Image image = b.rect.GetComponent<Image>();
-            if (image != null) NauticalHud.Plate(image, sprite, ButtonHeight);
+            if (image != null) NauticalHud.Plate(image, sprite, b.rect.rect.height);
             RemoveChild(b.rect, "Outline");
-            if (b.label == null) return;
-            b.label.color = label;
-            Stretch(b.label.rectTransform, 22f, 6f, 22f, 6f); // clear of the frame's corners
+            if (b.label != null) b.label.color = label;
         }
 
         // A part of the look on parent: the child of that name (made at that sibling index if there is none) with an Image.
@@ -543,11 +616,12 @@ namespace WhoisntCitizen.Game
 
                 RectTransform plate = Box(root, "Plate", mid - plateW * 0.5f, centre + PlateBelowCentre * k, plateW, plateH);
                 NauticalHud.Plate(AddImage(plate, null, Color.white), "NamePlate", plateH);
+                // A long nickname is not shrunk past reading: what does not fit ends in "…" (NewText's overflow).
                 TextMeshProUGUI name = NewText(plate, "Name", 24f, p.playerId == myId ? Gold : Cream, FontStyles.Bold, TextAlignmentOptions.Center);
-                Stretch(name.rectTransform, 16f, 3f, 16f, 5f);
+                Stretch(name.rectTransform, 14f, 3f, 14f, 5f); // clear of the plate's studs
                 name.enableAutoSizing = true;
-                name.fontSizeMin = 14f;
                 name.fontSizeMax = 24f * Mathf.Max(0.8f, k);
+                name.fontSizeMin = name.fontSizeMax * 0.8f;
                 name.text = p.nickname;
                 if (!p.alive)
                 {
@@ -601,6 +675,7 @@ namespace WhoisntCitizen.Game
             }
             // The stage can be retuned while playing. Baked, the backdrop stays where the scene has it.
             if (!baked && backdrop != null) backdrop.offsetMax = new Vector2(0f, -GameHudMetrics.StageBottom);
+            FitChat(); // a taller screen stretches the chat window
 
             GameSession session = ctx.Session();
             if (session == null || session.State == null) return;
@@ -726,13 +801,101 @@ namespace WhoisntCitizen.Game
             SetText(actionChip, s.chip);
             SetText(actionTitle, s.title);
             SetText(actionSub, s.sub);
+            SetButton(secondaryButton, s.secondary, s.secondaryOn);
+            SetButton(primaryButton, s.primary, s.primaryOn);
+            FitLabels();
+            ReachButtons(actionTitle);
+            ReachButtons(actionSub);
             if (titleRule != null && actionSub != null)
             {
                 actionSub.ForceMeshUpdate();
                 titleRule.SetActive(actionSub.textInfo.lineCount < 2);
             }
-            SetButton(secondaryButton, s.secondary, s.secondaryOn);
-            SetButton(primaryButton, s.primary, s.primaryOn);
+        }
+
+        // The text's right edge goes to just before the leftmost button shown, wherever the scene put them, or to the line's
+        // right end when there is none (a dead player's long title is not cut). Its left edge stays where the scene has it.
+        private void ReachButtons(TMP_Text text)
+        {
+            if (text == null || !(text.rectTransform.parent is RectTransform line)) return;
+            float right = line.rect.xMax - 24f;
+            foreach (ActionButton b in new[] { secondaryButton, primaryButton })
+            {
+                if (b == null || b.rect == null || !b.rect.gameObject.activeSelf) continue;
+                b.rect.GetWorldCorners(corners);
+                right = Mathf.Min(right, line.InverseTransformPoint(corners[0]).x - 12f);
+            }
+            RectTransform r = text.rectTransform;
+            r.GetWorldCorners(corners);
+            float now = line.InverseTransformPoint(corners[2]).x;
+            if (!Mathf.Approximately(now, right)) r.offsetMax += new Vector2(right - now, 0f);
+        }
+
+        private readonly Vector3[] corners = new Vector3[4];
+
+        // The chip and the buttons as the scene makes them (measured once): their widths, the title's start after the chip
+        // and the gap between the two buttons.
+        private bool measured;
+        private float chipWidth, primaryWidth, secondaryWidth, titleAfterChip, buttonGap;
+
+        // The chip and the buttons keep the scene's widths, or grow when their text does not fit at its smallest size (it is
+        // never cut or shrunk past reading): the chip to the right, pushing the title along; the buttons to the left, the
+        // secondary keeping its gap left of the primary.
+        private void FitLabels()
+        {
+            RectTransform line = actionTitle != null ? actionTitle.rectTransform.parent as RectTransform : null;
+            RectTransform chip = actionChip != null ? actionChip.rectTransform.parent as RectTransform : null;
+            bool hasPrimary = primaryButton != null && primaryButton.rect != null;
+            bool hasSecondary = secondaryButton != null && secondaryButton.rect != null;
+            if (line == null) return;
+            if (!measured)
+            {
+                measured = true;
+                if (chip != null) chipWidth = chip.rect.width;
+                if (chip != null) titleAfterChip = Edges(actionTitle.rectTransform, line).x - Edges(chip, line).y;
+                if (hasPrimary) primaryWidth = primaryButton.rect.rect.width;
+                if (hasSecondary) secondaryWidth = secondaryButton.rect.rect.width;
+                if (hasPrimary && hasSecondary) buttonGap = Edges(primaryButton.rect, line).x - Edges(secondaryButton.rect, line).y;
+            }
+            if (chip != null)
+            {
+                chip.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, Mathf.Max(chipWidth, Needed(actionChip, chip)));
+                float shift = Edges(chip, line).y + titleAfterChip - Edges(actionTitle.rectTransform, line).x;
+                actionTitle.rectTransform.offsetMin += new Vector2(shift, 0f);
+            }
+            if (hasPrimary && primaryButton.label != null)
+                primaryButton.rect.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, Mathf.Max(primaryWidth, Needed(primaryButton.label, primaryButton.rect)));
+            if (hasSecondary && secondaryButton.label != null)
+            {
+                RectTransform b = secondaryButton.rect;
+                b.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, Mathf.Max(secondaryWidth, Needed(secondaryButton.label, b)));
+                if (hasPrimary)
+                {
+                    float shift = Edges(primaryButton.rect, line).x - buttonGap - Edges(b, line).y;
+                    b.anchoredPosition += new Vector2(shift, 0f);
+                }
+            }
+        }
+
+        // How wide rect must be for its text at the text's smallest size (its insets kept).
+        private static float Needed(TMP_Text text, RectTransform rect)
+        {
+            if (string.IsNullOrEmpty(text.text)) return 0f;
+            bool auto = text.enableAutoSizing;
+            float size = text.fontSize;
+            text.enableAutoSizing = false;
+            text.fontSize = auto ? text.fontSizeMin : size;
+            float width = text.GetPreferredValues(text.text, float.PositiveInfinity, float.PositiveInfinity).x;
+            text.fontSize = size;
+            text.enableAutoSizing = auto;
+            return width + rect.rect.width - text.rectTransform.rect.width + 2f;
+        }
+
+        // A rect's left and right edges (x, y) in line's space.
+        private Vector2 Edges(RectTransform rect, RectTransform line)
+        {
+            rect.GetWorldCorners(corners);
+            return new Vector2(line.InverseTransformPoint(corners[0]).x, line.InverseTransformPoint(corners[2]).x);
         }
 
         // A part taken out of the baked scene is simply not shown.
