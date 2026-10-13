@@ -15,7 +15,9 @@ namespace WhoisntCitizen.GameUI
     //  - 메시지가 적을 때는 아래쪽부터 쌓인다.
     // 줄은 ChatEntry로 받는다. RowFactory(게임 화면의 해적 HUD가 넣는다)가 있으면 그 줄 모양(아바타·이름패·시간)으로,
     // 없으면(대기실 등) 줄 프리팹에 리치 텍스트 한 줄로 그린다.
-    // 탭(전체 / 시스템 / 귓속말)과 보낸 사람 필터는 SetFilter로 바꾼다. 걸러진 줄은 꺼 둔다.
+    // 탭(전체 / 시스템 / 일반 / 귓속말)과 보낸 사람 필터는 SetFilter로 바꾼다. 걸러진 줄은 꺼 둔다.
+    // 보낸 사람 필터는 전체·일반 탭에서만 쓴다. 전체 탭은 그 사람의 채팅 + 시스템·안내 줄(흐름을 보려고),
+    // 일반 탭은 그 사람의 채팅만 보인다.
     // 이미지 메시지(역할 카드 등)는 나중에 메시지 종류별 프리팹을 추가해 AddItem으로 넣으면 된다.
     public class ChatLogView : MonoBehaviour, IPointerClickHandler
     {
@@ -143,7 +145,7 @@ namespace WhoisntCitizen.GameUI
         public void SetFilter(ChatTab tab, string speaker)
         {
             Tab = tab;
-            SpeakerFilter = tab == ChatTab.All && !string.IsNullOrEmpty(speaker) ? speaker : null;
+            SpeakerFilter = UsesSpeakerFilter(tab) && !string.IsNullOrEmpty(speaker) ? speaker : null;
             foreach (Row row in rows) if (row.go != null) row.go.SetActive(Visible(row.entry));
             ScrollToLatest();
             RowsChanged?.Invoke();
@@ -168,13 +170,20 @@ namespace WhoisntCitizen.GameUI
             if (!eventData.dragging) onTapped?.Invoke();
         }
 
+        // 보낸 사람 필터를 쓰는 탭 (전체·일반)
+        public static bool UsesSpeakerFilter(ChatTab tab) => tab == ChatTab.All || tab == ChatTab.General;
+
         private bool Visible(ChatEntry e)
         {
             switch (Tab)
             {
                 case ChatTab.System: return e.Kind == ChatEntryKind.System || e.Kind == ChatEntryKind.Notice;
+                case ChatTab.General: return e.Kind == ChatEntryKind.Player && (SpeakerFilter == null || e.Nickname == SpeakerFilter);
                 case ChatTab.Whisper: return e.Kind == ChatEntryKind.Whisper;
-                default: return SpeakerFilter == null || (e.Kind == ChatEntryKind.Player && e.Nickname == SpeakerFilter);
+                default:
+                    // 필터를 켜도 시스템·안내 줄은 남긴다: 그 사람이 어떤 상황에서 말했는지 보이게
+                    return SpeakerFilter == null || e.Kind == ChatEntryKind.System || e.Kind == ChatEntryKind.Notice
+                           || e.Nickname == SpeakerFilter;
             }
         }
 

@@ -10,7 +10,8 @@ namespace WhoisntCitizen.Game
     /// <summary>
     /// The chat window of the pirate HUD, laid out at run time over the scene's chat log and bottom sheet (like
     /// <see cref="GameHudLayout"/>, which makes it). One gold frame holds, from the top:
-    /// - tabs (전체 / 시스템 / 귓속말) and the chat filter (only one player's chat), which filter the chat log;
+    /// - tabs (전체 / 시스템 / 일반 / 귓속말) and the chat filter (only one player's chat, on 전체 and 일반), which filter
+    ///   the chat log;
     /// - the chat log: each line a row with the sender's bust on a name tag and the message (no time: the message gets
     ///   the width, at a size a phone reads);
     /// - the input bar (the bottom sheet's tab bar): a parchment pill with a chat mark (a down arrow closing the drawer
@@ -24,6 +25,8 @@ namespace WhoisntCitizen.Game
         private const string Icons = "Sprites/flaticon/white/128/";
         // In the window (canvas units from its top-left): the tab row, then the log.
         private const float TabTop = 32f, TabHeight = 56f, LogTop = 100f; // the tabs sit under the frame's top rail
+        // AddTabRow (bare chat): the tab row inside the log's top edge; the rows scroll under it.
+        private const float BareTabTop = 6f, BareTabInset = 8f, BareLogTop = BareTabTop + TabHeight + 8f;
         // A row: name tag on the left, then the message.
         private const float RowPad = 6f, TagWidth = 216f, TagHeight = 52f, BodyLeft = 232f, BodyRight = 14f, BodyPad = 12f;
         // Text sizes in canvas units: the canvas is 1080 wide, so on a phone one unit is about 0.37 pt (30 ≈ 11 pt).
@@ -50,7 +53,7 @@ namespace WhoisntCitizen.Game
         [SerializeField] private Image chatMark;
         [SerializeField] private Button chatMarkButton;
 
-        private RectTransform canvas, window, dropdown, dropdownList, dropdownBlocker;
+        private RectTransform canvas, window, dropdown, dropdownList, dropdownBlocker, filterButton;
         private CanvasGroup windowGroup;
         private BottomTabController bottomTab;
         private TextMeshProUGUI filterLabel, emptyLabel;
@@ -103,7 +106,7 @@ namespace WhoisntCitizen.Game
             Stretch(emptyLabel.rectTransform, 20f, 20f, 20f, 20f);
             emptyLabel.textWrappingMode = TextWrappingModes.Normal;
 
-            BuildTabs();
+            BuildTabs(window, TabTop, 24f);
             if (chat != null)
             {
                 StyleChat();
@@ -136,6 +139,26 @@ namespace WhoisntCitizen.Game
             }
             ListenToChat();
             WireInputBar();
+        }
+
+        /// <summary>
+        /// After BuildBare (GameScene3): the tabs (전체 / 시스템 / 일반 / 귓속말) and the chat filter at the top of the chat
+        /// log, as in the framed window. They are made at run time inside the log (baked scenes too), and the log's viewport
+        /// starts under them, so the log keeps the place the layout or the scene gives it.
+        /// </summary>
+        public void AddTabRow()
+        {
+            if (chat == null || log == null || tabs.Count > 0) return;
+            ScrollRect scroll = chat.GetComponentInChildren<ScrollRect>(true);
+            RectTransform viewport = scroll != null ? scroll.viewport : null;
+            if (viewport != null) viewport.offsetMax = new Vector2(viewport.offsetMax.x, viewport.offsetMax.y - BareLogTop);
+
+            emptyLabel = NewText(chat, "Empty", 24f, Muted, FontStyles.Normal, TextAlignmentOptions.Center);
+            Stretch(emptyLabel.rectTransform, 20f, BareLogTop + 12f, 20f, 12f);
+            emptyLabel.textWrappingMode = TextWrappingModes.Normal;
+
+            BuildTabs(chat, BareTabTop, BareTabInset);
+            UpdateEmpty();
         }
 
         /// <summary>
@@ -212,15 +235,18 @@ namespace WhoisntCitizen.Game
 
         // ------------------------------------------------------------------ tabs and filter
 
-        private void BuildTabs()
+        // The tab row in parent: top from its top, inset from its left and right (the filter at the right end).
+        private void BuildTabs(RectTransform parent, float top, float inset)
         {
-            AddTab(ChatTab.All, "전체", "flag_1", 24f, 168f);
-            AddTab(ChatTab.System, "시스템", "notification", 198f, 150f);
-            AddTab(ChatTab.Whisper, "귓속말", "friend", 354f, 150f);
+            AddTab(parent, top, ChatTab.All, "전체", "flag_1", inset, 168f);
+            AddTab(parent, top, ChatTab.System, "시스템", "notification", inset + 174f, 150f);
+            AddTab(parent, top, ChatTab.General, "일반", "chat_1", inset + 330f, 150f);
+            AddTab(parent, top, ChatTab.Whisper, "귓속말", "friend", inset + 486f, 150f);
 
-            RectTransform filter = Box(window, "ChatFilter", 0f, TabTop, 206f, TabHeight);
+            RectTransform filter = Box(parent, "ChatFilter", 0f, top, 206f, TabHeight);
             filter.anchorMin = filter.anchorMax = filter.pivot = new Vector2(1f, 1f);
-            filter.anchoredPosition = new Vector2(-24f, -TabTop);
+            filter.anchoredPosition = new Vector2(-inset, -top);
+            filterButton = filter;
             HudShapes.Panel(filter, Teal, GoldLine, 12f).raycastTarget = true;
             filter.gameObject.AddComponent<Button>().onClick.AddListener(ToggleFilter);
             filterLabel = NewText(filter, "Label", 23f, Gold, FontStyles.Bold, TextAlignmentOptions.Center);
@@ -233,9 +259,9 @@ namespace WhoisntCitizen.Game
             ShowTab(ChatTab.All);
         }
 
-        private void AddTab(ChatTab kind, string text, string icon, float x, float width)
+        private void AddTab(RectTransform parent, float top, ChatTab kind, string text, string icon, float x, float width)
         {
-            RectTransform rect = Box(window, "Tab" + kind, x, TabTop, width, TabHeight);
+            RectTransform rect = Box(parent, "Tab" + kind, x, top, width, TabHeight);
             var tab = new Tab { fill = HudShapes.Panel(rect, Teal, GoldLine, 12f) };
             tab.fill.raycastTarget = true;
             tab.outline = rect.Find("Outline").GetComponent<Image>();
@@ -258,7 +284,8 @@ namespace WhoisntCitizen.Game
                 pair.Value.label.color = active ? Ink : Cream;
                 pair.Value.icon.color = active ? new Color(0.09f, 0.3f, 0.32f) : Cream;
             }
-            if (log != null) log.SetFilter(kind, kind == ChatTab.All ? log.SpeakerFilter : null);
+            // 전체 ↔ 일반을 오갈 때는 고른 플레이어를 그대로 둔다 (시스템·귓속말 탭에서는 풀림)
+            if (log != null) log.SetFilter(kind, ChatLogView.UsesSpeakerFilter(kind) ? log.SpeakerFilter : null);
             UpdateFilterLabel();
         }
 
@@ -268,11 +295,13 @@ namespace WhoisntCitizen.Game
             else OpenFilter();
         }
 
-        // The filter: every player who has chatted, or everyone. Picking one shows the 전체 tab with only their chat.
+        // The filter: every player who has chatted, or everyone. Picking one shows only their chat on the 일반 tab if that
+        // is open, else on the 전체 tab.
         private void OpenFilter()
         {
             if (log == null) return;
             if (dropdown == null) BuildDropdown();
+            PlaceDropdown();
             for (int i = dropdownList.childCount - 1; i >= 0; i--) Destroy(dropdownList.GetChild(i).gameObject);
             AddFilterRow("모든 플레이어", null);
             List<string> speakers = log.Speakers();
@@ -300,10 +329,9 @@ namespace WhoisntCitizen.Game
             AddImage(dropdownBlocker, null, new Color(0f, 0f, 0f, 0f)).raycastTarget = true; // a tap outside closes it
             dropdownBlocker.gameObject.AddComponent<Button>().onClick.AddListener(CloseFilter);
 
-            // Hangs from the filter button, right-aligned with it.
-            dropdown = Box(canvas, "ChatFilterList", 0f, GameHudMetrics.ChatTop + TabTop + TabHeight + 6f, 320f, 100f);
+            // Hangs from the filter button, right-aligned with it (PlaceDropdown).
+            dropdown = Box(canvas, "ChatFilterList", 0f, 0f, 320f, 100f);
             dropdown.anchorMin = dropdown.anchorMax = dropdown.pivot = new Vector2(1f, 1f);
-            dropdown.anchoredPosition = new Vector2(-34f, -(GameHudMetrics.ChatTop + TabTop + TabHeight + 6f));
             HudShapes.Panel(dropdown, new Color(0.06f, 0.12f, 0.13f, 0.98f), GoldLine, 12f).raycastTarget = true;
             RectTransform viewport = NewRect("Viewport", dropdown);
             Stretch(viewport, 8f, 8f, 8f, 8f);
@@ -326,11 +354,22 @@ namespace WhoisntCitizen.Game
             scroll.movementType = ScrollRect.MovementType.Clamped;
         }
 
+        // Right under the filter button, right edges lined up (the button's place depends on the layout).
+        private void PlaceDropdown()
+        {
+            if (filterButton == null) return;
+            var corners = new Vector3[4];
+            filterButton.GetWorldCorners(corners); // [3]: bottom right
+            Vector2 corner = canvas.InverseTransformPoint(corners[3]);
+            Rect area = canvas.rect;
+            dropdown.anchoredPosition = new Vector2(corner.x - area.xMax, corner.y - area.yMax - 6f);
+        }
+
         private void AddFilterRow(string text, string speaker, bool pickable = true)
         {
             RectTransform row = NewRect("Option", dropdownList);
             row.gameObject.AddComponent<LayoutElement>().preferredHeight = 54f;
-            bool chosen = pickable && log.Tab == ChatTab.All && log.SpeakerFilter == speaker;
+            bool chosen = pickable && ChatLogView.UsesSpeakerFilter(log.Tab) && log.SpeakerFilter == speaker;
             Image back = AddImage(row, HudShapes.Fill, chosen ? new Color(0.98f, 0.8f, 0.42f, 0.25f) : new Color(1f, 1f, 1f, 0f));
             back.type = Image.Type.Sliced;
             back.pixelsPerUnitMultiplier = 2f;
@@ -342,8 +381,9 @@ namespace WhoisntCitizen.Game
             row.gameObject.AddComponent<Button>().onClick.AddListener(() =>
             {
                 CloseFilter();
-                log.SetFilter(ChatTab.All, speaker);
-                ShowTab(ChatTab.All);
+                ChatTab target = log.Tab == ChatTab.General ? ChatTab.General : ChatTab.All;
+                log.SetFilter(target, speaker);
+                ShowTab(target);
             });
         }
 
@@ -364,6 +404,9 @@ namespace WhoisntCitizen.Game
             switch (log.Tab)
             {
                 case ChatTab.System: emptyLabel.text = "시스템 메시지가 없습니다."; break;
+                case ChatTab.General:
+                    emptyLabel.text = string.IsNullOrEmpty(log.SpeakerFilter) ? "아직 플레이어 채팅이 없습니다." : log.SpeakerFilter + "님의 채팅이 없습니다.";
+                    break;
                 case ChatTab.Whisper: emptyLabel.text = "받은 귓속말이 없습니다."; break;
                 default:
                     emptyLabel.text = string.IsNullOrEmpty(log.SpeakerFilter) ? "아직 메시지가 없습니다." : log.SpeakerFilter + "님의 채팅이 없습니다.";
