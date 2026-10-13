@@ -19,6 +19,8 @@ namespace WhoisntCitizen.Game
     /// What the chat says and sends stays with the chat side (<see cref="ChatLogView"/>, GameChatController).
     /// The bare form (no window) can be baked into a scene (<see cref="BakeBare"/>): the log's place and the input bar's
     /// look are then the scene's, and BuildBare only wires them.
+    /// In the nautical look (GameScene3, <see cref="NauticalHud"/>) the system and notice tags are framed plates, the rows'
+    /// rules gold with a star at their end, and the input bar the concept's pill, compass ring and framed send button.
     /// </summary>
     public sealed class GameHudChat : MonoBehaviour
     {
@@ -29,6 +31,10 @@ namespace WhoisntCitizen.Game
         private const float BareTabTop = 6f, BareTabInset = 8f, BareLogTop = BareTabTop + TabHeight + 8f;
         // A row: name tag on the left, then the message.
         private const float RowPad = 6f, TagWidth = 216f, TagHeight = 52f, BodyLeft = 232f, BodyRight = 14f, BodyPad = 12f;
+        // The nautical input bar, in the tab bar (canvas units): the pill from PillLeft to PillRight from the bar's right,
+        // the chat mark's ring centred on the pill's left end, the send button's centre SendRight from the bar's right.
+        private const float PillLeft = 60f, PillRight = 138f, PillHeight = 67f, PillDrop = 4f, MarkSize = 82f, MarkX = 14f;
+        private const float SendRight = 85f, SendWidth = 91f, SendHeight = 81f;
         // Text sizes in canvas units: the canvas is 1080 wide, so on a phone one unit is about 0.37 pt (30 ≈ 11 pt).
         private const float NameSize = 26f, BodySize = 30f;
         private const float BodyDilate = 0.12f; // the regular weight is thin on a phone: the message is drawn a little heavier
@@ -46,6 +52,7 @@ namespace WhoisntCitizen.Game
 
         // Made by BuildBare at run time, or once in Edit mode by BakeBare (then saved with the scene and only wired).
         [SerializeField, HideInInspector] private bool baked;
+        [SerializeField, HideInInspector] private bool nautical;
         [SerializeField] private RectTransform chat;
         [SerializeField] private CanvasGroup chatGroup;
         [SerializeField] private ChatLogView log;
@@ -178,6 +185,25 @@ namespace WhoisntCitizen.Game
             }
             if (sheet != null) BuildInputBar(sheet);
             baked = true;
+        }
+
+        /// <summary>The nautical look (GameScene3) for the rows and the input bar. Before BuildBare or BakeBare.</summary>
+        public void SetNautical(bool on)
+        {
+            nautical = on;
+        }
+
+        /// <summary>
+        /// Edit mode (Tools/Game Scene/항해 시안 입히기): a bare chat baked before the nautical look dressed in it, the log
+        /// put at area (left, top from the top, right, bottom from the bottom: inside the window's frame).
+        /// </summary>
+        public void DressNautical(Vector4 area)
+        {
+            nautical = true;
+            if (chat != null) PlaceLog(area);
+            Transform tabBar = input != null ? input.transform.parent : null;
+            while (tabBar != null && tabBar.name != "TabBar") tabBar = tabBar.parent;
+            if (tabBar != null) DressInputBar(tabBar);
         }
 
         /// <summary>Shows or hides the chat log (it keeps receiving lines).</summary>
@@ -463,7 +489,9 @@ namespace WhoisntCitizen.Game
                     nameColor = e.Dead ? new Color(0.25f, 0.24f, 0.22f) : Ink;
                     break;
             }
-            HudShapes.Panel(tag, tagFill, tagLine, 12f);
+            if (nautical && (e.Kind == ChatEntryKind.System || e.Kind == ChatEntryKind.Notice))
+                NauticalHud.Plate(AddImage(tag, null, Color.white), "ChatTag", TagHeight); // the concept's framed plate
+            else HudShapes.Panel(tag, tagFill, tagLine, 12f);
             if (e.Kind == ChatEntryKind.Player || e.Kind == ChatEntryKind.Whisper) AddAvatar(tag, e);
             else
             {
@@ -493,7 +521,17 @@ namespace WhoisntCitizen.Game
             rule.anchorMax = new Vector2(1f, 0f);
             rule.pivot = new Vector2(0.5f, 0f);
             rule.sizeDelta = new Vector2(0f, 2f);
-            AddImage(rule, null, new Color(GoldLine.r, GoldLine.g, GoldLine.b, 0.18f));
+            AddImage(rule, null, nautical ? NauticalHud.Rule : new Color(GoldLine.r, GoldLine.g, GoldLine.b, 0.18f));
+            if (nautical)
+            {
+                RectTransform star = NewRect("Star", row); // on the rule's right end
+                star.anchorMin = star.anchorMax = new Vector2(1f, 0f);
+                star.pivot = new Vector2(0.5f, 0.5f);
+                star.anchoredPosition = new Vector2(-16f, 1f);
+                NauticalHud.Whole(AddImage(star, null, Color.white), "RuleStar");
+                star.sizeDelta = star.GetComponent<Image>().sprite != null
+                    ? star.GetComponent<Image>().sprite.rect.size / NauticalHud.ChatScale : new Vector2(29f, 19f);
+            }
 
             row.gameObject.AddComponent<ChatRowLayout>().Setup(body, BodyLeft, BodyRight, BodyPad, BodyPad, TagHeight + RowPad * 2f);
             return row;
@@ -543,6 +581,11 @@ namespace WhoisntCitizen.Game
         {
             Transform tabBar = sheet.Find("TabBar");
             if (tabBar == null) return;
+            if (nautical)
+            {
+                DressInputBar(tabBar);
+                return;
+            }
             Transform plus = tabBar.Find("PlusButton");
             if (plus != null) plus.gameObject.SetActive(false);
 
@@ -605,6 +648,109 @@ namespace WhoisntCitizen.Game
                 sendImage.preserveAspect = true;
                 foreach (TMP_Text text in send.GetComponentsInChildren<TMP_Text>(true)) text.gameObject.SetActive(false); // the art has the plane
             }
+        }
+
+        // The nautical input bar: the parchment pill (the concept's, its ends kept), the chat mark on the compass-pointed
+        // ring over its left end, the smiley, the framed send button. Made new or over a bar baked in the old look (its
+        // rule beside the mark and the pill's outline come off).
+        private void DressInputBar(Transform tabBar)
+        {
+            Transform plus = tabBar.Find("PlusButton");
+            if (plus != null) plus.gameObject.SetActive(false);
+
+            input = tabBar.GetComponentInChildren<TMP_InputField>(true);
+            if (input != null)
+            {
+                var field = (RectTransform)input.transform;
+                field.anchorMin = new Vector2(0f, 0.5f);
+                field.anchorMax = new Vector2(1f, 0.5f);
+                field.offsetMin = new Vector2(PillLeft, -PillHeight * 0.5f - PillDrop);
+                field.offsetMax = new Vector2(-PillRight, PillHeight * 0.5f - PillDrop);
+                Image pill = field.GetComponent<Image>();
+                if (pill == null) pill = field.gameObject.AddComponent<Image>();
+                NauticalHud.Plate(pill, "InputPill", PillHeight).raycastTarget = true;
+                RemoveChild(field, "Outline");
+                RemoveChild(field, "Rule");
+                if (input.textViewport != null)
+                {
+                    input.textViewport.offsetMin = new Vector2(MarkX + MarkSize * 0.5f + 12f, input.textViewport.offsetMin.y);
+                    input.textViewport.offsetMax = new Vector2(-64f, input.textViewport.offsetMax.y);
+                }
+                if (!baked) // a baked bar keeps its texts as the scene has them
+                {
+                    if (input.textComponent != null)
+                    {
+                        input.textComponent.color = Ink;
+                        input.textComponent.fontSize = 28f;
+                    }
+                    if (input.placeholder is TMP_Text hint)
+                    {
+                        hint.text = "메시지를 입력하세요...";
+                        hint.color = new Color(0.45f, 0.36f, 0.25f, 0.85f);
+                        hint.fontSize = 28f;
+                    }
+                }
+
+                RectTransform disc = Child(field, "ChatMark");
+                disc.anchorMin = disc.anchorMax = new Vector2(0f, 0.5f);
+                disc.pivot = new Vector2(0.5f, 0.5f);
+                disc.anchoredPosition = new Vector2(MarkX, 0f);
+                disc.sizeDelta = new Vector2(MarkSize, MarkSize);
+                Image ring = disc.GetComponent<Image>();
+                if (ring == null) ring = disc.gameObject.AddComponent<Image>();
+                NauticalHud.Whole(ring, "ChatDisc").raycastTarget = true;
+                chatMarkButton = disc.GetComponent<Button>();
+                if (chatMarkButton == null) chatMarkButton = disc.gameObject.AddComponent<Button>(); // WireInputBar listens to it
+                RectTransform mark = Child(disc, "Icon");
+                mark.anchorMin = mark.anchorMax = mark.pivot = new Vector2(0.5f, 0.5f);
+                mark.anchoredPosition = Vector2.zero;
+                mark.sizeDelta = new Vector2(34f, 34f);
+                chatMark = mark.GetComponent<Image>();
+                if (chatMark == null) chatMark = mark.gameObject.AddComponent<Image>();
+                chatMark.sprite = Icon("chat_1");
+                chatMark.color = Cream;
+                chatMark.preserveAspect = true;
+                chatMark.raycastTarget = false;
+
+                RectTransform smile = Child(field, "Smiley");
+                smile.anchorMin = smile.anchorMax = smile.pivot = new Vector2(1f, 0.5f);
+                smile.anchoredPosition = new Vector2(-18f, 0f);
+                smile.sizeDelta = new Vector2(40f, 40f);
+                Image face = smile.GetComponent<Image>();
+                if (face == null) face = smile.gameObject.AddComponent<Image>();
+                face.sprite = Icon("emoji_smiley");
+                face.color = new Color(0.22f, 0.16f, 0.09f);
+                face.preserveAspect = true;
+                face.raycastTarget = false;
+            }
+
+            Transform send = tabBar.Find("SendButton");
+            Image sendImage = send != null ? send.GetComponent<Image>() : null;
+            if (sendImage != null)
+            {
+                var sendRect = (RectTransform)send;
+                sendRect.anchorMin = sendRect.anchorMax = new Vector2(1f, 0.5f);
+                sendRect.pivot = new Vector2(0.5f, 0.5f);
+                sendRect.anchoredPosition = new Vector2(-SendRight, -PillDrop);
+                sendRect.sizeDelta = new Vector2(SendWidth, SendHeight);
+                NauticalHud.Whole(sendImage, "SendButton");
+                foreach (TMP_Text text in send.GetComponentsInChildren<TMP_Text>(true)) text.gameObject.SetActive(false); // the art has the plane
+            }
+        }
+
+        // The child of that name, or a new one.
+        private static RectTransform Child(Transform parent, string name)
+        {
+            Transform child = parent.Find(name);
+            return child != null ? (RectTransform)child : NewRect(name, parent);
+        }
+
+        private static void RemoveChild(Transform parent, string name)
+        {
+            Transform child = parent.Find(name);
+            if (child == null) return;
+            if (Application.isPlaying) Destroy(child.gameObject);
+            else DestroyImmediate(child.gameObject);
         }
 
         private void WireInputBar()

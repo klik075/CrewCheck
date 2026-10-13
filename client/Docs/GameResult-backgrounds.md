@@ -27,7 +27,7 @@
 | 0.65~1.49초 | 캐릭터가 순서대로 나타남 (최대 12명, 2줄) |
 | 1.60~2초 | 전체 직업 목록과 복귀 버튼 표시 |
 
-- 선원/해적 승리에는 금빛 입자, 개인 승리에는 청록빛 입자, 패배에는 빗줄기와 차분한 색상의 내 캐릭터를 표시합니다.
+- 승리 입자는 선원 하늘색, 해적 붉은색, 개인 보라색으로 구분합니다. 패배에는 회청색 빗줄기와 차분한 색상의 내 캐릭터를 표시합니다.
 - `GameScreen`이 원탁의 `SkinOf`를 전달하므로 플레이 중 사용하던 외형을 유지합니다. 외형 디자인으로 진영을 추측하지 않고 결과 DTO의 실제 직업 코드로 승리 팀을 고릅니다. 개인 승리/패배에는 내 캐릭터만 표시합니다.
 - 전신 캐릭터는 화면 전체에서 동일한 높이를 사용합니다. 이미 여백이 정리된 스프라이트를 기준으로 가장 넓은 외형도 들어가는 공통 높이를 정하고, 같은 간격으로 배치합니다. 캐릭터별 가로세로 비율과 발 피벗은 유지하며 그림자도 같은 크기로 맞춥니다.
 - 화면을 누르면 연출을 즉시 완료합니다. 연출 중 복귀 버튼 입력도 건너뛰기로 처리하고, 이후 버튼 입력이 대기실 복귀를 실행합니다.
@@ -38,8 +38,9 @@
 
 `GameResultCardView`가 기존 HUD/대기실 리소스를 사용해 결과창을 꾸밉니다.
 
-- 제목: 금빛 조타륜, 승패 배지, 은은하게 밝기가 변하는 빛, 장식 테두리.
-- 참가자: 2열 카드에 착용 외형의 초상화, 닉네임, 실제 직업/진영, 생존/사망 상태를 표시합니다. 내 카드에는 금빛 테두리를 적용합니다.
+- 제목: 금빛 조타륜, 승패 배지, 은은하게 밝기가 변하는 빛, 장식 테두리. 제목과 빛은 승리 진영 색상으로 표시하고, 내 패배 배지는 회청색으로 구분합니다.
+- 참가자: 2열 카드에 착용 외형의 초상화, 닉네임, 실제 직업/진영, 생존/사망 상태를 표시합니다. 각 카드의 배경·테두리·왼쪽 띠·진영 글씨는 선원 하늘색, 해적 붉은색, 개인 보라색입니다. 내 카드는 금빛 테두리와 `나 ·` 표시를 추가하며 왼쪽 띠와 진영 글씨로 진영 색상을 유지합니다. 미확인 진영은 회청색으로 표시합니다.
+- 색상은 기존 직업 정보창과 맞춘 `GameResultPalette`에서 관리합니다. 진영 이름도 함께 표시하며, 취소/정보 누락으로 돌아가면 제목·승패 글씨의 기존 색상을 복원합니다.
 - 상단 요약: 참가자 수와 생존/사망 인원. 카드 목록은 기존 결과 목록과 같은 1.6~2초 구간에 나타납니다.
 - 초상화는 `Resources/GameHud/Portraits`에서 스킨의 디자인 ID로 조회합니다. 초상화가 없으면 해당 스킨의 전신 이미지, 스킨도 없으면 `?`를 표시합니다. 진영은 외형과 무관하게 실제 직업 코드로 표시합니다.
 - 취소/정보 누락 등은 참가자 카드를 숨기고 기존 텍스트 결과로 돌아갑니다.
@@ -49,7 +50,7 @@
 `Tools/ResultScreenAudit/CaptureResults.cs`는 별도 Unity 프로젝트의 Editor에서 실행하는 검증 스크립트입니다.
 프로젝트의 실제 GameResultPanel, GameResultSequence, ChibiCharacterSkin, NightFxSprites, GameConstants, GameDtos, GameScreenText, ReportFormatter, GameStateQueries, AbilityRules, PhaseTracker와 Resources/GameResult, Resources/DayTable/Skins, 09_Image/Characters, Fonts, TextMesh Pro 리소스를 사용합니다. 스킨 스크립트와 캐릭터 리소스의 `.meta`도 함께 복사해 참조를 유지해야 합니다.
 
-카드 디자인 검증에는 GameResultCardView, DesignSpriteCatalog, Resources/GameHud, Resources/RoomLobby의 HelmRefined 및 Button, 09_Image/Portrait도 함께 사용합니다. 카드 초상화와 착용 스킨의 일치, 생존 표시, 글씨 렌더링, 12인 카드와 복귀 버튼의 간격, 취소 시 카드 제거도 확인합니다.
+카드 디자인 검증에는 GameResultCardView, GameResultPalette, DesignSpriteCatalog, Resources/GameHud, Resources/RoomLobby의 HelmRefined 및 Button, 09_Image/Portrait도 함께 사용합니다. 카드 초상화와 착용 스킨의 일치, 생존 표시, 글씨 렌더링, 12인 카드와 복귀 버튼의 간격, 취소 시 카드 제거도 확인합니다. 세 진영이 함께 있는 `*_FactionColors.png` 미리보기로 진영별 제목과 카드 색상을 확인할 수 있습니다.
 
 전신 배치 검증은 인간·동물·크라켄·인어 외형을 섞어 동일 높이, 원본 비율, 발 피벗 유지 및 캐릭터 간 겹침을 확인합니다.
 

@@ -46,7 +46,7 @@ namespace WhoisntCitizen.GameUI
     /// </summary>
     public sealed class DayTransitionView : MonoBehaviour, IPointerClickHandler
     {
-        private const float OutLength = 0.5f, MaxHold = 2.5f, MinBar = 120f;
+        private const float DesignOut = 0.5f, MinBar = 120f; // the bars opening, as drawn
         private const float ArtAspect = 576f / 812f; // DayTransition/ExecutionPlank and ExecutionSplash
         private const float Tally = 0.8f;            // execution: the table's tally shows this long before the bars close
         private const int SparkCount = 16, RayCount = 12, SlashCount = 3, SealLineCount = 9;
@@ -104,14 +104,22 @@ namespace WhoisntCitizen.GameUI
         private bool released, skip;
         private Coroutine routine;
 
+        // This play's timing (from the settings when it starts): the beats' real lengths, and the timing they are drawn at.
+        private float[] realBeats = new float[0], designBeats = new float[0];
+        private int beatCount;
+        private float realOut = DesignOut, maxHold = 2.5f;
+
         /// <summary>The night scenery for the calm sea and the night after the vote (the shared pirate room's picture).</summary>
         public Sprite NightBackdrop { get; set; }
+
+        /// <summary>How long each beat lasts. Read when a scene starts, so edits show on the next one.</summary>
+        public DayTransitionSettings Settings { get; set; }
 
         public bool IsPlaying => routine != null;
 
         /// <summary>The moment the scene stops on its last card (seconds), and its end after the bars open.</summary>
-        public float HoldAt => info == null ? 0f : HoldTime(info);
-        public float Duration => HoldAt + OutLength;
+        public float HoldAt => Sum(realBeats, beatCount);
+        public float Duration => HoldAt + realOut;
 
         private sealed class Art
         {
@@ -131,6 +139,7 @@ namespace WhoisntCitizen.GameUI
             var go = new GameObject("DayTransition", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(CanvasGroup));
             go.layer = canvas.gameObject.layer;
             var view = go.AddComponent<DayTransitionView>();
+            view.Settings = DayTransitionSettings.Load();
             view.Build(canvas, font);
             go.SetActive(false);
             return view;
@@ -169,10 +178,25 @@ namespace WhoisntCitizen.GameUI
             skip = true;
         }
 
-        /// <summary>Sets up the content without playing (for previews and checks). Then <see cref="Evaluate"/>.</summary>
+        /// <summary>Stops and draws the scene as it is t seconds after it began (a preview: drag through a scene).</summary>
+        public void Show(DayTransitionInfo content, float t)
+        {
+            if (content == null) return;
+            Stop();
+            Prepare(content);
+            Evaluate(t);
+        }
+
+        /// <summary>Sets up the content and this play's timing without playing (for previews and checks). Then <see cref="Evaluate"/>.</summary>
         public void Prepare(DayTransitionInfo content)
         {
             info = content;
+            DayTransitionSettings settings = Settings != null ? Settings : DayTransitionSettings.Load();
+            realBeats = settings.Beats(content.Kind);
+            designBeats = DayTransitionSettings.DesignBeats(content.Kind);
+            beatCount = content.GameOver ? designBeats.Length - 1 : designBeats.Length; // no next day or night to announce
+            realOut = Mathf.Max(DayTransitionSettings.MinBeat, settings.outLength);
+            maxHold = Mathf.Max(0f, settings.maxHold);
             gameObject.SetActive(true);
             root.SetAsLastSibling(); // over the HUD, the chat and the result panel
             SetTexts();
@@ -189,7 +213,7 @@ namespace WhoisntCitizen.GameUI
         /// <summary>Draws the scene as it is t seconds after it began (no hold).</summary>
         public void Evaluate(float t)
         {
-            if (info != null) Apply(t);
+            if (info != null) Apply(DesignTime(t));
         }
 
         private IEnumerator Run()
@@ -197,7 +221,7 @@ namespace WhoisntCitizen.GameUI
             float t = 0f, held = 0f, last = Time.unscaledTime;
             float hold = HoldAt, end = Duration;
             skip = false;
-            Apply(0f);
+            Evaluate(0f);
             while (t < end)
             {
                 yield return null;
@@ -209,11 +233,11 @@ namespace WhoisntCitizen.GameUI
                     if (t < hold) t = hold;
                     released = true;
                 }
-                bool waiting = !released && held < MaxHold;
+                bool waiting = !released && held < maxHold;
                 if (t >= hold && waiting) held += dt;
                 else t += dt;
                 if (t > hold && waiting) t = hold;
-                Apply(t);
+                Evaluate(t);
             }
             routine = null;
             gameObject.SetActive(false);
@@ -221,17 +245,27 @@ namespace WhoisntCitizen.GameUI
         }
 
         // ================================================================ timeline
+        // The scenes below are drawn on a fixed timeline (DayTransitionSettings.DesignBeats). A play maps its real time
+        // onto it beat by beat, so a beat set longer plays its part slower (and shorter, faster), the rest unchanged.
 
-        private static float HoldTime(DayTransitionInfo i)
+        /// <summary>Real seconds since the start → seconds on the drawn timeline.</summary>
+        private float DesignTime(float t)
         {
-            switch (i.Kind)
+            float design = 0f, real = 0f;
+            for (int i = 0; i < beatCount; i++)
             {
-                case DayTransitionKind.Killed: return i.GameOver ? 3.2f : 4.0f;
-                case DayTransitionKind.Protected: return i.GameOver ? 2.8f : 3.7f;
-                case DayTransitionKind.Quiet: return i.GameOver ? 1.6f : 2.6f;
-                case DayTransitionKind.Executed: return i.GameOver ? 3.9f : 4.5f;
-                default: return i.GameOver ? 2.2f : 2.8f;
+                if (t <= real + realBeats[i]) return design + Mathf.Max(0f, t - real) / realBeats[i] * designBeats[i];
+                design += designBeats[i];
+                real += realBeats[i];
             }
+            return design + (t - real) / realOut * DesignOut; // the bars opening
+        }
+
+        private static float Sum(float[] values, int count)
+        {
+            float sum = 0f;
+            for (int i = 0; i < count && i < values.Length; i++) sum += values[i];
+            return sum;
         }
 
         private void Apply(float t)
@@ -243,16 +277,16 @@ namespace WhoisntCitizen.GameUI
             HideAll();
 
             bool execution = info.Kind == DayTransitionKind.Executed || info.Kind == DayTransitionKind.NotExecuted;
-            float hold = HoldAt;
+            float hold = Sum(designBeats, beatCount);
             Vector2 shake = execution ? ApplyExecution(t, w, fh) : ApplyNight(t, w, fh);
             stage.anchoredPosition = shake;
 
             float close = execution ? EaseOut(Seg(t, Tally, Tally + 0.22f)) : EaseOut(Seg(t, 0f, 0.25f));
-            float open = EaseIn(Seg(t, hold, hold + OutLength));
+            float open = EaseIn(Seg(t, hold, hold + DesignOut));
             float b = bar * close * (1f - open);
             barTop.sizeDelta = new Vector2(0f, b);
             barBottom.sizeDelta = new Vector2(0f, b);
-            group.alpha = 1f - EaseIn(Seg(t, hold + 0.05f, hold + OutLength));
+            group.alpha = 1f - EaseIn(Seg(t, hold + 0.05f, hold + DesignOut));
         }
 
         // ---------------------------------------------------------------- night → day
