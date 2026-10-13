@@ -386,7 +386,10 @@ namespace WhoisntCitizen.Game
             {
                 hud.SetPhase(currentPhase);
                 string notice = GameScreenText.PhaseAnnouncement(phaseChanged);
-                if (!string.IsNullOrEmpty(notice)) ShowNotice(notice); // 결과 페이즈는 결과가 오면 공지가 바뀐다
+                // [공지 상자는 할 일만 - 주석 처리] if (!string.IsNullOrEmpty(notice)) ShowNotice(notice); // 결과 페이즈는 결과가 오면 공지가 바뀐다
+                if (!string.IsNullOrEmpty(notice)) ShowActionLine(notice); // 배치의 안내 줄은 그대로
+                // 공지 상자: 상황 전환이 아니라 지금 할 일 (할 일이 없는 페이즈·사망자면 빈 문자열 = 닫는다)
+                hud.ShowNotice(GameScreenText.PhaseGuide(phaseChanged.Phase, Session != null ? Session.Me : null, IAmAlive));
             }
             if (voteCards != null && currentPhase != GamePhases.Execution)
             {
@@ -476,7 +479,8 @@ namespace WhoisntCitizen.Game
 
         public void ShowNightResult(NightResultDto result)
         {
-            ShowNotice(ReportFormatter.NightSummary(result));
+            // [공지 상자는 할 일만 - 주석 처리] ShowNotice(ReportFormatter.NightSummary(result));
+            ShowActionLine(ReportFormatter.NightSummary(result)); // 결과는 채팅과 배치의 안내 줄에만
             if (AnnouncePublic)
             {
                 AddSystem(ReportFormatter.NightSummary(result));
@@ -490,7 +494,8 @@ namespace WhoisntCitizen.Game
 
         public void ShowExecutionResult(ExecutionResultDto result)
         {
-            ShowNotice(ReportFormatter.ExecutionSummary(result));
+            // [공지 상자는 할 일만 - 주석 처리] ShowNotice(ReportFormatter.ExecutionSummary(result));
+            ShowActionLine(ReportFormatter.ExecutionSummary(result));
             if (body != null) body.OnExecutionResult(result);
             if (AnnouncePublic)
             {
@@ -515,7 +520,8 @@ namespace WhoisntCitizen.Game
 
         public void ShowGameResult(GameResultDto result)
         {
-            ShowNotice(ReportFormatter.ResultHeadline(result));
+            // [공지 상자는 할 일만 - 주석 처리] ShowNotice(ReportFormatter.ResultHeadline(result));
+            ShowActionLine(ReportFormatter.ResultHeadline(result));
             if (AnnouncePublic)
             {
                 AddSystem(ReportFormatter.ResultHeadline(result));
@@ -1268,6 +1274,23 @@ namespace WhoisntCitizen.Game
         }
 
         /// <summary>보이스파이프 말풍선과 (Frame 밖의 배치면) 그 배치의 안내 줄에 공개 안내를 보여 준다.</summary>
+        /// <summary>(Frame 밖의 배치면) 그 배치의 안내 줄에만 공개 안내를 보여 준다. 화면 위 공지 상자에는 띄우지 않는다.</summary>
+        private void ShowActionLine(string text)
+        {
+            if (body != null) body.OnNotice(text);
+        }
+
+        /// <summary>내가 살아 있는지 (상태를 아직 모르면 살아 있다고 본다)</summary>
+        private bool IAmAlive
+        {
+            get
+            {
+                GameSession session = Session;
+                if (session == null || session.State == null || session.Me == null) return true;
+                return GameStateQueries.IsAlive(session.State, session.Me.playerId);
+            }
+        }
+
         private void ShowNotice(string text)
         {
             if (hud != null) hud.ShowNotice(text);
