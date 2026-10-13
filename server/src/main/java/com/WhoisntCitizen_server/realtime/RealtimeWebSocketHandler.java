@@ -21,13 +21,14 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * /ws/v1 연결 하나하나를 처리한다.
  *
- *  - 연결되면: 연결 목록(RealtimeSessionRegistry)에 넣고 connected를 보낸다
- *  - ping → pong(서버 시각) + 구독 중인 방에 진행 중인 게임이 있으면 접속 기록(touch)
+ *  - 연결되면: 연결 목록(RealtimeSessionRegistry)에 넣고 connected를 보낸다. 유저 접속 상태를 ONLINE으로 기록
+ *  - ping → pong(서버 시각) + 구독 중인 방에 진행 중인 게임이 있으면 접속 기록(touch) + 유저 접속 상태 갱신
  *  - 어떤 메시지든 받으면 "살아 있음"으로 표시 (30초 동안 없으면 RealtimeConnectionMonitor가 닫는다)
  *  - room.subscribe → 그 방 참가자인지 확인(RoomMembership) → 맞으면 구독하고 subscribed, 아니면 error(NOT_IN_ROOM)
  *  - room.unsubscribe → 구독 해제 (답 없음)
  *  - 잘못된 메시지 → error(code)로 답하고 연결은 유지한다
- *  - 끊기면: 연결 목록에서 뺀다
+ *  - 끊기면: 연결 목록에서 뺀다. 그 유저의 연결이 하나도 안 남으면 접속 상태를 OFFLINE으로 바꾼다
+ *  - 유저 접속 상태(온라인/대기실/게임 중)는 RealtimePresenceRecorder가 Redis에 기록한다. 기록이 실패해도 연결에는 영향이 없다
  *  - 바이너리 메시지는 TextWebSocketHandler가 거절하고 연결을 닫는다
  *
  * 한 연결의 메시지는 컨테이너가 차례로 넘겨주므로, 같은 연결의 subscribe·unsubscribe가 뒤섞이지 않는다.
@@ -42,18 +43,21 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final RoomMembership membership;
     private final RealtimeConnectionMonitor monitor;
     private final RealtimeActivityRecorder activityRecorder;
+    private final RealtimePresenceRecorder presenceRecorder;
     /** 세션 id → 보내기용 연결. 이 핸들러 안에서 답장을 보낼 때 쓴다 */
     private final Map<String, RealtimeConnection> connections = new ConcurrentHashMap<>();
 
     public RealtimeWebSocketHandler(RealtimeMessageCodec codec, Clock clock,
                                     RealtimeSessionRegistry registry, RoomMembership membership,
-                                    RealtimeConnectionMonitor monitor, RealtimeActivityRecorder activityRecorder) {
+                                    RealtimeConnectionMonitor monitor, RealtimeActivityRecorder activityRecorder,
+                                    RealtimePresenceRecorder presenceRecorder) {
         this.codec = Objects.requireNonNull(codec, "codec");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.membership = Objects.requireNonNull(membership, "membership");
         this.monitor = Objects.requireNonNull(monitor, "monitor");
         this.activityRecorder = Objects.requireNonNull(activityRecorder, "activityRecorder");
+        this.presenceRecorder = Objects.requireNonNull(presenceRecorder, "presenceRecorder");
     }
 
     @Override
@@ -66,6 +70,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         monitor.register(connection, expiresAt instanceof Instant instant ? instant : null);
         log.info("[ws] 연결: userId={}, session={}, 현재 연결 수={}", userId, session.getId(), registry.connectionCount());
         reply(connection, ServerMessage.Connected.of(userId));
+        recordPresence(connection); // connected를 먼저 보내고 기록 (저장소가 느려도 연결은 늦지 않게)
     }
 
     @Override
@@ -87,9 +92,13 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             case ClientMessage.Ping ping -> {
                 reply(connection, new ServerMessage.Pong(clock.millis())); // 답을 먼저 보내고
                 recordAlive(connection);                                   // 접속 기록은 그 뒤에 (저장소가 느려도 pong은 늦지 않게)
+                recordPresence(connection);
             }
             case ClientMessage.RoomSubscribe subscribe -> subscribe(connection, subscribe.roomId());
-            case ClientMessage.RoomUnsubscribe unsubscribe -> registry.unsubscribe(connection.id(), unsubscribe.roomId());
+            case ClientMessage.RoomUnsubscribe unsubscribe -> {
+                registry.unsubscribe(connection.id(), unsubscribe.roomId());
+                recordPresence(connection); // 방을 나갔으니 ONLINE으로
+            }
         }
     }
 
@@ -111,6 +120,16 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         }
         if (registry.subscribe(connection.id(), roomId)) {
             reply(connection, new ServerMessage.Subscribed(roomId));
+            recordPresence(connection); // IN_ROOM 또는 IN_GAME으로
+        }
+    }
+
+    /** 이 연결이 구독 중인 방을 기준으로 유저 접속 상태를 기록한다. 실패해도 연결에는 영향이 없다 */
+    private void recordPresence(RealtimeConnection connection) {
+        try {
+            presenceRecorder.update(connection.userId(), registry.roomOf(connection.id()));
+        } catch (RuntimeException e) {
+            log.debug("[ws] 접속 상태 기록 실패: userId={}, {}", connection.userId(), e.toString());
         }
     }
 
@@ -137,6 +156,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         registry.unregister(session.getId());
         monitor.unregister(session.getId());
         Object userId = session.getAttributes().get(RealtimeHandshakeInterceptor.ATTR_USER_ID);
+        if (userId instanceof Long id && registry.connectionsOfUser(id).isEmpty()) {
+            // 다른 연결(두 기기, 재연결이 겹치는 순간)이 남아 있으면 오프라인으로 바꾸지 않는다
+            try {
+                presenceRecorder.offline(id);
+            } catch (RuntimeException e) {
+                log.debug("[ws] 오프라인 기록 실패: userId={}, {}", id, e.toString());
+            }
+        }
         log.info("[ws] 연결 끊김: userId={}, session={}, code={}, 현재 연결 수={}",
                 userId, session.getId(), status.getCode(), registry.connectionCount());
     }

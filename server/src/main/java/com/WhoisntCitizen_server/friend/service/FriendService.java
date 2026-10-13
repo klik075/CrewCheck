@@ -7,12 +7,15 @@ import com.WhoisntCitizen_server.friend.repository.FriendshipRepository;
 import com.WhoisntCitizen_server.user.entity.User;
 import com.WhoisntCitizen_server.user.repository.UserRepository;
 import com.WhoisntCitizen_server.user.service.UserPresenceService;
+import com.WhoisntCitizen_server.user.service.UserPresenceStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 @Slf4j
@@ -112,18 +115,30 @@ public class FriendService {
 		User me = getUserByMemberId(currentMemberId);
 		List<Friendship> friendships = friendshipRepository.findAllAcceptedFriends(me, FriendshipStatus.ACCEPTED);
 
-		return friendships.stream()
-				.map(f -> {
-					// 양방향 관계이므로 내가 아닌 상대방 유저 객체를 추출
-					User friendUser = Objects.equals(f.getRequester().getId(), me.getId())
-							? f.getReceiver()
-							: f.getRequester();
-
-					boolean isOnline = userPresenceService.isOnline(friendUser.getId());
-
-					return FriendDto.FriendResponse.from(f, friendUser, isOnline);
-				})
+		// 양방향 관계이므로 내가 아닌 상대방 유저 객체를 추출
+		List<User> friendUsers = friendships.stream()
+				.map(f -> Objects.equals(f.getRequester().getId(), me.getId()) ? f.getReceiver() : f.getRequester())
 				.toList();
+
+		Map<Long, UserPresenceStatus> presences = loadPresences(friendUsers);
+
+		List<FriendDto.FriendResponse> responses = new ArrayList<>(friendships.size());
+		for (int i = 0; i < friendships.size(); i++) {
+			User friendUser = friendUsers.get(i);
+			UserPresenceStatus presence = presences.getOrDefault(friendUser.getId(), UserPresenceStatus.OFFLINE);
+			responses.add(FriendDto.FriendResponse.from(friendships.get(i), friendUser, presence));
+		}
+		return responses;
+	}
+
+	/** 친구들의 접속 상태를 한 번에 읽는다. Redis가 안 되어도 친구 목록은 보여야 하므로, 실패하면 모두 OFFLINE으로 본다. */
+	private Map<Long, UserPresenceStatus> loadPresences(List<User> friendUsers) {
+		try {
+			return userPresenceService.getStatuses(friendUsers.stream().map(User::getId).toList());
+		} catch (RuntimeException e) {
+			log.warn("[친구 목록] 접속 상태 조회 실패, 모두 오프라인으로 표시합니다: {}", e.toString());
+			return Map.of();
+		}
 	}
 
 	private User getUserByMemberId(Long memberId) {
