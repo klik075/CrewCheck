@@ -20,17 +20,23 @@ namespace WhoisntCitizen.Game
     /// GameScene3 has these parts baked in (<see cref="Bake"/>, Tools/Game Scene/게임 화면 굽기): this component is on its
     /// canvas with them, Build only wires them, and nothing here moves them, so they are laid out in the editor. The
     /// stage (deck, table, night room) still follows RoundTableLayout; its Edit mode preview is RoundTablePreview.
+    /// The look is the nautical concepts' (<see cref="Dress"/>, <see cref="NauticalHud"/>): the chat window in a frame with
+    /// ropes and anchors and a moonlit harbour, the action line and the strip in one frame with the harbour in its head.
     /// </summary>
     public sealed class GameLayoutTabs : GameLayoutBody
     {
         private const float StripHeight = 236f, ActionHeight = 140f, InputBar = 140f, Gap = 8f;
         private const float ActionBottom = StripHeight + Gap, ChatBottom = ActionBottom + ActionHeight + Gap;
+        private const float PanelHeight = ActionBottom + ActionHeight; // the night panel's frame: the action line and the strip
         private const float DeckAspect = 1672f / 941f; // DayTable/Deck, raised by RoundTableLayout.deckRaise so its sea is behind the HUD
-        private const float SecondaryWidth = 170f, PrimaryWidth = 220f, ButtonHeight = 96f;
+        // The action line on the night panel's head (canvas units from the line's top-left; the panel is 12 wider each side).
+        private const float SecondaryWidth = 140f, PrimaryWidth = 214f, ButtonHeight = 84f, ButtonGap = 11f, ButtonRight = 24f, ButtonDrop = 10f;
+        private const float TextRight = ButtonRight + PrimaryWidth + ButtonGap + SecondaryWidth + 12f;
+        private const float TitleRight = 420f; // the title ends about the moon in the panel's harbour
+        // The strip: a portrait ring (with its anchor badge) and a name plate per player, at most this far apart.
+        private const float SlotSpacing = 129f, StripMargin = 26f, PlateWidth = 111f, PlateHeight = 39f;
+        private const float PlateBelowCentre = 67f; // from the ring's centre to the plate's top
         private static readonly Color Pick = new Color(1f, 0.82f, 0.3f), Target = new Color(0.92f, 0.3f, 0.24f);
-        private static readonly Color Backdrop = new Color(0.05f, 0.04f, 0.03f, 1f);
-        private static readonly Color ChatFill = new Color(0.09f, 0.067f, 0.043f, 1f);
-        private static readonly Color ActionFill = new Color(0.06f, 0.15f, 0.17f, 1f);
 
         private sealed class Slot
         {
@@ -69,9 +75,12 @@ namespace WhoisntCitizen.Game
         private string phase, rosterKey, chipKey, shownAction, lastNotice, voteSummary;
         private long shownPick = -1;
         private string shownMarks;
+        private GameObject titleRule; // the rule under the action line's title (Dress), hidden under a two-line text
         private float laidOutWidth = -1f, laidOutRaise = float.NaN;
 
         public override bool PlaysDayTransitions => true;
+
+        protected override bool NauticalChat => true;
 
         /// <summary>The parts are in the scene (Bake), laid out there.</summary>
         public bool IsBaked => baked;
@@ -101,18 +110,28 @@ namespace WhoisntCitizen.Game
             baked = true;
         }
 
+        /// <summary>
+        /// Edit mode (Tools/Game Scene/항해 시안 입히기): a scene baked before the nautical look dressed in it (Dress),
+        /// with the chat log moved inside the window's frame and the input bar dressed too.
+        /// </summary>
+        public void DressBaked()
+        {
+            GameHudMetrics.Use(HudLayout.Tabs);
+            Dress();
+            GameHudChat chat = GetComponent<GameHudChat>();
+            if (chat != null) chat.DressNautical(ChatArea());
+        }
+
         private void Create(bool bake)
         {
             backdrop = BuildBackdrop(ctx.Canvas);
             if (ctx.Chat != null) backdrop.SetSiblingIndex(ctx.Chat.GetSiblingIndex()); // under the chat log
 
-            RectTransform chatBox = NewRect("ChatBox", backdrop);
-            Stretch(chatBox, 12f, 10f, 12f, ChatBottom);
-            HudShapes.Panel(chatBox, ChatFill, GoldLine, 14f);
-
+            NewRect("ChatBox", backdrop);
             BuildAction(backdrop);
             BuildStrip(backdrop);
             BuildRoleChip();
+            Dress();
 
             if (bake) BakeChat(ChatArea()); // at run time Wire builds the chat (BuildChat), following the stage
             if (ctx.Sheet != null)
@@ -139,30 +158,176 @@ namespace WhoisntCitizen.Game
                 hand.interactable = false;
             }
             background = ctx.Canvas.Find("Background") as RectTransform;
+            Transform rule = actionTitle != null ? actionTitle.transform.parent.Find("TitleRule") : null;
+            if (rule != null) titleRule = rule.gameObject;
         }
 
-        // The chat log between the stage and the input bar (left, top from the top, right, bottom from the bottom).
-        private static Vector4 ChatArea()
+        // The chat log inside the chat window's frame (under its top rail, from the backdrop's top: the stage's bottom, or
+        // where the scene has it), down to just over the input bar (left, top from the top, right, bottom from the bottom).
+        private Vector4 ChatArea()
         {
-            return new Vector4(28f, GameHudMetrics.StageBottom + 20f, 28f, ChatBottom + InputBar + 6f);
+            float top = backdrop != null ? -backdrop.offsetMax.y : GameHudMetrics.StageBottom;
+            return new Vector4(28f, top + 40f, 28f, ChatBottom + InputBar - 20f);
         }
 
         /// <summary>
-        /// Everything under the stage lies on one dark backdrop with a gold rule on top (the raised deck picture does not
-        /// reach the bottom). Stretched over parent from the stage's bottom down. The Edit mode preview uses it too.
+        /// Everything under the stage lies on one night-blue backdrop, the colour the nautical frames were drawn on (the
+        /// raised deck picture does not reach the bottom). Stretched over parent from the stage's bottom down. The Edit
+        /// mode preview uses it too.
         /// </summary>
         public static RectTransform BuildBackdrop(RectTransform parent)
         {
             RectTransform backdrop = NewRect("BottomBackdrop", parent);
             Stretch(backdrop, 0f, GameHudMetrics.StageBottom, 0f, 0f);
-            AddImage(backdrop, null, Backdrop);
-            RectTransform rule = NewRect("Rule", backdrop);
-            rule.anchorMin = new Vector2(0f, 1f);
-            rule.anchorMax = new Vector2(1f, 1f);
-            rule.pivot = new Vector2(0.5f, 1f);
-            rule.sizeDelta = new Vector2(0f, 3f);
-            AddImage(rule, null, GoldLine);
+            AddImage(backdrop, null, NauticalHud.Backdrop);
             return backdrop;
+        }
+
+        // ------------------------------------------------------------------ the nautical look
+
+        /// <summary>
+        /// Dresses the parts in the nautical look, made here or baked into the scene before (Tools/Game Scene/항해 시안
+        /// 입히기 calls it on GameScene3, then <see cref="GameHudChat.DressNautical"/>): the chat window's frame and harbour
+        /// over the backdrop from the stage down to the night panel, the night panel's frame under the action line and the
+        /// strip, and the badge, texts and buttons put where the concept has them. Old panels and outlines are taken off.
+        /// </summary>
+        public void Dress()
+        {
+            if (backdrop == null) return;
+            Image back = backdrop.GetComponent<Image>();
+            if (back != null) back.color = NauticalHud.Backdrop;
+            Transform oldRule = backdrop.Find("Rule");
+            if (oldRule != null) oldRule.gameObject.SetActive(false);
+
+            // The chat window, as wide as the screen (the frame is drawn 1080 wide), the harbour at its right above the input bar.
+            if (backdrop.Find("ChatBox") is RectTransform chatBox)
+            {
+                TakeOffPanel(chatBox, true);
+                Stretch(chatBox, 0f, 0f, 0f, PanelHeight);
+                Image harbor = Part(chatBox, "Harbor", 0);
+                NauticalHud.Whole(harbor, "ChatHarbor");
+                RectTransform h = harbor.rectTransform;
+                h.anchorMin = h.anchorMax = h.pivot = new Vector2(1f, 0f);
+                h.sizeDelta = harbor.sprite != null ? harbor.sprite.rect.size / NauticalHud.ChatScale : new Vector2(460f, 301f);
+                h.anchoredPosition = new Vector2(-55f / NauticalHud.ChatScale, 209f / NauticalHud.ChatScale);
+                Image frame = Part(chatBox, "Frame", 1);
+                Stretch(frame.rectTransform, 0f, 0f, 0f, 0f);
+                NauticalHud.Sliced(frame, "ChatFrame", NauticalHud.ChatScale);
+            }
+
+            RectTransform line = actionTitle != null ? actionTitle.rectTransform.parent as RectTransform : null;
+            if (line != null)
+            {
+                // The night panel: one frame round the action line and the strip, the harbour in its head.
+                Image panel = Part(backdrop, "NightPanel", line.GetSiblingIndex());
+                RectTransform p = panel.rectTransform;
+                p.anchorMin = Vector2.zero;
+                p.anchorMax = new Vector2(1f, 0f);
+                p.pivot = new Vector2(0.5f, 0f);
+                p.offsetMin = Vector2.zero;
+                p.offsetMax = new Vector2(0f, PanelHeight);
+                NauticalHud.Sliced(panel, "NightPanel", NauticalHud.NightScale);
+                TakeOffPanel(line, true);
+            }
+            if (actionChip != null && actionChip.rectTransform.parent is RectTransform chip)
+            {
+                At(chip, 25f, 33f, 170f, 46f);
+                Image badge = chip.GetComponent<Image>();
+                if (badge != null) NauticalHud.Plate(badge, "Badge", 46f);
+                RemoveChild(chip, "Outline");
+                Stretch(actionChip.rectTransform, 56f, 3f, 16f, 3f);
+                actionChip.color = NauticalHud.Ink;
+            }
+            // The text sizes stay as they are (set for a phone to read); only places and colours change.
+            if (actionTitle != null)
+            {
+                Place(actionTitle.rectTransform, 206f, 22f, TitleRight, 52f);
+                actionTitle.color = NauticalHud.Title;
+            }
+            if (line != null)
+            {
+                // The gold rule and star under the title (the concept's, at its place there); hidden under a two-line text.
+                Image rule = Part(line, "TitleRule", 0);
+                NauticalHud.Whole(rule, "TitleRule");
+                Vector2 size = rule.sprite != null ? rule.sprite.rect.size / NauticalHud.NightScale : new Vector2(457f, 24f);
+                At(rule.rectTransform, 430f / NauticalHud.NightScale - 12f, 148f / NauticalHud.NightScale, size.x, size.y);
+            }
+            if (actionSub != null)
+            {
+                // One line sits under the head's rule; a long one takes two lines over it.
+                Place(actionSub.rectTransform, 64f, 74f, TextRight, 64f);
+                actionSub.alignment = TextAlignmentOptions.MidlineLeft;
+                actionSub.textWrappingMode = TextWrappingModes.Normal;
+                actionSub.color = NauticalHud.Sub;
+            }
+            DressButton(primaryButton, "ButtonGold", ButtonRight, PrimaryWidth, NauticalHud.Ink);
+            DressButton(secondaryButton, "ButtonTeal", ButtonRight + PrimaryWidth + ButtonGap, SecondaryWidth, NauticalHud.Title);
+
+            if (strip != null)
+            {
+                TakeOffPanel(strip, false); // the panel's frame shows through; the strip still catches nothing
+                RemoveChild(strip, "Rule");
+            }
+            rosterKey = null; // the strip's people are made again in the new look
+        }
+
+        private static void DressButton(ActionButton b, string sprite, float right, float width, Color label)
+        {
+            if (b == null || b.rect == null) return;
+            b.rect.anchorMin = b.rect.anchorMax = b.rect.pivot = new Vector2(1f, 0.5f);
+            b.rect.anchoredPosition = new Vector2(-right, -ButtonDrop);
+            b.rect.sizeDelta = new Vector2(width, ButtonHeight);
+            Image image = b.rect.GetComponent<Image>();
+            if (image != null) NauticalHud.Plate(image, sprite, ButtonHeight);
+            RemoveChild(b.rect, "Outline");
+            if (b.label == null) return;
+            b.label.color = label;
+            Stretch(b.label.rectTransform, 22f, 6f, 22f, 6f); // clear of the frame's corners
+        }
+
+        // A part of the look on parent: the child of that name (made at that sibling index if there is none) with an Image.
+        private static Image Part(RectTransform parent, string name, int siblingIndex)
+        {
+            Transform child = parent.Find(name);
+            if (child == null)
+            {
+                child = NewRect(name, parent);
+                child.SetSiblingIndex(siblingIndex);
+            }
+            Image image = child.GetComponent<Image>();
+            if (image == null) image = child.gameObject.AddComponent<Image>();
+            image.raycastTarget = false;
+            return image;
+        }
+
+        // The rounded panel (HudShapes) of the old look off rect: its outline child, and its fill (or only the fill's colour).
+        private static void TakeOffPanel(RectTransform rect, bool removeFill)
+        {
+            RemoveChild(rect, "Outline");
+            Image fill = rect.GetComponent<Image>();
+            if (fill == null) return;
+            if (removeFill && rect.GetComponent<Selectable>() == null) Remove(fill);
+            else fill.color = new Color(0f, 0f, 0f, 0f);
+        }
+
+        private static void RemoveChild(Transform parent, string name)
+        {
+            Transform child = parent.Find(name);
+            if (child != null) Remove(child.gameObject);
+        }
+
+        private static void Remove(Object thing)
+        {
+            if (Application.isPlaying) Destroy(thing);
+            else DestroyImmediate(thing);
+        }
+
+        // At x, top from the parent's top-left corner, this size.
+        private static void At(RectTransform rect, float x, float top, float width, float height)
+        {
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
+            rect.anchoredPosition = new Vector2(x, -top);
+            rect.sizeDelta = new Vector2(width, height);
         }
 
         /// <summary>
@@ -214,6 +379,7 @@ namespace WhoisntCitizen.Game
             more.preserveAspect = true;
         }
 
+        // The action line's parts; Dress gives them their look and places them on the night panel's head.
         private void BuildAction(RectTransform backdrop)
         {
             RectTransform box = NewRect("ActionLine", backdrop);
@@ -222,42 +388,39 @@ namespace WhoisntCitizen.Game
             box.pivot = new Vector2(0.5f, 0f);
             box.offsetMin = new Vector2(12f, ActionBottom);
             box.offsetMax = new Vector2(-12f, ActionBottom + ActionHeight);
-            HudShapes.Panel(box, ActionFill, GoldLine, 14f);
 
-            RectTransform chip = Box(box, "Chip", 18f, 16f, 150f, 42f);
-            HudShapes.Panel(chip, Parchment, GoldLine, 8f);
-            actionChip = NewText(chip, "Text", 23f, Ink, FontStyles.Bold, TextAlignmentOptions.Center);
-            Stretch(actionChip.rectTransform, 6f, 2f, 6f, 2f);
-            actionChip.enableAutoSizing = true;
-            actionChip.fontSizeMin = 14f;
-            actionChip.fontSizeMax = 23f;
-            float textRight = SecondaryWidth + PrimaryWidth + 44f;
-            actionTitle = NewText(box, "Title", 31f, Cream, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
-            Place(actionTitle.rectTransform, 182f, 12f, textRight, 50f);
-            actionTitle.enableAutoSizing = true;
-            actionTitle.fontSizeMin = 18f;
-            actionTitle.fontSizeMax = 31f;
-            actionSub = NewText(box, "Sub", 22f, Muted, FontStyles.Normal, TextAlignmentOptions.TopLeft);
-            Place(actionSub.rectTransform, 18f, 68f, textRight, 62f);
+            RectTransform chip = NewRect("Chip", box);
+            AddImage(chip, null, Color.white);
+            // Sizes a phone reads: chip 26, title 36, line under it 27, buttons 30 (no smaller than 22, 28, 24, 24).
+            actionChip = Sized(NewText(chip, "Text", 26f, Ink, FontStyles.Bold, TextAlignmentOptions.Center), 22f);
+            actionTitle = Sized(NewText(box, "Title", 36f, Cream, FontStyles.Bold, TextAlignmentOptions.MidlineLeft), 28f);
+            actionSub = Sized(NewText(box, "Sub", 27f, Muted, FontStyles.Normal, TextAlignmentOptions.MidlineLeft), 24f);
             actionSub.textWrappingMode = TextWrappingModes.Normal;
-            actionSub.enableAutoSizing = true;
-            actionSub.fontSizeMin = 15f;
-            actionSub.fontSizeMax = 22f;
 
-            primaryButton = NewButton(box, "Primary", 16f, PrimaryWidth, true); // Wire listens to them
-            secondaryButton = NewButton(box, "Secondary", 16f + PrimaryWidth + 12f, SecondaryWidth, false);
+            primaryButton = NewButton(box, "Primary", true); // Wire listens to them
+            secondaryButton = NewButton(box, "Secondary", false);
         }
 
-        private ActionButton NewButton(RectTransform parent, string name, float right, float width, bool primary)
+        private ActionButton NewButton(RectTransform parent, string name, bool primary)
         {
             RectTransform rect = NewRect(name, parent);
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 0.5f);
-            rect.anchoredPosition = new Vector2(-right, 0f);
-            rect.sizeDelta = new Vector2(width, ButtonHeight);
             Button button = TextButton(rect, string.Empty, primary, null);
-            return new ActionButton { rect = rect, button = button, label = rect.Find("Label").GetComponent<TextMeshProUGUI>() };
+            TextMeshProUGUI label = rect.Find("Label").GetComponent<TextMeshProUGUI>();
+            label.fontSize = 30f;
+            Sized(label, 24f);
+            return new ActionButton { rect = rect, button = button, label = label };
         }
 
+        // Shrinks to fit, from its size down to min.
+        private static TextMeshProUGUI Sized(TextMeshProUGUI text, float min)
+        {
+            text.enableAutoSizing = true;
+            text.fontSizeMax = text.fontSize;
+            text.fontSizeMin = min;
+            return text;
+        }
+
+        // The strip's place at the bottom; its people are made by RebuildStrip, on the night panel's frame.
         private void BuildStrip(RectTransform backdrop)
         {
             strip = NewRect("PlayerStrip", backdrop);
@@ -265,13 +428,6 @@ namespace WhoisntCitizen.Game
             strip.anchorMax = new Vector2(1f, 0f);
             strip.pivot = new Vector2(0.5f, 0f);
             strip.sizeDelta = new Vector2(0f, StripHeight);
-            AddImage(strip, null, new Color(0.04f, 0.11f, 0.13f, 1f));
-            RectTransform line = NewRect("Rule", strip);
-            line.anchorMin = new Vector2(0f, 1f);
-            line.anchorMax = new Vector2(1f, 1f);
-            line.pivot = new Vector2(0.5f, 1f);
-            line.sizeDelta = new Vector2(0f, 3f);
-            AddImage(line, null, GoldLine);
         }
 
         // ------------------------------------------------------------------ GameScreen
@@ -350,47 +506,57 @@ namespace WhoisntCitizen.Game
             slots.Clear();
             int count = Mathf.Max(1, players.Count);
             float stripWidth = strip.rect.width > 0f ? strip.rect.width : 1080f; // as wide as the strip is in the scene
-            float slotWidth = Mathf.Min(140f, (stripWidth - 16f) / count);
-            float size = Mathf.Min(112f, slotWidth - 18f);
-            float left = (stripWidth - slotWidth * count) * 0.5f;
+            float stripHeight = strip.rect.height > 0f ? strip.rect.height : StripHeight;
+            float spacing = Mathf.Min(SlotSpacing, (stripWidth - StripMargin * 2f) / count);
+            Sprite ringArt = NauticalHud.Get("PortraitRing");
+            // The ring (sprite) drawn ringWidth wide, smaller for many players; its centre half that from its top.
+            float ringWidth = ringArt != null ? ringArt.rect.width / NauticalHud.NightScale : 131f;
+            float k = Mathf.Min(1f, (spacing - 4f) / ringWidth);
+            float w = ringWidth * k, h = ringArt != null ? w * ringArt.rect.height / ringArt.rect.width : w;
+            float face = w * NauticalHud.RingInner * 2f + 2f, outer = w * NauticalHud.RingOuter * 2f;
+            float plateW = Mathf.Min(PlateWidth, spacing - 6f), plateH = PlateHeight * Mathf.Max(0.85f, k);
+            // Ring and plate together, in the middle of the strip above the frame's foot.
+            float block = w * 0.5f + PlateBelowCentre * k + plateH;
+            float centre = 6f + Mathf.Max(0f, (stripHeight - 46f - 6f - block) * 0.5f) + w * 0.5f;
+            float left = (stripWidth - spacing * count) * 0.5f;
             for (int i = 0; i < players.Count; i++)
             {
                 PlayerViewDto p = players[i];
-                RectTransform root = Box(strip, "Player" + p.playerId, left + i * slotWidth, 22f, slotWidth, size + 52f);
+                RectTransform root = Box(strip, "Player" + p.playerId, left + i * spacing, 0f, spacing, stripHeight);
                 AddImage(root, null, new Color(0f, 0f, 0f, 0f)).raycastTarget = true;
                 long id = p.playerId;
                 root.gameObject.AddComponent<Button>().onClick.AddListener(() => OnSlotClicked(id));
                 var slot = new Slot { id = id, group = root.gameObject.AddComponent<CanvasGroup>() };
-                float x = (slotWidth - size) * 0.5f;
-                Avatar(root, "Avatar", x, 4f, size, p.playerId, p.nickname);
-                RectTransform ring = Box(root, "Pick", x - 6f, -2f, size + 12f, size + 12f);
-                HudShapes.Panel(ring, new Color(0f, 0f, 0f, 0f), Pick, (size + 12f) * 0.5f);
+                float mid = spacing * 0.5f;
+                Avatar(root, "Avatar", mid - face * 0.5f, centre - face * 0.5f, face, p.playerId, p.nickname, false);
+                NauticalHud.Whole(AddImage(Box(root, "Ring", mid - w * 0.5f, centre - w * 0.5f, w, h), null, Color.white), "PortraitRing");
+                RectTransform ring = Box(root, "Pick", mid - outer * 0.5f - 7f, centre - outer * 0.5f - 7f, outer + 14f, outer + 14f);
+                HudShapes.Panel(ring, new Color(0f, 0f, 0f, 0f), Pick, (outer + 14f) * 0.5f);
                 slot.ring = ring.gameObject;
                 slot.ringLine = ring.Find("Outline").GetComponent<Image>();
-                slot.ringLine.pixelsPerUnitMultiplier *= 0.55f; // a thicker line than the avatar's own ring
+                slot.ringLine.pixelsPerUnitMultiplier *= 0.5f; // a thick line round the gold ring
                 ring.gameObject.SetActive(false);
-                TextMeshProUGUI name = NewText(root, "Name", 24f, p.playerId == myId ? Gold : Cream, FontStyles.Bold, TextAlignmentOptions.Center);
-                RectTransform nameRect = name.rectTransform;
-                nameRect.anchorMin = new Vector2(0f, 0f);
-                nameRect.anchorMax = new Vector2(1f, 0f);
-                nameRect.pivot = new Vector2(0.5f, 0f);
-                nameRect.sizeDelta = new Vector2(-4f, 34f);
+
+                RectTransform plate = Box(root, "Plate", mid - plateW * 0.5f, centre + PlateBelowCentre * k, plateW, plateH);
+                NauticalHud.Plate(AddImage(plate, null, Color.white), "NamePlate", plateH);
+                TextMeshProUGUI name = NewText(plate, "Name", 24f, p.playerId == myId ? Gold : Cream, FontStyles.Bold, TextAlignmentOptions.Center);
+                Stretch(name.rectTransform, 16f, 3f, 16f, 5f);
                 name.enableAutoSizing = true;
                 name.fontSizeMin = 14f;
-                name.fontSizeMax = 24f;
+                name.fontSizeMax = 24f * Mathf.Max(0.8f, k);
                 name.text = p.nickname;
                 if (!p.alive)
                 {
-                    AddImage(Box(root, "Dead", x + size * 0.18f, 4f + size * 0.18f, size * 0.64f, size * 0.64f), Icon("clear"), Target).preserveAspect = true;
+                    AddImage(Box(root, "Dead", mid - face * 0.32f, centre - face * 0.32f, face * 0.64f, face * 0.64f), Icon("clear"), Target).preserveAspect = true;
                     name.color = Muted;
                 }
                 if (session.Me != null && session.Me.mafiaTeammateIds.Contains(p.playerId))
                 {
-                    RectTransform mark = Box(root, "Mate", x + size - 28f, -4f, 36f, 36f);
+                    RectTransform mark = Box(root, "Mate", mid + outer * 0.5f - 30f, centre - outer * 0.5f - 4f, 36f, 36f);
                     HudShapes.Panel(mark, new Color(0.16f, 0.11f, 0.06f), GoldLine, 18f);
                     AddImage(Box(mark, "Skull", 7f, 7f, 22f, 22f), Icon("skull"), Cream).preserveAspect = true;
                 }
-                RectTransform badge = Box(root, "Tally", x + size - 30f, size - 26f, 40f, 40f);
+                RectTransform badge = Box(root, "Tally", mid + outer * 0.5f - 32f, centre + outer * 0.5f - 46f, 40f, 40f);
                 HudShapes.Panel(badge, new Color(0.78f, 0.22f, 0.18f), Cream, 20f);
                 slot.tallyText = NewText(badge, "Count", 24f, Color.white, FontStyles.Bold, TextAlignmentOptions.Center);
                 Stretch(slot.tallyText.rectTransform, 0f, 0f, 0f, 0f);
@@ -556,6 +722,11 @@ namespace WhoisntCitizen.Game
             SetText(actionChip, s.chip);
             SetText(actionTitle, s.title);
             SetText(actionSub, s.sub);
+            if (titleRule != null && actionSub != null)
+            {
+                actionSub.ForceMeshUpdate();
+                titleRule.SetActive(actionSub.textInfo.lineCount < 2);
+            }
             SetButton(secondaryButton, s.secondary, s.secondaryOn);
             SetButton(primaryButton, s.primary, s.primaryOn);
         }

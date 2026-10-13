@@ -112,11 +112,15 @@ namespace WhoisntCitizen.Game
             return tabBar != null ? tabBar.GetComponent<Image>() : null;
         }
 
+        /// <summary>The chat rows and the input bar in the nautical look (GameScene3's, <see cref="NauticalHud"/>).</summary>
+        protected virtual bool NauticalChat => false;
+
         /// <summary>The chat rows and the input bar; the log goes where area says (see GameHudChat.BuildBare).</summary>
         protected void BuildChat(Func<Vector4> area)
         {
             chatUi = GetComponent<GameHudChat>(); // baked into the scene (BakeChat): only wired
             if (chatUi == null) chatUi = gameObject.AddComponent<GameHudChat>();
+            chatUi.SetNautical(NauticalChat);
             chatUi.BuildBare(ctx.Canvas, ctx.Chat, ctx.Sheet, ctx.BottomTab, ctx.Font, ctx.Hud.Portraits, area);
             chatUi.SetSkins(ctx.SkinOf);
         }
@@ -126,6 +130,7 @@ namespace WhoisntCitizen.Game
         {
             chatUi = GetComponent<GameHudChat>();
             if (chatUi == null) chatUi = gameObject.AddComponent<GameHudChat>();
+            chatUi.SetNautical(NauticalChat);
             chatUi.BakeBare(ctx.Canvas, ctx.Chat, ctx.Sheet, ctx.Font, area);
         }
 
@@ -173,8 +178,8 @@ namespace WhoisntCitizen.Game
             return skin != null && ctx.Hud.Portraits != null ? ctx.Hud.Portraits.Find(skin.DesignId) : null;
         }
 
-        /// <summary>A round portrait (bust, or the name's initial on a coloured disc) in a gold ring. Returns the disc.</summary>
-        protected Image Avatar(RectTransform parent, string name, float x, float top, float size, long playerId, string nickname)
+        /// <summary>A round portrait (bust, or the name's initial on a coloured disc) in a gold ring (or none). Returns the disc.</summary>
+        protected Image Avatar(RectTransform parent, string name, float x, float top, float size, long playerId, string nickname, bool ringed = true)
         {
             RectTransform round = Box(parent, name, x, top, size, size);
             Sprite bust = BustOf(playerId);
@@ -193,6 +198,7 @@ namespace WhoisntCitizen.Game
                 Stretch(initial.rectTransform, 0f, 0f, 0f, 0f);
                 initial.text = string.IsNullOrEmpty(nickname) ? "?" : nickname.Substring(0, 1);
             }
+            if (!ringed) return disc;
             RectTransform ring = Box(parent, name + "Ring", x - 2f, top - 2f, size + 4f, size + 4f);
             HudShapes.Panel(ring, new Color(0f, 0f, 0f, 0f), GoldLine, (size + 4f) * 0.5f);
             return disc;
