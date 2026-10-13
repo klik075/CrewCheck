@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -12,7 +11,8 @@ namespace WhoisntCitizen.Game
     /// The chat window of the pirate HUD, laid out at run time over the scene's chat log and bottom sheet (like
     /// <see cref="GameHudLayout"/>, which makes it). One gold frame holds, from the top:
     /// - tabs (전체 / 시스템 / 귓속말) and the chat filter (only one player's chat), which filter the chat log;
-    /// - the chat log: each line a row with the sender's bust on a name tag, the message and the time;
+    /// - the chat log: each line a row with the sender's bust on a name tag and the message (no time: the message gets
+    ///   the width, at a size a phone reads);
     /// - the input bar (the bottom sheet's tab bar): a parchment pill with a chat mark (a down arrow closing the drawer
     ///   while it is open) and the send button. The [+] button is hidden: the role panel opens the action drawer.
     /// What the chat says and sends stays with the chat side (<see cref="ChatLogView"/>, GameChatController).
@@ -24,8 +24,11 @@ namespace WhoisntCitizen.Game
         private const string Icons = "Sprites/flaticon/white/128/";
         // In the window (canvas units from its top-left): the tab row, then the log.
         private const float TabTop = 32f, TabHeight = 56f, LogTop = 100f; // the tabs sit under the frame's top rail
-        // A row: name tag on the left, message in the middle, time on the right.
-        private const float RowPad = 6f, TagWidth = 200f, TagHeight = 44f, BodyLeft = 216f, BodyRight = 104f, BodyPad = 12f;
+        // A row: name tag on the left, then the message.
+        private const float RowPad = 6f, TagWidth = 216f, TagHeight = 52f, BodyLeft = 232f, BodyRight = 14f, BodyPad = 12f;
+        // Text sizes in canvas units: the canvas is 1080 wide, so on a phone one unit is about 0.37 pt (30 ≈ 11 pt).
+        private const float NameSize = 26f, BodySize = 30f;
+        private const float BodyDilate = 0.12f; // the regular weight is thin on a phone: the message is drawn a little heavier
 
         private static readonly Color Gold = new Color(0.98f, 0.8f, 0.42f);
         private static readonly Color GoldLine = new Color(0.78f, 0.58f, 0.27f);
@@ -34,6 +37,9 @@ namespace WhoisntCitizen.Game
         private static readonly Color Teal = new Color(0.07f, 0.17f, 0.19f, 0.97f);
         private static readonly Color Cream = new Color(0.93f, 0.9f, 0.84f);
         private static readonly Color Muted = new Color(0.62f, 0.59f, 0.52f);
+        // Message text on the dark band, a little lighter than the window's own for the small size.
+        private static readonly Color BodyText = new Color(0.97f, 0.95f, 0.9f);
+        private static readonly Color SystemText = new Color(0.62f, 0.95f, 0.67f);
 
         // Made by BuildBare at run time, or once in Edit mode by BakeBare (then saved with the scene and only wired).
         [SerializeField, HideInInspector] private bool baked;
@@ -201,6 +207,7 @@ namespace WhoisntCitizen.Game
                 log.RowsChanged -= UpdateEmpty;
                 log.RowFactory = null;
             }
+            if (bodyMaterial != null) Destroy(bodyMaterial);
         }
 
         // ------------------------------------------------------------------ tabs and filter
@@ -417,32 +424,26 @@ namespace WhoisntCitizen.Game
             if (e.Kind == ChatEntryKind.Player || e.Kind == ChatEntryKind.Whisper) AddAvatar(tag, e);
             else
             {
-                Image mark = AddImage(Box(tag, "Mark", 12f, 9f, 26f, 26f),
+                Image mark = AddImage(Box(tag, "Mark", 12f, 11f, 30f, 30f),
                     Icon(e.Kind == ChatEntryKind.System ? "notification" : e.Nickname == "알림" ? "exclamation" : "info"), nameColor);
                 mark.preserveAspect = true;
             }
-            TextMeshProUGUI name = NewText(tag, "Name", 21f, nameColor, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
-            Stretch(name.rectTransform, 55f, 2f, 10f, 2f);
-            name.enableAutoSizing = true;
-            name.fontSizeMin = 15f;
-            name.fontSizeMax = 21f;
+            TextMeshProUGUI name = NewText(tag, "Name", NameSize, nameColor, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
+            Stretch(name.rectTransform, 62f, 2f, 10f, 2f);
+            name.enableAutoSizing = true; // a long nickname shrinks, but not below what a phone still reads
+            name.fontSizeMin = 22f;
+            name.fontSizeMax = NameSize;
             name.text = string.IsNullOrEmpty(e.Nickname) ? "안내" : e.Nickname;
 
-            // The message, wrapped between the tag and the time; the row grows with it (ChatRowLayout).
-            Color bodyColor = e.TextColor ?? (e.Kind == ChatEntryKind.System ? new Color(0.55f, 0.9f, 0.6f) : Cream);
-            TextMeshProUGUI body = NewText(row, "Message", 24f, bodyColor, FontStyles.Normal, TextAlignmentOptions.TopLeft);
+            // The message, wrapped right of the tag; the row grows with it (ChatRowLayout).
+            Color bodyColor = e.TextColor ?? (e.Kind == ChatEntryKind.System ? SystemText : BodyText);
+            TextMeshProUGUI body = NewText(row, "Message", BodySize, bodyColor, FontStyles.Normal, TextAlignmentOptions.TopLeft);
+            body.fontSharedMaterial = BodyMaterial(body);
             Stretch(body.rectTransform, BodyLeft, BodyPad, BodyRight, BodyPad);
             body.textWrappingMode = TextWrappingModes.Normal;
             body.overflowMode = TextOverflowModes.Overflow;
             body.richText = string.IsNullOrEmpty(e.Text); // a plain line from AddLine keeps its tags
             body.text = string.IsNullOrEmpty(e.Text) ? e.Rich ?? string.Empty : e.Text;
-
-            RectTransform timeBox = Box(row, "TimeBox", 0f, RowPad, BodyRight - 8f, TagHeight);
-            timeBox.anchorMin = timeBox.anchorMax = timeBox.pivot = new Vector2(1f, 1f);
-            timeBox.anchoredPosition = new Vector2(-4f, -RowPad);
-            TextMeshProUGUI time = NewText(timeBox, "Time", 17f, Muted, FontStyles.Normal, TextAlignmentOptions.MidlineRight);
-            Stretch(time.rectTransform, 0f, 0f, 0f, 0f);
-            time.text = e.Time.HasValue ? e.Time.Value.ToString("tt hh:mm", CultureInfo.InvariantCulture) : string.Empty;
 
             RectTransform rule = NewRect("Rule", row);
             rule.anchorMin = new Vector2(0f, 0f);
@@ -455,10 +456,23 @@ namespace WhoisntCitizen.Game
             return row;
         }
 
+        // The font's own material drawn a little heavier (BodyDilate), shared by every message. Made once, on first use.
+        private Material bodyMaterial;
+
+        private Material BodyMaterial(TMP_Text text)
+        {
+            if (bodyMaterial == null && text.fontSharedMaterial != null)
+            {
+                bodyMaterial = new Material(text.fontSharedMaterial) { name = text.fontSharedMaterial.name + " (Chat)" };
+                bodyMaterial.SetFloat(ShaderUtilities.ID_FaceDilate, BodyDilate);
+            }
+            return bodyMaterial != null ? bodyMaterial : text.fontSharedMaterial;
+        }
+
         // The sender's bust in a ring at the tag's left end; without a known skin, their initial on a coloured disc.
         private void AddAvatar(RectTransform tag, ChatEntry e)
         {
-            RectTransform round = Box(tag, "Avatar", 3f, 2f, 40f, 40f);
+            RectTransform round = Box(tag, "Avatar", 3f, 2f, 48f, 48f);
             ChibiCharacterSkin skin = skinOf != null && e.SenderId > 0 ? skinOf(e.SenderId) : null;
             Sprite bust = skin != null && portraits != null ? portraits.Find(skin.DesignId) : null;
             float hue = string.IsNullOrEmpty(e.Nickname) ? 0f : (e.Nickname.GetHashCode() & 0xFFFF) / 65535f;
@@ -467,17 +481,17 @@ namespace WhoisntCitizen.Game
             if (bust != null)
             {
                 RectTransform face = NewRect("Bust", round);
-                Stretch(face, -3f, -1f, -3f, -5f);
+                Stretch(face, -4f, -1f, -4f, -6f);
                 AddImage(face, bust, e.Dead ? new Color(0.6f, 0.6f, 0.6f) : Color.white).preserveAspect = true;
             }
             else
             {
-                TextMeshProUGUI initial = NewText(round, "Initial", 22f, Color.white, FontStyles.Bold, TextAlignmentOptions.Center);
+                TextMeshProUGUI initial = NewText(round, "Initial", 26f, Color.white, FontStyles.Bold, TextAlignmentOptions.Center);
                 Stretch(initial.rectTransform, 0f, 0f, 0f, 0f);
                 initial.text = string.IsNullOrEmpty(e.Nickname) ? "?" : e.Nickname.Substring(0, 1);
             }
-            RectTransform ring = Box(tag, "Ring", 1f, 0f, 44f, 44f);
-            HudShapes.Panel(ring, new Color(0f, 0f, 0f, 0f), e.Mine ? Gold : GoldLine, 22f); // a rounded square this round is a circle
+            RectTransform ring = Box(tag, "Ring", 1f, 0f, 52f, 52f);
+            HudShapes.Panel(ring, new Color(0f, 0f, 0f, 0f), e.Mine ? Gold : GoldLine, 26f); // a rounded square this round is a circle
         }
 
         // ------------------------------------------------------------------ input bar
