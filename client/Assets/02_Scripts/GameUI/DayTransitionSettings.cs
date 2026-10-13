@@ -59,11 +59,22 @@ namespace WhoisntCitizen.GameUI
             [Tooltip("밤으로: \"N일차 밤\" 명패 (여기서 밤을 기다린다)")] public float nightFalls = 0.6f;
         }
 
+        [Serializable]
+        public sealed class DraggedBeats
+        {
+            [Tooltip("밤이 걷힘")] public float nightLifts = 0.7f;
+            [Tooltip("수면이 갈라짐: 청록 물결 고리와 물밑의 주황 눈")] public float rise = 0.6f;
+            [Tooltip("촉수: 크라켄 그림이 덮치며 두 번 흔들림")] public float tentacle = 0.9f;
+            [Tooltip("끌려간 자들: 먹물에 젖은 수배서가 아래로 끌려감 (2명부터는 한 명마다 조금씩 길어진다)")] public float victims = 1.4f;
+            [Tooltip("잔물결·새벽: 먹물 자국과 \"N일차 낮\" 명패 (여기서 낮을 기다린다)")] public float dawn = 0.8f;
+        }
+
         [Header("밤사이 사망")] public KilledBeats killed = new KilledBeats();
         [Header("선의 보호로 생존")] public ProtectedBeats protectedNight = new ProtectedBeats();
         [Header("아무 일 없음")] public QuietBeats quiet = new QuietBeats();
         [Header("투표로 처형")] public ExecutedBeats executed = new ExecutedBeats();
         [Header("처형 없음 (동점·투표 없음)")] public NotExecutedBeats notExecuted = new NotExecutedBeats();
+        [Header("크라켄에게 끌려감")] public DraggedBeats dragged = new DraggedBeats();
 
         [Header("공통")]
         [Tooltip("마지막 명패에서 레터박스가 열리며 걷히는 시간")] public float outLength = 0.5f;
@@ -94,6 +105,7 @@ namespace WhoisntCitizen.GameUI
                 case DayTransitionKind.Protected: beats = new[] { protectedNight.nightLifts, protectedNight.strike, protectedNight.shield, protectedNight.dawn }; break;
                 case DayTransitionKind.Quiet: beats = new[] { quiet.nightLifts, quiet.calmSea, quiet.sunrise }; break;
                 case DayTransitionKind.Executed: beats = new[] { executed.tally, executed.verdict, executed.plank, executed.splash, executed.nightFalls }; break;
+                case DayTransitionKind.Dragged: beats = new[] { dragged.nightLifts, dragged.rise, dragged.tentacle, dragged.victims, dragged.dawn }; break;
                 default: beats = new[] { notExecuted.tally, notExecuted.verdict, notExecuted.nightFalls }; break;
             }
             for (int i = 0; i < beats.Length; i++) beats[i] = Mathf.Max(MinBeat, beats[i]);
@@ -109,6 +121,7 @@ namespace WhoisntCitizen.GameUI
                 case DayTransitionKind.Protected: return new[] { 0.7f, 0.8f, 1.3f, 0.9f };
                 case DayTransitionKind.Quiet: return new[] { 0.7f, 0.9f, 1.0f };
                 case DayTransitionKind.Executed: return new[] { 0.8f, 1.0f, 1.3f, 0.8f, 0.6f };
+                case DayTransitionKind.Dragged: return new[] { 0.7f, 0.6f, 0.9f, 1.4f, 0.8f };
                 default: return new[] { 0.8f, 1.4f, 0.6f };
             }
         }
@@ -126,6 +139,8 @@ namespace WhoisntCitizen.GameUI
                     return new[] { ("quiet.nightLifts", "밤이 걷힘"), ("quiet.calmSea", "고요한 밤바다"), ("quiet.sunrise", "해돋이 · N일차 낮") };
                 case DayTransitionKind.Executed:
                     return new[] { ("executed.tally", "개표 (테이블)"), ("executed.verdict", "판결 · 도장"), ("executed.plank", "널빤지"), ("executed.splash", "첨벙"), ("executed.nightFalls", "밤으로 · N일차 밤") };
+                case DayTransitionKind.Dragged:
+                    return new[] { ("dragged.nightLifts", "밤이 걷힘"), ("dragged.rise", "수면이 갈라짐"), ("dragged.tentacle", "촉수"), ("dragged.victims", "끌려간 자들"), ("dragged.dawn", "잔물결 · N일차 낮") };
                 default:
                     return new[] { ("notExecuted.tally", "개표 (테이블)"), ("notExecuted.verdict", "판결 불발 · 무효"), ("notExecuted.nightFalls", "밤으로 · N일차 밤") };
             }

@@ -20,14 +20,21 @@ namespace WhoisntCitizen.GameUI
             }
         }
 
-        /// <summary>The winner's accent (Winners): crew and pirate colors, the neutral color for the siren team and solo wins.</summary>
+        /// <summary>
+        /// The winner's accent (Winners): crew and pirate colors, and each neutral win its own (시안 H): the kraken teal,
+        /// the siren team pink, the ghost captain spectral green, the mermaid pearl gold.
+        /// </summary>
         internal static Color ForWinner(string winner)
         {
             switch (winner)
             {
                 case Winners.Crew: return ForFaction(Factions.Crew);
                 case Winners.Pirate: return ForFaction(Factions.Pirate);
-                default: return Winners.IsPersonal(winner) ? ForFaction(Factions.Neutral) : Muted;
+                case Winners.Kraken: return new Color(.22f, .84f, .78f);
+                case Winners.Siren: return new Color(.94f, .55f, .78f);
+                case Winners.GhostCaptain: return new Color(.55f, .94f, .73f);
+                case Winners.Mermaid: return new Color(.95f, .82f, .54f);
+                default: return Muted;
             }
         }
 

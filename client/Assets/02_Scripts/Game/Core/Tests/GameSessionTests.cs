@@ -570,5 +570,43 @@ namespace WhoisntCitizen.Game.Tests
             Assert.AreEqual(0, scripted.NightActions.Count);
             Assert.AreEqual(ReportFormatter.AbilityBlockMessage(AbilityBlock.Resting), view.Errors.Single());
         }
+
+        [Test]
+        public void 크라켄_표식을_받으면_기억하고_누군가_끌려가면_잊는다()
+        {
+            GameStateDto day1 = GameTestData.State(GamePhases.Day, 3,
+                GameTestData.P(11, "철수", true), GameTestData.P(12, "영희", true), GameTestData.P(13, "민수", true));
+            var marked = new NightResultDto { day = 1 };
+            marked.reports.Add(new ReportDto { type = ReportTypes.KrakenMarked });
+            ScriptedGameApi scripted = Scripted(GameTestData.Me(11, RoleCodes.CrewSailor, null, -1), day1, marked);
+
+            Assert.IsTrue(session.MarkedByKraken);
+
+            GameStateDto day2 = GameTestData.State(GamePhases.Day, 7,
+                GameTestData.P(11, "철수", true), GameTestData.P(12, "영희", true), GameTestData.P(13, "민수", false));
+            day2.day = 2;
+            var struck = new NightResultDto { day = 2 };
+            struck.deaths.Add(new DeathDto { playerId = 13, nickname = "민수", cause = DeathCauses.Kraken });
+            scripted.State = day2;
+            scripted.NightResult = struck;
+            now = 2;
+            session.Tick();
+
+            Assert.IsFalse(session.MarkedByKraken, "발동하면 서버가 표식을 모두 지운다");
+            Assert.IsTrue(session.WasDraggedByKraken(13));
+            Assert.IsFalse(session.WasDraggedByKraken(12));
+        }
+
+        [Test]
+        public void 습격으로_죽은_사람은_크라켄_희생자가_아니다()
+        {
+            GameStateDto day1 = GameTestData.State(GamePhases.Day, 3,
+                GameTestData.P(11, "철수", true), GameTestData.P(12, "영희", false));
+            var night = new NightResultDto { day = 1, killedPlayerId = 12, killedNickname = "영희" };
+            Scripted(GameTestData.Me(11, RoleCodes.CrewSailor, null, -1), day1, night);
+
+            Assert.IsFalse(session.WasDraggedByKraken(12));
+            Assert.IsFalse(session.MarkedByKraken);
+        }
     }
 }

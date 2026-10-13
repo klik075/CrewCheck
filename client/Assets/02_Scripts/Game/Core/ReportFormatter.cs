@@ -301,6 +301,39 @@ namespace WhoisntCitizen.Game
             }
         }
 
+        /// <summary>
+        /// 결과 화면의 부제: 서버 승리 안내(GameFlowService.winMessage)의 첫 문장. 유령 선장 승리는 승리 조건이 수 비교라서
+        /// 죽은 자·산 자 수를 덧붙인다. 취소됐거나 모르는 승자면 빈 문자열.
+        /// </summary>
+        public static string ResultFlavor(GameResultDto result)
+        {
+            if (result == null || result.IsCancelled)
+            {
+                return string.Empty;
+            }
+            switch (result.winner)
+            {
+                case Winners.Crew: return "모든 해적이 사라졌습니다";
+                case Winners.Pirate: return "해적이 배를 장악했습니다";
+                case Winners.Siren: return "세이렌의 노래가 배를 집어삼켰습니다";
+                case Winners.Kraken: return "크라켄이 배를 바다 밑으로 끌고 갔습니다";
+                case Winners.Mermaid: return "처형된 사람은 인어였습니다";
+                case Winners.GhostCaptain:
+                    int dead = 0, alive = 0;
+                    if (result.players != null)
+                    {
+                        foreach (PlayerResultDto p in result.players)
+                        {
+                            if (p == null) continue;
+                            if (p.alive) alive++; else dead++;
+                        }
+                    }
+                    string line = "죽은 자가 산 자보다 많아졌습니다";
+                    return dead + alive > 0 ? line + " · 죽은 자 " + dead + " · 산 자 " + alive : line;
+                default: return string.Empty;
+            }
+        }
+
         /// <summary>승리 문구. 예: "해적 진영 승리", "크라켄 승리". winner가 없으면 빈 문자열.</summary>
         public static string WinnerLine(string winner)
         {
