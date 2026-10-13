@@ -84,8 +84,15 @@ public class CurrentUserResolver {
      * @throws IllegalArgumentException 이 계정의 프로필(User)이 없으면 (GlobalExceptionHandler가 400으로 바꾼다)
      */
     public Long userId(Jwt jwt) {
-        Long memberId = Long.valueOf(jwt.getSubject());
+        return userIdByMemberId(Long.valueOf(jwt.getSubject()));
+    }
 
+    /**
+     * memberId → userId. JWT가 없는 곳(WebSocket 연결은 토큰 sub를 세션에 들고 있다)에서 쓴다. 캐시 규칙은 위와 같다.
+     *
+     * @throws IllegalArgumentException 이 계정의 프로필(User)이 없으면
+     */
+    public Long userIdByMemberId(Long memberId) {
         // 1. 캐시 확인: 대부분의 요청(polling)은 여기서 끝난다.
         Long cached = userIdByMemberId.get(memberId);
         if (cached != null) return cached;

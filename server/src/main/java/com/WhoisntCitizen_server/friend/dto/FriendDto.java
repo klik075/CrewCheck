@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.friend.dto;
 
 import com.WhoisntCitizen_server.friend.entity.Friendship;
 import com.WhoisntCitizen_server.user.entity.User;
+import com.WhoisntCitizen_server.user.service.UserPresenceStatus;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
@@ -31,8 +32,12 @@ public class FriendDto {
 		private int playCount;
 		private int winCount;
 		private double winRate;
+		/** 접속 중인지 (status가 OFFLINE이 아니면 true). JSON 이름은 online */
+		private boolean online;
+		/** 접속 상태: OFFLINE, ONLINE, IN_ROOM(대기실), IN_GAME(게임 중) */
+		private String status;
 
-		public static FriendResponse from(Friendship friendship, User friendUser) {
+		public static FriendResponse from(Friendship friendship, User friendUser, UserPresenceStatus presence) {
 			double rate = Math.round(friendUser.getWinRate() * 1000.0) / 10.0;
 
 			return FriendResponse.builder()
@@ -43,6 +48,8 @@ public class FriendDto {
 					.playCount(friendUser.getPlayCount())
 					.winCount(friendUser.getWinCount())
 					.winRate(rate)
+					.online(presence.isOnline())
+					.status(presence.name())
 					.build();
 		}
 	}
