@@ -83,8 +83,7 @@ namespace WhoisntCitizen.GameUI
             string background = GameResultPanel.BackgroundName(result, me != null ? me.faction : null);
             if (!hasArt || background == null) { FinishImmediately(); return; }
             defeat = background == "Defeat";
-            accent = background == "PersonalVictory" ? new Color(.22f, .95f, 1f) :
-                defeat ? new Color(.52f, .68f, .84f) : new Color(1f, .78f, .3f);
+            accent = defeat ? GameResultPalette.Muted : GameResultPalette.ForFaction(result.winner);
             // TMP initializes its renderer on activation, before outline materials are configured.
             stage.gameObject.SetActive(true);
             BuildFigures(result, me, skinOf, background);
@@ -112,20 +111,10 @@ namespace WhoisntCitizen.GameUI
                 {
                     if (player == null || figures.Count >= 12 || !ids.Add(player.playerId)) continue;
                     bool mine = player.playerId == me.playerId;
-                    if (solo ? !mine : !mine && FactionForRole(player.role) != result.winner) continue;
+                    if (solo ? !mine : !mine && GameResultPalette.FactionForRole(player.role) != result.winner) continue;
                     AddFigure(player.playerId, player.nickname, skinOf);
                 }
             if (figures.Count == 0) AddFigure(me.playerId, "나", skinOf);
-        }
-
-        private static string FactionForRole(string role)
-        {
-            if (string.IsNullOrEmpty(role)) return null;
-            // Actual role codes from the result, never cosmetic skin design IDs.
-            if (role.StartsWith("CREW_", StringComparison.Ordinal)) return Factions.Crew;
-            if (role.StartsWith("PIRATE_", StringComparison.Ordinal)) return Factions.Pirate;
-            if (role.StartsWith("NEUTRAL_", StringComparison.Ordinal)) return Factions.Neutral;
-            return null;
         }
 
         private void AddFigure(long id, string nickname, Func<long, ChibiCharacterSkin> skinOf)
