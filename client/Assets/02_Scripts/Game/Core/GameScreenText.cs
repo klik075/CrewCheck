@@ -53,6 +53,26 @@ namespace WhoisntCitizen.Game
             }
         }
 
+        /// <summary>
+        /// 화면 위 공지 상자(녹색)에 보여 줄 "지금 할 일" 한 문장. 상황 전환("밤이 되었습니다")과 결과는 아래 채팅에만 남기고,
+        /// 공지 상자는 할 일만 알린다. 할 일이 없으면(결과 페이즈, 사망자 등) 빈 문자열 = 공지 상자를 띄우지 않는다.
+        /// </summary>
+        /// <param name="me">내 직업 (아직 모르면 null: 능력이 있다고 보고 안내한다)</param>
+        /// <param name="alive">내가 살아 있는지</param>
+        public static string PhaseGuide(string phase, MyRoleDto me, bool alive)
+        {
+            if (!alive) return string.Empty;
+            switch (phase)
+            {
+                case GamePhases.Night:
+                    bool canUse = me == null || (me.HasAbility && (me.IsUnlimited || me.remainingUses > 0));
+                    return canUse ? "제한 시간 동안 능력을 사용해 주세요." : "밤이 끝날 때까지 기다려 주세요.";
+                case GamePhases.Day: return "제한 시간 동안 자유롭게 토론해 주세요.";
+                case GamePhases.Vote: return "제한 시간 안에 처형할 플레이어에게 투표해 주세요.";
+                default: return string.Empty;
+            }
+        }
+
         public static string RoleAnnouncement(MyRoleDto me)
         {
             return "당신의 직업은 " + me.roleName + "입니다.";

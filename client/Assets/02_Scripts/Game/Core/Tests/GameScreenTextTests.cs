@@ -25,6 +25,17 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 공지_상자는_할_일만_알린다()
+        {
+            Assert.AreEqual("제한 시간 동안 능력을 사용해 주세요.", GameScreenText.PhaseGuide(GamePhases.Night, null, true));
+            Assert.AreEqual("제한 시간 동안 자유롭게 토론해 주세요.", GameScreenText.PhaseGuide(GamePhases.Day, null, true));
+            Assert.AreEqual("제한 시간 안에 처형할 플레이어에게 투표해 주세요.", GameScreenText.PhaseGuide(GamePhases.Vote, null, true));
+            Assert.AreEqual(string.Empty, GameScreenText.PhaseGuide(GamePhases.NightResult, null, true));
+            Assert.AreEqual(string.Empty, GameScreenText.PhaseGuide(GamePhases.Execution, null, true));
+            Assert.AreEqual(string.Empty, GameScreenText.PhaseGuide(GamePhases.Night, null, false)); // 사망자에게는 할 일이 없다
+        }
+
+        [Test]
         public void 페이즈_안내는_결과가_따로_오는_페이즈에서_비어_있다()
         {
             Assert.AreEqual("2일차 밤이 되었습니다.", GameScreenText.PhaseAnnouncement(new GameEvent { Phase = GamePhases.Night, Day = 2 }));
