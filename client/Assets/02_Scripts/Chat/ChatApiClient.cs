@@ -73,6 +73,7 @@ namespace WhoisntCitizen.Chat
     ///          429 CHAT_MUTED: 같은 내용 10번째(경고 + 3분 채팅 금지) 또는 채팅 금지 중 → onMuted
     ///  - 공지: POST /api/v1/rooms/{roomId}/system-messages  {"message":"..."}  (헤더 X-Admin-Key, 서버 chat.admin-key가 비어 있으면 생략 가능)
     ///          201 / 403 공지 권한 없음 / 404 방 없음
+    ///  - 로비 채팅(lobby = true): GET·POST /api/v1/lobby/messages (방 채팅과 같은 형식, 로비 전체가 방 하나)
     ///  - [개발용] 로그인:  POST /api/members/login  {"username","password"}
     ///  - [개발용] 방 참가: POST /api/v1/rooms/{roomId}/players  (로비 API, 입장 시 서버가 시스템 메시지를 남김)
     ///  - [개발용] 방 생성: POST /api/v1/rooms  {"title","maxPlayers"}  (방장이 자동으로 참가)
@@ -86,6 +87,8 @@ namespace WhoisntCitizen.Chat
         public string apiPrefix = "/api/v1";
         [Tooltip("채팅할 로비 방 id (0 이하면 [개발용] 설정에 따라 새 방을 만듭니다)")]
         public long roomId = 1;
+        [Tooltip("켜면 방이 아니라 로비 채팅(/api/v1/lobby/messages)을 씁니다. roomId는 쓰지 않습니다. (GameChatController.lobbyChat이 켭니다)")]
+        public bool lobby;
         [Tooltip("요청 타임아웃(초)")]
         public int timeoutSeconds = 5;
         [Tooltip("시스템 메시지(공지) 전송용 키. 서버 chat.admin-key(환경변수 CHAT_ADMIN_KEY)와 같은 값. 서버 값이 비어 있으면 비워 둬도 됩니다.")]
@@ -114,7 +117,7 @@ namespace WhoisntCitizen.Chat
 
         string MessagesUrl
         {
-            get { return RoomUrl + "/messages"; }
+            get { return lobby ? Base + apiPrefix + "/lobby/messages" : RoomUrl + "/messages"; }
         }
 
         // ---------------- 채팅 ----------------

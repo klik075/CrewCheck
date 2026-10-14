@@ -20,6 +20,9 @@ namespace WhoisntCitizen.Lobby
     ///   6) FindRoomArea : 방 제목 검색. 입력칸에서 Enter 또는 검색 버튼을 눌렀을 때만 검색한다.
     ///      검색어를 비우고 Enter/버튼 → 전체 목록. 새로고침 버튼은 현재 검색어를 유지한 채 다시 불러온다.
     ///      ClearButton → 검색어를 지우고 전체 목록으로 돌아간다.
+    ///   7) 로비 채팅 (LobbyChatPanel) : [방 만들기] 오른편 [채팅] 버튼. 누르면 방 목록 아래쪽 절반에 채팅창이 열리고(방 목록은 위로 줄어듦),
+    ///      다시 누르면 닫히고 방 목록이 원래 크기로 돌아온다. 채팅창 모양은 Room 채팅창과 같다.
+    ///      로비에 들어온 뒤의 대화만 보이고, 방으로 이동하면 씬과 함께 사라진다. (버튼·채팅창은 실행할 때 코드로 만든다)
     ///
     /// 진입 조건
     ///   로그인하지 않은 상태(토큰 없음)로 이 씬에 들어오면 타이틀 씬으로 돌려보낸다.
@@ -56,6 +59,10 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private RoomPasswordPopup roomPasswordPopup; // Popup/Popup_RoomPassword
         [Tooltip("설정 팝업(계정 연동). 비워 두면 설정 버튼을 쓰지 않는다.")]
         [SerializeField] private AccountLinkPopup accountLinkPopup; // Popup/Popup_Setting
+
+        [Header("Lobby Chat")]
+        [Tooltip("방 목록 영역. 채팅창이 열리면 이 영역의 아래쪽 절반에 채팅창을 놓고 방 목록은 위로 줄인다. 비워 두면 방 만들기 버튼과 같은 부모의 RoomListArea를 찾는다.")]
+        [SerializeField] private RectTransform chatRoomListArea;
 
         [Header("Status")]
         [SerializeField] private StatusMessageView statusMessage; // Canvas/StatusMessageText
@@ -121,9 +128,27 @@ namespace WhoisntCitizen.Lobby
             if (roomPasswordPopup != null) roomPasswordPopup.Close();
             if (accountLinkPopup != null) accountLinkPopup.gameObject.SetActive(false);
             ClearRoomList();                                      // Content에 놓여 있던 샘플 RoomItem 제거
+            BuildLobbyChat();                                     // [채팅] 버튼 + 채팅창 (로비에 들어온 지금부터의 대화를 받는다)
 
             // 4) 방 목록 불러오기 (이후에는 새로고침 버튼을 눌렀을 때만 갱신한다)
             RefreshRooms(silent: false);
+        }
+
+        /// <summary>로비 채팅 버튼·채팅창을 만든다. (LobbyChatPanel)</summary>
+        private void BuildLobbyChat()
+        {
+            if (createRoomButton == null) return;
+            RectTransform area = chatRoomListArea;
+            if (area == null && createRoomButton.transform.parent != null)
+                area = createRoomButton.transform.parent.Find("RoomListArea") as RectTransform;
+            if (area == null)
+            {
+                Debug.LogWarning("[Lobby] 방 목록 영역(RoomListArea)을 찾지 못해 로비 채팅을 만들지 않습니다. (LobbyUIController.chatRoomListArea로 지정할 수 있습니다)");
+                return;
+            }
+            var chat = GetComponent<LobbyChatPanel>();
+            if (chat == null) chat = gameObject.AddComponent<LobbyChatPanel>();
+            chat.Build(createRoomButton, area);
         }
 
         private void OnDestroy()

@@ -33,6 +33,9 @@ namespace WhoisntCitizen.Chat
     ///  - 도배 방지(서버 ChatSpamGuard): 같은 내용 3번째부터 전송 응답의 경고 문구를 내 화면에만 주황색으로,
     ///    10번째(429 CHAT_MUTED)에는 경고(주황색)와 3분 채팅 금지 안내(붉은색)를 표시. 금지 중에는 서버에 보내지 않고 남은 시간을 붉은색으로 안내
     ///  - SendSystemMessage(): 공지 전송 (에디터 창 Tools > Chat > System Message Console)
+    ///  - 로비 채팅(lobbyChat = true, Lobby 씬): 로비 전체를 방 하나로 취급하는 채팅. 방 참가·실시간 신호 없이 폴링으로 받고,
+    ///    로비에 들어온 뒤에 오간 대화만 보여 준다(입장할 때 마지막 메시지 id를 기준으로 삼음). 방으로 이동하면 씬과 함께 사라져 더 받지 않는다.
+    ///    내 화면 전용 안내(ChatNotice)는 Room·Game 채팅창 몫으로 남겨 두고 로비 채팅창에는 표시하지 않는다.
     ///
     /// 글꼴은 ChatLogView의 줄 프리팹(ChatLogLine) 것을 그대로 쓰고, 글자색은 아래 Style 설정을 씁니다.
     /// </summary>
@@ -46,6 +49,8 @@ namespace WhoisntCitizen.Chat
         public ChatInputBar inputBar;
 
         [Header("Chat")]
+        [Tooltip("로비 채팅(Lobby 씬). 켜면 방 대신 로비 채팅을 쓰고, 로비에 들어온 뒤의 대화만 보여 준다")]
+        public bool lobbyChat;
         [Tooltip("화면에 남겨 두는 최근 메시지 수 (서버 조회 limit, 최대 200)")]
         public int maxMessages = 50;
         [Tooltip("내 userId. -1이면 로그인 세션(AuthSession.UserId)이나 첫 전송 응답으로 자동 설정")]
@@ -100,6 +105,7 @@ namespace WhoisntCitizen.Chat
         float _nextPollTime;
         float _lastPollTime = -1f;   // 마지막으로 정기 조회를 한 시각(unscaledTime). 아직 없으면 -1
         bool _roomFromSession;       // 방을 RoomSession(로비에서 입장한 방)에서 받았는지
+        long _lobbyEntryId = -1;     // (로비 채팅) 로비에 들어왔을 때의 마지막 메시지 id. 이 id 이하는 입장 전 대화라 보여 주지 않는다
         RealtimeClient _realtime;
         int _pollCount;
         string _lastStatus = ""; // 마지막으로 표시한 일시 오류 (같은 오류 반복 표시 방지)
@@ -164,13 +170,14 @@ namespace WhoisntCitizen.Chat
             if (bottomTab == null) bottomTab = FindFirstObjectByType<BottomTabController>(FindObjectsInactive.Include);
             if (inputBar == null) inputBar = FindFirstObjectByType<ChatInputBar>(FindObjectsInactive.Include);
             if (chatLog != null) _scroll = chatLog.GetComponentInChildren<ScrollRect>(true);
+            if (lobbyChat && api != null) api.lobby = true;
             // 씬에 미리 들어 있던 예시 줄 제거. GameScreen이 줄을 넣기 전(Awake)에 한 번만 한다.
             if (chatLog != null) chatLog.Clear();
         }
 
         void OnEnable()
         {
-            ChatNotice.Posted += OnChatNotice;
+            if (!lobbyChat) ChatNotice.Posted += OnChatNotice; // 로비 채팅창은 안내를 받지 않는다 (방 입장 안내 등은 Room 채팅창에서 보여 준다)
             if (bottomTab != null) bottomTab.ChatSubmitted += Send;
             if (inputBar != null) inputBar.ChatSubmitted += Send;
         }
@@ -190,7 +197,8 @@ namespace WhoisntCitizen.Chat
                 enabled = false;
                 return;
             }
-            foreach (var text in ChatNotice.TakePending()) AddLocal(text, false);
+            if (!lobbyChat)
+                foreach (var text in ChatNotice.TakePending()) AddLocal(text, false);
             Render();
             AttachRealtime();
             StartCoroutine(Connect());
@@ -251,8 +259,24 @@ namespace WhoisntCitizen.Chat
                     }
                 }
 
-                // 2) 방: 로비에서 입장한 방이 있으면 그대로 사용
-                if (RoomSession.HasRoom)
+                // 2) 방: 로비 채팅이면 방 없이 로비 대화의 마지막 id만 받아 둔다 (그 뒤의 대화만 보여 주기 위해)
+                if (lobbyChat)
+                {
+                    err = null; code = 0;
+                    long entryId = -1;
+                    yield return api.FetchMessages(-1, 1, list => entryId = Math.Max(0, MaxId(list)), (e, c) => { err = e; code = c; });
+                    if (err != null)
+                    {
+                        if (code == 401) { NotifyExpired(); continue; }
+                        SetError(Friendly(err, code), err);
+                        yield return new WaitForSecondsRealtime(retryInterval);
+                        continue;
+                    }
+                    _lobbyEntryId = entryId;
+                    _lastId = entryId;
+                }
+                // 로비에서 입장한 방이 있으면 그대로 사용
+                else if (RoomSession.HasRoom)
                 {
                     api.roomId = RoomSession.RoomId;
                     _roomFromSession = true;
@@ -315,7 +339,7 @@ namespace WhoisntCitizen.Chat
                 _lastStatus = "";
                 _lastPollTime = Time.unscaledTime;
                 _nextPollTime = _lastPollTime + CurrentPollInterval();
-                RequestFetch(true);
+                RequestFetch(!lobbyChat); // 로비는 입장 이후의 새 메시지만 받는다
                 break;
             }
 
@@ -343,7 +367,8 @@ namespace WhoisntCitizen.Chat
         /// </summary>
         void AttachRealtime()
         {
-            if (!RoomSession.HasRoom) return;
+            // 로비 채팅은 방 구독이 없어 폴링만 한다. (로비 씬 시작 직후에는 지난 방의 RoomSession이 남아 있을 수 있다)
+            if (lobbyChat || !RoomSession.HasRoom) return;
             _realtime = RealtimeClient.Instance;
             _realtime.ChatChanged += OnRealtimeChatChanged;
             _realtime.Resynced += OnRealtimeResynced;
@@ -494,6 +519,7 @@ namespace WhoisntCitizen.Chat
             text = text == null ? "" : text.Trim();
             string reason = null;
             if (text.Length == 0) reason = "보낼 내용이 없습니다.";
+            else if (lobbyChat) reason = "로비 채팅에는 공지를 보낼 수 없습니다.";
             else if (_sendingSystem) reason = "이전 공지를 보내는 중입니다.";
             else if (!_ready || !AuthSession.IsAuthenticated) reason = "서버에 연결된 뒤 공지를 보낼 수 있습니다.";
             if (reason != null)
@@ -561,7 +587,7 @@ namespace WhoisntCitizen.Chat
             bool notifyLive = hasLiveSnapshot;
             hasLiveSnapshot = true;
             _lastStatus = "";
-            var sorted = SortOldestFirst(list).ToList();
+            var sorted = SortOldestFirst(AfterLobbyEntry(list)).ToList();
             if (SameIds(sorted, _messages))
             {
                 if (_pendingNotices.Count > 0 && FlushPendingNotices()) Render();
@@ -591,7 +617,7 @@ namespace WhoisntCitizen.Chat
         {
             _lastStatus = "";
             bool added = false;
-            foreach (var m in SortOldestFirst(list))
+            foreach (var m in SortOldestFirst(AfterLobbyEntry(list)))
             {
                 long id;
                 bool hasId = long.TryParse(m.id, out id);
@@ -798,6 +824,13 @@ namespace WhoisntCitizen.Chat
                 var kept = new HashSet<string>(_messages.Select(m => m.id));
                 foreach (string id in _receivedAt.Keys.Where(k => !kept.Contains(k)).ToList()) _receivedAt.Remove(id);
             }
+        }
+
+        /// (로비 채팅) 로비에 들어오기 전의 대화를 뺀다. 방 채팅이면 그대로
+        List<ChatMessage> AfterLobbyEntry(List<ChatMessage> list)
+        {
+            if (!lobbyChat || _lobbyEntryId < 0) return list;
+            return list.Where(m => ParseId(m.id) > _lobbyEntryId).ToList();
         }
 
         static long ParseId(string id)
