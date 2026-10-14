@@ -1,4 +1,4 @@
-﻿package com.WhoisntCitizen_server.common.validation;
+package com.WhoisntCitizen_server.common.validation;
 
 import jakarta.validation.Constraint;
 import jakarta.validation.ConstraintValidator;

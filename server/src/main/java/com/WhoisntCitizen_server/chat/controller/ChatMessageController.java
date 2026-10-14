@@ -32,6 +32,9 @@ import java.util.List;
  *          200 OK / 404 방 없음
  *          게임 중 사망자 채팅(type=DEAD)은 같은 게임의 사망자에게, 밤에 오간 채팅은 같은 게임의 해적에게만 들어갑니다.
  *  - 전송 403: 밤에는 해적만 채팅할 수 있습니다. (사망자는 밤에도 사망자 채팅 가능)
+ *  - 도배 방지: 같은 내용을 연속으로 3번째 보낼 때부터 201 응답의 spamWarning에 경고 문구가 들어갑니다. (보낸 사람에게만)
+ *          10번째에는 저장하지 않고 3분간 채팅 금지 → 429 {"code":"CHAT_MUTED","message","warning","remainingSeconds"}
+ *          금지 중에 보낸 메시지도 429 (warning 없음, message에 남은 시간)
  *          (limit, afterId는 명세 추가 파라미터 - WebSocket 적용 전까지 폴링용)
  *  - 공지: POST /api/v1/rooms/{roomId}/system-messages  {"message":"..."}  (명세 추가 API)
  */
