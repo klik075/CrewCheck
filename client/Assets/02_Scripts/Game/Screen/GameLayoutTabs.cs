@@ -47,7 +47,21 @@ namespace WhoisntCitizen.Game
             public GameObject ring, tally;
             public Image ringLine;
             public TextMeshProUGUI tallyText;
+            // The neutral roles' marks (시안 F·G): the kraken's mark, its pulse when the kraken strikes, the siren team's
+            // pink ring, and ink over one the kraken dragged away.
+            public GameObject krakenMark, krakenGlow, sirenRing, ink;
+            public Image krakenFill, krakenIcon, krakenGlowImage;
         }
+
+        private static readonly Color KrakenTeal = new Color(0.18f, 0.83f, 0.77f), KrakenDim = new Color(0.11f, 0.35f, 0.34f);
+        private static readonly Color KrakenInk = new Color(0.02f, 0.16f, 0.17f), SirenPink = new Color(0.94f, 0.55f, 0.78f);
+
+        // What the neutral marks were last drawn from: redrawn when these change, only the pulse every frame.
+        private MyRoleDto neutralMe;
+        private GameStateDto neutralState;
+        private bool neutralStruck, neutralMarkedMe;
+        private int neutralSlots = -1;
+        private readonly HashSet<long> krakenMarked = new HashSet<long>(), sirenTeam = new HashSet<long>();
 
         [System.Serializable]
         private sealed class ActionButton
@@ -552,10 +566,15 @@ namespace WhoisntCitizen.Game
         {
             if (session.Me == null) return;
             Sprite bust = BustOf(session.Me.playerId);
-            string key = (session.Me.roleName ?? "") + "|" + (bust != null ? bust.name : "");
+            bool siren = session.Me.IsSirenTeam;
+            string key = (session.Me.roleName ?? "") + "|" + (bust != null ? bust.name : "") + (siren ? "|siren" : "");
             if (key == chipKey) return;
             chipKey = key;
             if (chipText != null) chipText.text = session.Me.roleName ?? "내 역할";
+            // 세이렌 팀(세이렌, 유혹당한 사람)이면 칩 테두리가 분홍으로 (시안 F ④)
+            Transform outline = roleChip != null ? roleChip.transform.Find("Outline") : null;
+            Image line = outline != null ? outline.GetComponent<Image>() : null;
+            if (line != null) line.color = siren ? SirenPink : GoldLine;
             if (chipAvatar == null) return;
             for (int i = chipAvatar.childCount - 1; i >= 0; i--) Destroy(chipAvatar.GetChild(i).gameObject);
             // Fits the avatar box, inset 6 (a 66 box holds a 54 avatar), so resizing the box in the scene resizes it
@@ -634,6 +653,7 @@ namespace WhoisntCitizen.Game
                     HudShapes.Panel(mark, new Color(0.16f, 0.11f, 0.06f), GoldLine, 18f);
                     AddImage(Box(mark, "Skull", 7f, 7f, 22f, 22f), Icon("skull"), Cream).preserveAspect = true;
                 }
+                BuildNeutralMarks(slot, root, mid, centre, face, outer);
                 RectTransform badge = Box(root, "Tally", mid + outer * 0.5f - 32f, centre + outer * 0.5f - 46f, 40f, 40f);
                 HudShapes.Panel(badge, new Color(0.78f, 0.22f, 0.18f), Cream, 20f);
                 slot.tallyText = NewText(badge, "Count", 24f, Color.white, FontStyles.Bold, TextAlignmentOptions.Center);
@@ -644,6 +664,88 @@ namespace WhoisntCitizen.Game
             }
             shownPick = -1;
             shownMarks = null;
+            neutralSlots = -1; // new slots: draw their neutral marks again
+        }
+
+        // The neutral roles' parts of one roster slot, all hidden until UpdateNeutralMarks shows them.
+        private static void BuildNeutralMarks(Slot slot, RectTransform root, float mid, float centre, float face, float outer)
+        {
+            // The kraken striking: a teal glow behind the face of each one it marked.
+            RectTransform glow = Box(root, "KrakenGlow", mid - outer * 0.75f, centre - outer * 0.75f, outer * 1.5f, outer * 1.5f);
+            glow.SetAsFirstSibling();
+            slot.krakenGlowImage = AddImage(glow, NightFxSprites.Dot, KrakenTeal);
+            slot.krakenGlow = glow.gameObject;
+            // The siren team: a pink ring round the portrait (only on the screens of the siren team).
+            RectTransform pink = Box(root, "SirenRing", mid - outer * 0.5f - 3f, centre - outer * 0.5f - 3f, outer + 6f, outer + 6f);
+            HudShapes.Panel(pink, new Color(0f, 0f, 0f, 0f), SirenPink, (outer + 6f) * 0.5f);
+            Image pinkLine = pink.Find("Outline").GetComponent<Image>();
+            pinkLine.pixelsPerUnitMultiplier *= 0.6f; // a thick line
+            slot.sirenRing = pink.gameObject;
+            // Dragged away by the kraken: ink seeping up from the bottom of the face.
+            RectTransform ink = Box(root, "KrakenInk", mid - face * 0.5f, centre - face * 0.05f, face, face * 0.55f);
+            AddImage(ink, NightFxSprites.Fade, new Color(KrakenInk.r, KrakenInk.g, KrakenInk.b, 0.85f));
+            slot.ink = ink.gameObject;
+            // The kraken's mark: a curled tentacle in a disc, where the pirates' skull would be (top right).
+            RectTransform mark = Box(root, "KrakenMark", mid + outer * 0.5f - 30f, centre - outer * 0.5f - 4f, 36f, 36f);
+            slot.krakenFill = HudShapes.Panel(mark, KrakenTeal, new Color(0.9f, 1f, 0.98f), 18f);
+            slot.krakenIcon = AddImage(Box(mark, "Tentacle", 5f, 5f, 26f, 26f), NightFxSprites.Tentacle, KrakenInk);
+            slot.krakenIcon.preserveAspect = true;
+            // A marked one cannot be picked again (dimmed at night), but the badge stays bright.
+            CanvasGroup bright = mark.gameObject.AddComponent<CanvasGroup>();
+            bright.ignoreParentGroups = true;
+            bright.blocksRaycasts = false;
+            slot.krakenMark = mark.gameObject;
+            foreach (GameObject part in new[] { slot.krakenGlow, slot.sirenRing, slot.ink, slot.krakenMark }) part.SetActive(false);
+        }
+
+        /// <summary>
+        /// The neutral roles' marks on the roster, from what this player knows:
+        /// - the kraken: a tentacle badge on each living one it marked (/me krakenMarkIds); a pulsing glow when it strikes;
+        /// - one the kraken marked: a dark badge on their own slot only (KRAKEN_MARKED, remembered by the session);
+        /// - the siren team (the siren and the seduced): a pink ring round each of the team (/me sirenTeamIds);
+        /// - everyone: ink over the ones the kraken dragged away (the night result's death cause is public).
+        /// </summary>
+        private void UpdateNeutralMarks(GameSession session)
+        {
+            MyRoleDto me = session.Me;
+            bool struck = session.StruckTonight, markedMe = session.MarkedByKraken;
+            if (me != neutralMe || session.State != neutralState || struck != neutralStruck || markedMe != neutralMarkedMe || slots.Count != neutralSlots)
+            {
+                neutralMe = me;
+                neutralState = session.State;
+                neutralStruck = struck;
+                neutralMarkedMe = markedMe;
+                neutralSlots = slots.Count;
+                krakenMarked.Clear();
+                sirenTeam.Clear();
+                if (me != null)
+                {
+                    foreach (PlayerViewDto p in session.KrakenMarks) krakenMarked.Add(p.playerId);
+                    if (me.IsSirenTeam)
+                    {
+                        sirenTeam.Add(me.playerId);
+                        foreach (long id in me.sirenTeamIds) sirenTeam.Add(id);
+                    }
+                }
+                foreach (Slot slot in slots)
+                {
+                    bool myMark = markedMe && me != null && slot.id == me.playerId;
+                    bool marked = krakenMarked.Contains(slot.id);
+                    slot.krakenMark.SetActive(marked || myMark);
+                    slot.krakenFill.color = myMark ? KrakenDim : KrakenTeal;
+                    slot.krakenIcon.color = myMark ? new Color(0.65f, 0.94f, 0.9f) : KrakenInk;
+                    slot.krakenGlow.SetActive(struck && marked);
+                    slot.sirenRing.SetActive(sirenTeam.Contains(slot.id));
+                    slot.ink.SetActive(session.WasDraggedByKraken(slot.id));
+                }
+            }
+            if (!struck) return;
+            // [발동]을 고른 밤: 끌려갈 칸이 1.2초마다 맥박처럼 빛난다
+            float pulse = 0.35f + 0.45f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * Mathf.PI / 1.2f));
+            foreach (Slot slot in slots)
+            {
+                if (slot.krakenGlow.activeSelf) slot.krakenGlowImage.color = new Color(KrakenTeal.r, KrakenTeal.g, KrakenTeal.b, pulse);
+            }
         }
 
         private void OnSlotClicked(long playerId)
@@ -681,6 +783,7 @@ namespace WhoisntCitizen.Game
             if (session == null || session.State == null) return;
             if (phase == null) phase = session.State.phase;
             UpdateMarks(session);
+            UpdateNeutralMarks(session);
             ApplyAction(StateFor(session));
         }
 

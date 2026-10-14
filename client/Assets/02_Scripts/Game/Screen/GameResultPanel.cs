@@ -170,7 +170,8 @@ namespace WhoisntCitizen.Game
         {
             string name = BackgroundName(result, me);
             Sprite sprite = null;
-            if (name != null && !backgrounds.TryGetValue(name, out sprite))
+            if (name == "PersonalVictory") sprite = PersonalArt(result.winner);
+            if (sprite == null && name != null && !backgrounds.TryGetValue(name, out sprite))
             {
                 sprite = Resources.Load<Sprite>("GameResult/" + name);
                 if (sprite != null) backgrounds.Add(name, sprite);
@@ -178,6 +179,34 @@ namespace WhoisntCitizen.Game
             backgroundImage.sprite = sprite;
             backgroundImage.gameObject.SetActive(sprite != null);
             if (sprite != null) backgroundFit.aspectRatio = sprite.rect.width / sprite.rect.height;
+        }
+
+        /// <summary>
+        /// The neutral winner's own picture (시안 H): GameResult/KrakenVictory, SirenVictory, GhostCaptainVictory or
+        /// MermaidVictory when that art exists, else the role's ability cut-in art (NightScene/AbilityCutIns), else null
+        /// (the shared PersonalVictory picture).
+        /// </summary>
+        private Sprite PersonalArt(string winner)
+        {
+            string art, cutIn;
+            switch (winner)
+            {
+                case Winners.Kraken: art = "KrakenVictory"; cutIn = "PIRATE_KRAKEN"; break;
+                case Winners.Siren: art = "SirenVictory"; cutIn = "CONCEPT_SIREN"; break;
+                case Winners.GhostCaptain: art = "GhostCaptainVictory"; cutIn = "CONCEPT_GHOST_CAPTAIN"; break;
+                case Winners.Mermaid: art = "MermaidVictory"; cutIn = "THIRD_MERMAID"; break;
+                default: return null;
+            }
+            Sprite sprite;
+            if (backgrounds.TryGetValue(art, out sprite)) return sprite;
+            sprite = Resources.Load<Sprite>("GameResult/" + art);
+            if (sprite == null)
+            {
+                AbilityCutInCatalog cutIns = Resources.Load<AbilityCutInCatalog>("NightScene/AbilityCutIns");
+                if (cutIns != null) cutIns.TryFind(cutIn, out sprite, out _);
+            }
+            if (sprite != null) backgrounds.Add(art, sprite);
+            return sprite;
         }
 
         private void PreparePresentation()

@@ -11,7 +11,7 @@ namespace WhoisntCitizen.GameUI
     public sealed class GameResultCardView
     {
         private readonly RectTransform card, header, details, grid;
-        private readonly TextMeshProUGUI title, outcome, fallback, summary;
+        private readonly TextMeshProUGUI title, outcome, fallback, summary, flavor;
         private readonly CanvasGroup headerGroup, detailsGroup;
         private readonly Image headerGlow, seal, outcomeBorder, headerWood, crest, crestInset, rule;
         private readonly List<RectTransform> rows = new List<RectTransform>();
@@ -61,6 +61,9 @@ namespace WhoisntCitizen.GameUI
             outcomeBorder = Art("OutcomeBadge", header, outline, gold);
             outcomeBorder.rectTransform.anchorMin = outcomeBorder.rectTransform.anchorMax = new Vector2(.61f, .3f);
             outcomeBorder.rectTransform.sizeDelta = new Vector2(260f, 44f);
+            // The winner's line under the outcome (the server's win message): "크라켄이 배를 바다 밑으로 끌고 갔습니다"
+            flavor = Label("Flavor", header, "", 21f, new Color(.86f, .88f, .84f));
+            Top(flavor.rectTransform, 170f, 30f, 24f);
 
             details = Rect("ResultPlayerCards", card); Stretch(details, 42f, 0f);
             details.offsetMin = new Vector2(42f, 152f); details.offsetMax = new Vector2(-42f, -240f);
@@ -100,6 +103,8 @@ namespace WhoisntCitizen.GameUI
             headerWood.color = Color.Lerp(new Color(.015f, .025f, .04f), headerAccent, .12f);
             crest.color = rule.color = headerAccent;
             crestInset.color = headerWood.color;
+            flavor.text = ReportFormatter.ResultFlavor(result);
+            flavor.color = Color.Lerp(headerAccent, Color.white, .55f);
             if (title != null)
             {
                 Top(title.rectTransform, 64f, 68f, 0f);

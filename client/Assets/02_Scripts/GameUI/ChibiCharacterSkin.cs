@@ -7,6 +7,8 @@ namespace WhoisntCitizen.GameUI
     {
         [SerializeField] private string designId;
         [SerializeField] private Sprite standing;
+        [Tooltip("투표로 처형될 때 널빤지 위에 선 모습(밧줄에 묶임). 비우면 standing")]
+        [SerializeField] private Sprite bound;
         [SerializeField] private Sprite seatedFront;
         [SerializeField] private Sprite seatedFrontBlink;
         [SerializeField] private Sprite seatedFrontTalk;
@@ -19,6 +21,7 @@ namespace WhoisntCitizen.GameUI
 
         public string DesignId => designId;
         public Sprite Standing => standing;
+        public Sprite Bound => bound != null ? bound : standing;
         public Sprite SeatedFront => seatedFront;
         public Sprite SeatedFrontBlink => seatedFrontBlink;
         public Sprite SeatedFrontTalk => seatedFrontTalk;

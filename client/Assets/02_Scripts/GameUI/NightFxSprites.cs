@@ -59,6 +59,41 @@ namespace WhoisntCitizen.GameUI
         /// <summary>Vertical fade: clear at the top, solid at the bottom.</summary>
         public static Sprite Fade => fade != null ? fade : (fade = Make("FxFade", 4, 64, new Vector2(0.5f, 0.5f), (u, v) => 1f - v));
 
+        private static Sprite tentacle;
+
+        /// <summary>
+        /// A tentacle curling into a spiral, thick at its root (bottom left) and thin at its tip: the kraken's mark on the
+        /// roster and the kraken's crest.
+        /// </summary>
+        public static Sprite Tentacle => tentacle != null ? tentacle : (tentacle = MakeTentacle());
+
+        private static Sprite MakeTentacle()
+        {
+            // The curve as points with a half-thickness each: from the root outside the spiral, two and a half turns in.
+            const int Samples = 140;
+            var points = new Vector3[Samples]; // x, y, half-thickness (all in 0..1 of the sprite)
+            var centre = new Vector2(0.56f, 0.56f);
+            for (int i = 0; i < Samples; i++)
+            {
+                float s = i / (Samples - 1f);
+                float angle = (215f - s * 470f) * Mathf.Deg2Rad;
+                float radius = 0.42f * Mathf.Pow(1f - s, 0.85f) + 0.025f;
+                points[i] = new Vector3(centre.x + Mathf.Cos(angle) * radius, centre.y + Mathf.Sin(angle) * radius,
+                    Mathf.Lerp(0.105f, 0.022f, s));
+            }
+            const int Size = 96;
+            return Make("FxTentacle", Size, Size, new Vector2(0.5f, 0.5f), (u, v) =>
+            {
+                float inside = float.MaxValue;
+                foreach (Vector3 p in points)
+                {
+                    float dx = u - p.x, dy = v - p.y;
+                    inside = Mathf.Min(inside, Mathf.Sqrt(dx * dx + dy * dy) - p.z);
+                }
+                return -inside * Size; // one soft pixel at the edge
+            });
+        }
+
         private static float Distance(float u, float v)
         {
             float x = u * 2f - 1f, y = v * 2f - 1f;

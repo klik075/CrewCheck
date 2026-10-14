@@ -78,6 +78,21 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 결과_부제는_서버_승리_안내의_첫_문장이다()
+        {
+            var kraken = new GameResultDto { ended = true, winner = Winners.Kraken, endReason = EndReasons.Win };
+            var ghost = new GameResultDto { ended = true, winner = Winners.GhostCaptain, endReason = EndReasons.Win };
+            ghost.players.Add(new PlayerResultDto { playerId = 1, alive = true });
+            ghost.players.Add(new PlayerResultDto { playerId = 2, alive = false });
+            ghost.players.Add(new PlayerResultDto { playerId = 3, alive = false });
+            var cancelled = new GameResultDto { ended = true, endReason = EndReasons.CancelledNoDeaths };
+
+            Assert.AreEqual("크라켄이 배를 바다 밑으로 끌고 갔습니다", ReportFormatter.ResultFlavor(kraken));
+            Assert.AreEqual("죽은 자가 산 자보다 많아졌습니다 · 죽은 자 2 · 산 자 1", ReportFormatter.ResultFlavor(ghost));
+            Assert.AreEqual(string.Empty, ReportFormatter.ResultFlavor(cancelled));
+        }
+
+        [Test]
         public void 중립_승리_문구()
         {
             Assert.AreEqual("세이렌 팀 승리", ReportFormatter.WinnerLine(Winners.Siren));

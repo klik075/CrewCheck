@@ -51,6 +51,8 @@ namespace WhoisntCitizen.Game
         private bool voteConfirmed;         // "투표 완료"를 서버가 받았는지
         private long daySkipVersion = -1;   // 토론을 넘긴 낮의 phaseVersion
         private DaySkipResultDto daySkipResult;
+        private bool markedByKraken;        // 크라켄의 표식이 내게 남아 있음 (KRAKEN_MARKED를 받았고 그 뒤 발동이 없었다)
+        private readonly HashSet<long> krakenVictims = new HashSet<long>(); // 크라켄에게 끌려가 죽은 사람 (밤 결과의 deaths, 전체 공개)
         private RoleSetupOptionsDto roleSetupOptions; // 직업 목록·추천 구성 (서버가 켜져 있는 동안 바뀌지 않아 한 번만 받는다)
         private readonly List<Action<RoleSetupOptionsDto>> roleSetupWaiters = new List<Action<RoleSetupOptionsDto>>();
 
@@ -164,6 +166,22 @@ namespace WhoisntCitizen.Game
         public List<PlayerViewDto> KrakenMarks
         {
             get { return AbilityRules.KrakenMarks(State, Me); }
+        }
+
+        /// <summary>
+        /// 크라켄의 표식이 내게 남아 있는지 (표식 당한 사람이 자기 명단 칸에만 보는 배지). 서버 /me에는 없어서 밤 결과로 기억한다:
+        /// KRAKEN_MARKED를 받으면 켜고, 누군가 크라켄에게 끌려간 밤(발동하면 서버가 표식을 모두 지운다)이나 내가 죽으면 끈다.
+        /// 재접속하면 처음부터 다시 기억하므로 사라질 수 있다. 발동을 선의 보호로 막아 아무도 끌려가지 않은 밤은 알 수 없어 남는다.
+        /// </summary>
+        public bool MarkedByKraken
+        {
+            get { return markedByKraken && Me != null && State != null && GameStateQueries.IsAlive(State, Me.playerId); }
+        }
+
+        /// <summary>이 사람이 크라켄에게 끌려가 죽었는지 (밤 결과의 사망 원인, 모두에게 공개된 정보).</summary>
+        public bool WasDraggedByKraken(long playerId)
+        {
+            return krakenVictims.Contains(playerId);
         }
 
         /// <summary>크라켄이 지금 발동할 수 있는지 (능력을 쓸 수 있고 표식을 남긴 생존자가 있다).</summary>
@@ -641,8 +659,32 @@ namespace WhoisntCitizen.Game
                 }
                 nightShownDay = r.Data.day;
                 LastNightResult = r.Data;
+                RememberKraken(r.Data);
                 view.ShowNightResult(r.Data);
             });
+        }
+
+        /// <summary>밤 결과로 크라켄 표식(내 것)과 크라켄 희생자를 기억한다. 발동이 표식을 지우므로 지우기를 먼저, 새 표식을 나중에 본다.</summary>
+        private void RememberKraken(NightResultDto night)
+        {
+            bool struck = false;
+            foreach (DeathDto death in night.Deaths)
+            {
+                if (death.cause != DeathCauses.Kraken) continue;
+                struck = true;
+                krakenVictims.Add(death.playerId);
+            }
+            if (struck)
+            {
+                markedByKraken = false;
+            }
+            foreach (ReportDto report in night.reports)
+            {
+                if (report != null && report.type == ReportTypes.KrakenMarked)
+                {
+                    markedByKraken = true;
+                }
+            }
         }
 
         /// <param name="ended">ENDED에서 부름. 밤에 승패가 났으면 그날 처형 결과가 없으므로, 없다고 확인되면 더 묻지 않는다.</param>
