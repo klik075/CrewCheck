@@ -7,6 +7,7 @@ import com.WhoisntCitizen_server.chat.entity.MessageType;
 import com.WhoisntCitizen_server.chat.event.ChatMessageSavedEvent;
 import com.WhoisntCitizen_server.chat.filter.ProfanityFilter;
 import com.WhoisntCitizen_server.chat.repository.ChatMessageRepository;
+import com.WhoisntCitizen_server.chat.spam.ChatSpamGuard;
 import com.WhoisntCitizen_server.common.exception.ForbiddenException;
 import com.WhoisntCitizen_server.common.exception.NotFoundException;
 import com.WhoisntCitizen_server.game.entity.Game;
@@ -54,6 +55,9 @@ import java.util.function.Predicate;
  *
  * 욕설 검열: 사용자가 보낸 메시지는 저장하기 전에 ProfanityFilter로 욕설 부분을 순화 단어(땡큐, 좋아요…)로 바꿉니다. (사망자·해적·세이렌 채팅 포함)
  * 저장소(Redis)와 다른 사람의 화면에는 바뀐 문장만 남습니다. 시스템 메시지는 서버가 만든 문장이라 검사하지 않습니다.
+ *
+ * 도배 방지: 같은 내용을 연속으로 3번째 보낼 때부터 응답에 경고 문구(spamWarning)를 넣고, 10번째에는 그 메시지를 저장하지 않고
+ * 3분간 채팅을 금지합니다(429 CHAT_MUTED). 금지 중에 보낸 메시지도 모두 429입니다. (ChatSpamGuard, 사망자·해적·세이렌 채팅 포함)
  */
 @Service
 public class ChatMessageService {
@@ -91,6 +95,8 @@ public class ChatMessageService {
     private final ApplicationEventPublisher eventPublisher;
     // 사용자 메시지의 욕설을 저장 전에 순화 단어로 바꾼다 (ProfanityFilterConfig가 만든 빈)
     private final ProfanityFilter profanityFilter;
+    // 같은 내용 반복(도배)을 경고하고, 계속하면 채팅을 금지한다 (ChatSpamConfig가 만든 빈)
+    private final ChatSpamGuard spamGuard;
 
     @Autowired
     public ChatMessageService(ChatMessageRepository repository,
@@ -99,7 +105,8 @@ public class ChatMessageService {
                               GameRepository gameRepository,
                               GameLock gameLock,
                               ApplicationEventPublisher eventPublisher,
-                              ProfanityFilter profanityFilter) {
+                              ProfanityFilter profanityFilter,
+                              ChatSpamGuard spamGuard) {
         this.repository = repository;
         this.roomRepository = roomRepository;
         this.userRepository = userRepository;
@@ -107,6 +114,19 @@ public class ChatMessageService {
         this.gameLock = gameLock;
         this.eventPublisher = eventPublisher;
         this.profanityFilter = profanityFilter == null ? ProfanityFilter.disabled() : profanityFilter;
+        this.spamGuard = spamGuard == null ? ChatSpamGuard.disabled() : spamGuard;
+    }
+
+    /** 도배 방지 없이 만드는 생성자 (도배 방지와 관계없는 테스트용) */
+    public ChatMessageService(ChatMessageRepository repository,
+                              LobbyRoomRepository roomRepository,
+                              UserRepository userRepository,
+                              GameRepository gameRepository,
+                              GameLock gameLock,
+                              ApplicationEventPublisher eventPublisher,
+                              ProfanityFilter profanityFilter) {
+        this(repository, roomRepository, userRepository, gameRepository, gameLock, eventPublisher, profanityFilter,
+                ChatSpamGuard.disabled());
     }
 
     /** 욕설 검열 없이 만드는 생성자 (검열과 관계없는 테스트용) */
@@ -155,6 +175,7 @@ public class ChatMessageService {
      * 게임 중이면 보낸 사람의 상태에 따라 정해집니다: 사망자 → DEAD, 밤의 해적 → 해적에게만 보이는 전체 채팅,
      * 밤의 세이렌 → 세이렌 팀에게만 보이는 채팅, 그 밖 → 전체 채팅
      * 욕설은 순화 단어로 바꿔서 저장하고, 응답에도 바뀐 문장이 들어갑니다. (보낸 사람도 바뀐 결과를 봅니다)
+     * 도배: 같은 내용 3번째부터 응답의 spamWarning에 경고 문구 / 10번째와 금지 중에는 저장하지 않고 ChatMutedException(429)
      */
     public ChatMessageResponse send(long roomId, Long memberId, String message) {
         Room room = getRoom(roomId);
@@ -181,12 +202,15 @@ public class ChatMessageService {
         MessageType type = rule == Rule.DEAD ? MessageType.DEAD : MessageType.USER;
         String gameId = rule == Rule.PUBLIC ? null : decided.gameId();
 
+        // 도배 확인 (채팅 금지면 ChatMutedException → 429, 메시지는 저장하지 않는다). 비교는 욕설을 바꾸기 전 원문으로 한다
+        String spamWarning = spamGuard.check(player.getUserId(), message);
+
         // 욕설 필터링
         String text = profanityFilter.mask(message.trim());
         ChatMessage saved = repository.save(roomId, type, player.getUserId(), player.getNickname(), text,
                 gameId, rule == Rule.NIGHT_PIRATE, rule == Rule.NIGHT_SIREN);
         publishSaved(saved, decided.audience());
-        return ChatMessageResponse.from(saved);
+        return ChatMessageResponse.from(saved, spamWarning);
     }
 
     /** 공지(시스템 메시지) 전송. 게임 페이즈 알림 등 서버 코드에서도 직접 호출할 수 있습니다. */

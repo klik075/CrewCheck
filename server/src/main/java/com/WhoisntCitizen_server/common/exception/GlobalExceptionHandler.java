@@ -1,5 +1,7 @@
 package com.WhoisntCitizen_server.common.exception;
 
+import com.WhoisntCitizen_server.chat.dto.ChatMutedResponse;
+import com.WhoisntCitizen_server.chat.spam.ChatMutedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.RedisConnectionFailureException;
@@ -72,6 +74,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ForbiddenException.class)
     public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ErrorResponse("FORBIDDEN", e.getMessage()));
+    }
+
+    /**
+     * 도배로 채팅 금지: 429 Too Many Requests + Retry-After(남은 초), code = CHAT_MUTED
+     * warning(금지가 막 시작될 때의 경고 문구)과 remainingSeconds를 함께 보낸다. 메시지는 저장되지 않았다.
+     */
+    @ExceptionHandler(ChatMutedException.class)
+    public ResponseEntity<ChatMutedResponse> handleChatMuted(ChatMutedException e) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRemainingSeconds()))
+                .body(new ChatMutedResponse(ChatMutedException.CODE, e.getMessage(), e.getWarning(),
+                        e.getRemainingSeconds()));
     }
 
     /** JSON 본문을 읽을 수 없음: 400 */
