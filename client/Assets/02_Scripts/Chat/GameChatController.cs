@@ -29,6 +29,8 @@ namespace WhoisntCitizen.Chat
     ///  - 사망자 채팅(type=DEAD, 서버가 사망자에게만 보내 줌) → 닉네임·내용 모두 회색
     ///  - 밤 채팅: 밤에는 해적만 입력할 수 있고(그 밖은 서버가 403 → 안내 문장 표시), 서버가 해적에게만 보내 줌 → 닉네임·내용 모두 주황색
     ///  - 오류는 채팅용 문장으로 바꿔 표시하고 콘솔에는 원문도 남김. 401이면 다시 로그인
+    ///  - 도배 방지(서버 ChatSpamGuard): 같은 내용 3번째부터 전송 응답의 경고 문구를 내 화면에만 주황색으로,
+    ///    10번째(429 CHAT_MUTED)에는 경고(주황색)와 3분 채팅 금지 안내(붉은색)를 표시. 금지 중에는 서버에 보내지 않고 남은 시간을 붉은색으로 안내
     ///  - SendSystemMessage(): 공지 전송 (에디터 창 Tools > Chat > System Message Console)
     ///
     /// 글꼴은 ChatLogView의 줄 프리팹(ChatLogLine) 것을 그대로 쓰고, 글자색은 아래 Style 설정을 씁니다.
@@ -76,6 +78,10 @@ namespace WhoisntCitizen.Chat
         public Color deadColor = new Color(0.6f, 0.6f, 0.6f);
         [Tooltip("밤에 해적이 입력한 채팅(nightChat)의 내용 글자색. 닉네임은 일반 채팅과 같은 색(내 것/남의 것)을 씁니다")]
         public Color nightChatColor = new Color(1f, 0.6f, 0.2f);
+        [Tooltip("도배 경고 문구(같은 내용을 3번 이상 연속으로 보냈을 때) 글자색: 주황색")]
+        public Color spamWarningColor = new Color(1f, 0.55f, 0.1f);
+        [Tooltip("도배 채팅 금지 안내(10번째, 금지 중 전송 시도) 글자색: 붉은색")]
+        public Color spamMuteColor = new Color(1f, 0.2f, 0.2f);
 
         [Header("Console (Unity 콘솔 연동)")]
         public bool logSystemMessagesToConsole = true;
@@ -95,6 +101,7 @@ namespace WhoisntCitizen.Chat
         int _pollCount;
         string _lastStatus = ""; // 마지막으로 표시한 일시 오류 (같은 오류 반복 표시 방지)
         bool _failed;            // 다시 시도해도 안 되는 오류로 멈춤
+        float _mutedUntil = -1f; // 도배로 채팅이 금지된 동안(unscaledTime). 이 시각 전에는 서버에 보내지 않고 안내만 한다
 
         // 내 화면 전용 줄(안내·오류). anchor = 생겼을 때 마지막으로 받은 메시지 id (그 메시지 뒤에 표시)
         class LocalLine
@@ -104,7 +111,21 @@ namespace WhoisntCitizen.Chat
             public string text;
             public bool error;
             public DateTime time;
+            public Color? color;   // 지정하면 이 색으로 표시 (도배 경고·채팅 금지 안내)
+            public string label;   // 지정하면 이름패에 이 말 ("경고", "알림")
         }
+
+        // 내 메시지 뒤에 붙일 안내 (도배 경고). 그 메시지를 받아 온 뒤(또는 잠시 뒤)에 _locals로 옮긴다
+        class PendingNotice
+        {
+            public long afterMessageId;
+            public string text;
+            public Color color;
+            public string label;
+            public float showAt; // 메시지를 못 받아도 이 시각(unscaledTime)이 지나면 표시
+        }
+        readonly List<PendingNotice> _pendingNotices = new List<PendingNotice>();
+        const float PendingNoticeMaxWait = 3f;
 
         // 메시지를 처음 받은 시각 (조회 응답에는 보낸 시각이 없다). 입장할 때 받아 온 이전 대화는 넣지 않는다
         readonly Dictionary<string, DateTime> _receivedAt = new Dictionary<string, DateTime>();
@@ -179,6 +200,7 @@ namespace WhoisntCitizen.Chat
 
         void Update()
         {
+            if (_pendingNotices.Count > 0 && FlushPendingNotices()) Render();
             if (!_ready || pollInterval <= 0f || Time.unscaledTime < _nextPollTime) return;
             // 방을 나가는 중(RoomSession이 비워짐)이면 더 묻지 않는다. 방이 지워져 404가 나기 때문이다.
             if (_roomFromSession && !RoomSession.HasRoom) return;
@@ -382,15 +404,33 @@ namespace WhoisntCitizen.Chat
                 SetError(_failed ? "채팅을 사용할 수 없습니다." : "서버와 연결이 끊어졌습니다. 다시 연결하는 중입니다...");
                 return;
             }
+            // 도배로 채팅 금지 중: 서버에 보내지 않고 남은 시간을 붉은색으로 안내 (서버도 같은 이유로 429를 준다)
+            if (_mutedUntil > Time.unscaledTime)
+            {
+                long left = (long)Math.Ceiling(_mutedUntil - Time.unscaledTime);
+                AddSpamLine("도배로 채팅이 금지된 상태입니다. " + FormatSeconds(left) + " 후에 다시 채팅할 수 있습니다.", spamMuteColor, "알림");
+                return;
+            }
 
             _sending = true;
             StartCoroutine(api.PostMessage(text,
-                senderId =>
+                result =>
                 {
                     _sending = false;
-                    if (senderId >= 0 && senderId != myUserId) myUserId = senderId;
+                    if (result.userId >= 0 && result.userId != myUserId) myUserId = result.userId;
                     _lastStatus = "";
                     _stickToBottom = true; // 내가 보낸 메시지는 항상 보이도록
+                    if (!string.IsNullOrEmpty(result.spamWarning))
+                    {
+                        // 도배 경고(주황색)는 내 메시지 바로 뒤에 보이도록, 그 메시지를 받아 온 뒤에 붙인다
+                        Debug.LogWarning("[Chat][도배 경고] " + result.spamWarning);
+                        _pendingNotices.Add(new PendingNotice
+                        {
+                            afterMessageId = result.messageId, text = result.spamWarning, color = spamWarningColor, label = "경고",
+                            showAt = Time.unscaledTime + PendingNoticeMaxWait,
+                        });
+                        if (FlushPendingNotices()) Render();
+                    }
                     RequestFetch();
                 },
                 (err, code) =>
@@ -399,7 +439,50 @@ namespace WhoisntCitizen.Chat
                     // 입력칸은 BottomTabController가 이미 비웠으므로 보내지 못한 내용을 안내에 남긴다.
                     SetError(Friendly(err, code) + " (보내지 못한 메시지: " + text + ")", err);
                     if (code == 401) HandleUnauthorized();
+                },
+                mute =>
+                {
+                    // 429 CHAT_MUTED: 메시지는 저장되지 않았다. 경고(주황색) → 채팅 금지 안내(붉은색) 순서로 표시
+                    _sending = false;
+                    _mutedUntil = Time.unscaledTime + Mathf.Max(1f, mute.remainingSeconds);
+                    Debug.LogWarning("[Chat][채팅 금지] " + mute.message + (mute.warning != null ? "  (" + mute.warning + ")" : ""));
+                    if (!string.IsNullOrEmpty(mute.warning)) AddSpamLine(mute.warning, spamWarningColor, "경고", false);
+                    AddSpamLine(string.IsNullOrEmpty(mute.message) ? "도배로 채팅이 금지되었습니다." : mute.message, spamMuteColor, "알림");
                 }));
+        }
+
+        /// 도배 경고·채팅 금지 안내 한 줄 (SetError와 달리 같은 문장이 반복돼도 매번 표시)
+        void AddSpamLine(string text, Color color, string label, bool render = true)
+        {
+            AddLocal(text, false, color, label);
+            _lastStatus = "";
+            _stickToBottom = true;
+            if (render) Render();
+        }
+
+        /// 받아 온 메시지 뒤에 붙일 안내를 _locals로 옮긴다. 옮긴 것이 있으면 true
+        bool FlushPendingNotices()
+        {
+            bool moved = false;
+            for (int i = 0; i < _pendingNotices.Count; i++)
+            {
+                var p = _pendingNotices[i];
+                bool arrived = p.afterMessageId >= 0 && _lastId >= p.afterMessageId;
+                if (!arrived && p.afterMessageId >= 0 && Time.unscaledTime < p.showAt) continue;
+                AddLocal(p.text, false, p.color, p.label);
+                _pendingNotices.RemoveAt(i--);
+                moved = true;
+            }
+            if (moved) _stickToBottom = true;
+            return moved;
+        }
+
+        /// 135 → "2분 15초", 180 → "3분", 40 → "40초" (서버 문구와 같은 모양)
+        static string FormatSeconds(long seconds)
+        {
+            long s = Math.Max(1, seconds), m = s / 60, r = s % 60;
+            if (m == 0) return r + "초";
+            return r == 0 ? m + "분" : m + "분 " + r + "초";
         }
 
         /// 시스템 메시지(공지) 전송. 채팅창에는 서버 조회 결과로 [시스템]이 표시되고 콘솔에도 출력됩니다.
@@ -476,7 +559,11 @@ namespace WhoisntCitizen.Chat
             hasLiveSnapshot = true;
             _lastStatus = "";
             var sorted = SortOldestFirst(list).ToList();
-            if (SameIds(sorted, _messages)) return;
+            if (SameIds(sorted, _messages))
+            {
+                if (_pendingNotices.Count > 0 && FlushPendingNotices()) Render();
+                return;
+            }
 
             if (MaxId(sorted) < _lastLoggedSystemId) _lastLoggedSystemId = -1; // 서버/Redis 초기화
             if (_lastId >= 0 && MaxId(sorted) < _lastId) _renderedKeys.RemoveWhere(k => k.StartsWith("m")); // id가 다시 매겨짐 → 새 메시지로 취급
@@ -484,6 +571,7 @@ namespace WhoisntCitizen.Chat
             _messages.AddRange(sorted);
             TrimToMax();
             _lastId = MaxId(_messages);
+            FlushPendingNotices();
             if (notifyLive)
                 foreach (var message in sorted)
                     if (long.TryParse(message.id, out long id) && id > previousId)
@@ -511,7 +599,12 @@ namespace WhoisntCitizen.Chat
                 if (hasId && id > _lastId) _lastId = id;
                 added = true;
             }
-            if (!added) return;
+            bool noticed = _pendingNotices.Count > 0 && FlushPendingNotices();
+            if (!added)
+            {
+                if (noticed) Render();
+                return;
+            }
             TrimToMax();
             ResolveAnchors();
             LogNewSystemMessages();
@@ -541,11 +634,12 @@ namespace WhoisntCitizen.Chat
             Render();
         }
 
-        void AddLocal(string text, bool error)
+        void AddLocal(string text, bool error, Color? color = null, string label = null)
         {
             _locals.Add(new LocalLine
             {
-                seq = ++_localSeq, anchor = _lastId >= 0 ? _lastId : UnresolvedAnchor, text = text, error = error, time = DateTime.Now
+                seq = ++_localSeq, anchor = _lastId >= 0 ? _lastId : UnresolvedAnchor, text = text, error = error, time = DateTime.Now,
+                color = color, label = label
             });
             if (_locals.Count > maxMessages) _locals.RemoveRange(0, _locals.Count - maxMessages);
         }
@@ -677,15 +771,17 @@ namespace WhoisntCitizen.Chat
 
         ChatEntry LocalEntry(LocalLine l)
         {
-            Color color = l.error ? errorColor : localNoticeColor;
+            Color color = l.color ?? (l.error ? errorColor : localNoticeColor);
+            // 색을 지정한 줄(도배 경고·채팅 금지)은 [안내] 머리말 없이 "[경고] ..." / "[알림] ..." 으로 표시
+            string prefix = l.label != null ? "[" + l.label + "] " : (l.error ? "" : localNoticePrefix);
             return new ChatEntry
             {
                 Kind = ChatEntryKind.Notice,
-                Nickname = l.error ? "알림" : "안내",
+                Nickname = l.label ?? (l.error ? "알림" : "안내"),
                 Text = l.text,
                 TextColor = color,
                 Time = l.time,
-                Rich = Colored((l.error ? "" : localNoticePrefix) + l.text, color),
+                Rich = Colored(prefix + l.text, color),
             };
         }
 
