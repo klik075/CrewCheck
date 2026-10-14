@@ -11,7 +11,8 @@ namespace WhoisntCitizen.GameUI
     /// <summary>
     /// The night scene: the room of my role (<see cref="NightSceneBackgroundCatalog"/>) with my character standing in it,
     /// on the stage the day table uses (<see cref="GameHudMetrics"/>: below the top HUD, above the chat). Pirates who know each other stand
-    /// together in the pirates' room; who is in the room comes from <see cref="NightRoomRules"/>.
+    /// together in the pirates' room; dead players gather on the ghost deck, regardless of faction.
+    /// Who is in the room comes from <see cref="NightRoomRules"/>.
     /// - The room changes with a crossfade (the parrot's room turns into the pirates' room when it makes contact) and a
     ///   member who joins a room already on screen walks in from the side (the pirates see the parrot arrive).
     /// - <see cref="PlayAbility"/>: when my night action is accepted, the role's cut-in (<see cref="AbilityCutInView"/>)
@@ -63,6 +64,7 @@ namespace WhoisntCitizen.GameUI
         private RectTransform canvas;
         private RectTransform stage, content, backFx, figureLayer, frontFx;
         private Image backdrop, oldBackdrop, shadeFade, shadeSolid;
+        private TextMeshProUGUI deadRoomTitle;
         private NightSceneBackgroundCatalog backgrounds;
         private AbilityCutInCatalog cutIns;
         private AbilityCutInView cutIn;
@@ -123,6 +125,18 @@ namespace WhoisntCitizen.GameUI
             backFx = NewCentred("EffectsBehind", content);
             figureLayer = NewCentred("Figures", content);
             frontFx = NewCentred("EffectsFront", content);
+            RectTransform title = NewRect("DeadRoomTitle", stage);
+            title.anchorMin = title.anchorMax = new Vector2(0.5f, 1f);
+            title.anchoredPosition = new Vector2(0f, -32f);
+            title.sizeDelta = new Vector2(480f, 44f);
+            deadRoomTitle = title.gameObject.AddComponent<TextMeshProUGUI>();
+            if (font != null) deadRoomTitle.font = font;
+            deadRoomTitle.text = "망자들의 갑판";
+            deadRoomTitle.fontSize = 28f;
+            deadRoomTitle.alignment = TextAlignmentOptions.Center;
+            deadRoomTitle.color = new Color(0.76f, 0.9f, 1f);
+            deadRoomTitle.raycastTarget = false;
+            title.gameObject.SetActive(false);
             motion = new NightAbilityMotion(backFx, frontFx, content);
             SetVisible(false);
         }
@@ -142,6 +156,12 @@ namespace WhoisntCitizen.GameUI
         {
             if (!initialized || members == null) return;
             myId = myPlayerId;
+            // Death takes priority over an old action response or a cut-in still playing.
+            if (designId == NightRoomRules.DeadShared && abilityRunning)
+            {
+                hasPending = false;
+                StopAbility();
+            }
             if (abilityRunning)
             {
                 hasPending = true;
@@ -160,6 +180,8 @@ namespace WhoisntCitizen.GameUI
         public void PlayAbility(string designId, string actionCode, string roleTitle, string abilityLine, bool withCutIn)
         {
             if (!initialized || !visible || !isActiveAndEnabled) return;
+            Figure actor = FindFigure(myId);
+            if (currentDesign == NightRoomRules.DeadShared || actor == null || !actor.alive || actor.leaveStart >= 0f) return;
             StopAbility();
             Sprite art = null;
             bool hasGameplayAbility;
@@ -257,6 +279,7 @@ namespace WhoisntCitizen.GameUI
             float now = Time.unscaledTime;
             string design = string.IsNullOrEmpty(designId) ? FallbackDesign : designId;
             bool newRoom = design != currentDesign;
+            deadRoomTitle.gameObject.SetActive(design == NightRoomRules.DeadShared);
             if (newRoom)
             {
                 ShowBackdrop(design, visible && currentDesign != null);
@@ -314,9 +337,18 @@ namespace WhoisntCitizen.GameUI
                 f.label.text = member.nickname;
                 f.label.color = f.mine ? MyName : Color.white;
             }
-            foreach (Figure f in figures)
+            for (int i = figures.Count - 1; i >= 0; i--)
             {
-                if (!present.Contains(f.playerId) && f.leaveStart < 0f) f.leaveStart = now;
+                Figure f = figures[i];
+                if (present.Contains(f.playerId)) continue;
+                if (design == NightRoomRules.DeadShared && f.alive)
+                {
+                    // Living former teammates must not linger on the dead players' deck during the fade.
+                    f.holder.gameObject.SetActive(false);
+                    Destroy(f.holder.gameObject);
+                    figures.RemoveAt(i);
+                }
+                else if (f.leaveStart < 0f) f.leaveStart = now;
             }
             // Draw back to front.
             figures.Sort((a, b) =>
@@ -333,6 +365,11 @@ namespace WhoisntCitizen.GameUI
         {
             slotPositions.Clear();
             slotHeights.Clear();
+            if (currentDesign == NightRoomRules.DeadShared && count > 4)
+            {
+                LayoutDeadSlots(count);
+                return;
+            }
             if (count <= 1)
             {
                 slotPositions.Add(new Vector2(0f, FrontFeetY));
@@ -350,6 +387,29 @@ namespace WhoisntCitizen.GameUI
                 float y = distance == 0 ? FrontFeetY : (distance % 2 == 1 ? BackFeetY : (FrontFeetY + BackFeetY) * 0.5f);
                 slotPositions.Add(new Vector2(x, y));
                 slotHeights.Add(distance == 0 ? GroupHeight : GroupHeight * OtherScale);
+            }
+        }
+
+        // Up to twelve ghosts: balanced rows of at most four, with me in the front row.
+        // Row spacing keeps the back row's name labels clear of the heads in front.
+        private void LayoutDeadSlots(int count)
+        {
+            int rows = Mathf.CeilToInt(count / 4f);
+            float height = rows > 2 ? 190f : 260f;
+            float rowSpacing = rows > 2 ? 220f : 300f;
+            int remaining = count;
+            for (int row = 0; row < rows; row++)
+            {
+                int columns = Mathf.CeilToInt((float)remaining / (rows - row));
+                float spacing = Mathf.Min(MaxSpacing, GroupWidth / Mathf.Max(1, columns - 1));
+                int middle = columns / 2;
+                for (int member = 0; member < columns; member++)
+                {
+                    int slot = row == 0 ? (member == 0 ? middle : (member - 1 < middle ? member - 1 : member)) : member;
+                    slotPositions.Add(new Vector2((slot - (columns - 1) * 0.5f) * spacing, FrontFeetY + row * rowSpacing));
+                    slotHeights.Add(height * (1f - row * 0.06f));
+                }
+                remaining -= columns;
             }
         }
 
@@ -485,7 +545,7 @@ namespace WhoisntCitizen.GameUI
         {
             float k = f.moveSeconds > 0f ? Mathf.Clamp01((now - f.moveStart) / f.moveSeconds) : 1f;
             Vector2 p = Vector2.Lerp(f.from, f.to, k * k * (3f - 2f * k));
-            if (f.walk && k < 1f) p.y += Mathf.Abs(Mathf.Sin(k * Mathf.PI * 5f)) * 14f; // steps
+            if (f.walk && f.alive && k < 1f) p.y += Mathf.Abs(Mathf.Sin(k * Mathf.PI * 5f)) * 14f; // ghosts drift in without footsteps
             return p;
         }
 
