@@ -20,8 +20,8 @@ namespace WhoisntCitizen.GameUI
     {
         private const int SeatCount = 12;
         private const float TableHeight = 850f;
-        private const float ArrivalDuration = 0.45f;
-        private const float BreathingAmount = 0.006f;
+        private const float ArrivalDuration = 0.7f;
+        private const float BreathingAmount = 0.012f;
         // Chair floor point (bottom centre of the chair), clockwise from 12 o'clock, in table coordinates (y up).
         // Tuned to the painted table: the far row and the 3/9 o'clock seats sit behind its rim (the table hides their
         // laps, so nobody sits on the table top); the near row sits in front of its skirt.
@@ -99,6 +99,8 @@ namespace WhoisntCitizen.GameUI
             public bool alive;
             public float arrivedAt;
             public float breathingPhase;
+            public ChibiCharacterSkin skin;
+            public Sprite restingSprite;
             public Vector2 restingPosition;
             public Vector3 restingScale;
             public Color restingColor;
@@ -109,6 +111,7 @@ namespace WhoisntCitizen.GameUI
             public Image speakingGlow;      // soft gold light behind the speaker
             public Outline speakingOutline;
             public float speechUntil;
+            public float speechStartedAt;
         }
 
         private readonly Seat[] seats = new Seat[SeatCount];
@@ -126,6 +129,7 @@ namespace WhoisntCitizen.GameUI
         private Image background;
         private Sprite originalBackground;
         private Color originalBackgroundColor;
+        private DayOceanMotion oceanMotion;
         private Sprite previewSprite;
         private bool initialized;
         private int capacity = SeatCount;
@@ -176,6 +180,11 @@ namespace WhoisntCitizen.GameUI
             {
                 originalBackground = background.sprite;
                 originalBackgroundColor = background.color;
+                if (Application.isPlaying)
+                {
+                    oceanMotion = background.GetComponent<DayOceanMotion>();
+                    if (oceanMotion == null) oceanMotion = background.gameObject.AddComponent<DayOceanMotion>();
+                }
             }
 
             var root = new GameObject("DayRoundTable", typeof(RectTransform));
@@ -366,6 +375,16 @@ namespace WhoisntCitizen.GameUI
         {
             if (!initialized || tableRoot == null) return;
             if (!visible) ClearSpeech();
+            // Returning from night is a new seating beat. Repeated day/vote refreshes keep the motion running.
+            if (visible && !tableRoot.gameObject.activeSelf && Application.isPlaying)
+            {
+                for (int i = 0; i < capacity; i++)
+                {
+                    Seat seat = seats[seatOrder[i]];
+                    if (seat != null && seat.occupied && seat.alive)
+                        seat.arrivedAt = Time.unscaledTime + i * 0.025f;
+                }
+            }
             tableRoot.gameObject.SetActive(visible);
             if (background != null)
             {
@@ -373,6 +392,7 @@ namespace WhoisntCitizen.GameUI
                 background.sprite = visible && deck != null ? deck : originalBackground;
                 background.color = visible && deck != null ? Color.white : originalBackgroundColor;
                 background.preserveAspect = false;
+                if (oceanMotion != null) oceanMotion.SetVisible(visible && deck != null);
             }
         }
 
@@ -501,7 +521,7 @@ namespace WhoisntCitizen.GameUI
                 // Polling the same roster must not restart the arrival or breathing motion.
                 if (!seat.occupied || seat.playerId != players[i].playerId)
                 {
-                    seat.arrivedAt = relayingOut ? -10f : Time.unscaledTime; // a layout change only moves people, no arrival
+                    seat.arrivedAt = relayingOut ? -10f : Time.unscaledTime + ordinal * 0.025f;
                     HideSpeech(seat);
                 }
                 seat.occupied = true;
@@ -519,7 +539,9 @@ namespace WhoisntCitizen.GameUI
                     skin = skins != null && skins.Length > 0 ? skins[skinIndex % skins.Length] : null;
                 }
                 wornSkins[players[i].playerId] = skin;
-                ApplySprite(seat, SpriteFor(skin, seat.pose) ?? previewSprite);
+                seat.skin = skin;
+                seat.restingSprite = SpriteFor(skin, seat.pose) ?? previewSprite;
+                ApplySprite(seat, seat.restingSprite);
                 seat.restingColor = seat.alive ? Color.white : new Color(0.55f, 0.6f, 0.65f, 0.6f);
                 seat.name.text = players[i].nickname;
                 if (seat.nameBack != null)
@@ -538,6 +560,7 @@ namespace WhoisntCitizen.GameUI
                 HideSpeech(seat);
                 seat.avatar.rectTransform.anchoredPosition = seat.restingPosition;
                 seat.avatar.rectTransform.localScale = seat.restingScale;
+                seat.avatar.rectTransform.localRotation = Quaternion.identity;
                 seat.avatar.gameObject.SetActive(false);
                 seat.nameRoot.SetActive(false);
             }
@@ -580,6 +603,7 @@ namespace WhoisntCitizen.GameUI
             {
                 if (seat == null || !seat.occupied || !seat.alive || seat.playerId != userId) continue;
                 seat.speechText.text = ShortText(message, SpeechLength);
+                seat.speechStartedAt = Time.unscaledTime;
                 seat.speechUntil = Time.unscaledTime + 4.5f;
                 seat.speechGroup.alpha = 1f;
                 seat.bubble.gameObject.SetActive(true);
@@ -766,7 +790,9 @@ namespace WhoisntCitizen.GameUI
 
         private static void ApplySeatVisual(Seat seat, float now, bool animate)
         {
-            float arrival = animate ? Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((now - seat.arrivedAt) / ArrivalDuration)) : 1f;
+            bool moving = animate && seat.alive;
+            float progress = moving ? Mathf.Clamp01((now - seat.arrivedAt) / ArrivalDuration) : 1f;
+            float arrival = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(progress * 3f));
             Color color = seat.restingColor;
             color.a *= arrival;
             seat.avatar.color = color;
@@ -777,14 +803,33 @@ namespace WhoisntCitizen.GameUI
                 seat.nameBack.color = new Color(back.r, back.g, back.b, back.a * arrival);
             }
 
-            float stretch = animate && seat.alive
-                ? Mathf.Sin(now * 1.7f + seat.breathingPhase) * BreathingAmount * arrival
+            float phase = seat.breathingPhase;
+            float breath = moving ? Mathf.Sin(now * (1.65f + 0.12f * Mathf.Sin(phase)) + phase) * BreathingAmount * arrival : 0f;
+            float sway = moving ? Mathf.Sin(now * 0.85f + phase) * 0.65f * arrival : 0f;
+            float speaking = moving && seat.speechUntil > now
+                ? Mathf.SmoothStep(0f, 1f, (now - seat.speechStartedAt) / 0.18f) * Mathf.Clamp01((seat.speechUntil - now) / 0.4f)
                 : 0f;
+            float nod = Mathf.Sin((now - seat.speechStartedAt) * 11f + phase) * speaking;
+            // A short downward settle, then one soft compression/recovery. The feet stay on the cushion at rest.
+            float drop = (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(progress / 0.45f))) * seat.figureHeight * 0.065f;
+            float settle = progress < 0.3f ? 0f : Mathf.Sin((progress - 0.3f) / 0.7f * Mathf.PI * 2f) * (1f - progress) * 0.07f;
             Vector3 scale = seat.restingScale;
-            scale.y *= 1f + stretch;
-            // The pivot is where the character sits, so breathing stretches upward and never leaves the cushion.
+            scale.x *= 1f - breath * 0.35f + settle * 0.45f;
+            scale.y *= 1f + breath - settle + nod * 0.009f;
             seat.avatar.rectTransform.localScale = scale;
-            seat.avatar.rectTransform.anchoredPosition = seat.restingPosition;
+            seat.avatar.rectTransform.localRotation = Quaternion.Euler(0f, 0f, sway + nod * 0.7f);
+            seat.avatar.rectTransform.anchoredPosition = seat.restingPosition + Vector2.up * drop;
+
+            // Only front poses have expression frames. Other directions keep their own artwork and gesture in place.
+            Sprite sprite = seat.restingSprite;
+            if (moving && seat.pose == ChibiPose.SeatedFront && seat.skin != null)
+            {
+                bool blink = Mathf.Repeat(now + phase, 3.6f + 0.6f * Mathf.Sin(phase)) < 0.13f;
+                bool talk = speaking > 0.1f && Mathf.Sin(now * 16f + phase) > 0f;
+                if (blink && seat.skin.SeatedFrontBlink != null) sprite = seat.skin.SeatedFrontBlink;
+                else if (talk && seat.skin.SeatedFrontTalk != null) sprite = seat.skin.SeatedFrontTalk;
+            }
+            if (seat.avatar.sprite != sprite) ApplySprite(seat, sprite);
         }
 
         private static Sprite SpriteFor(ChibiCharacterSkin skin, ChibiPose pose)
