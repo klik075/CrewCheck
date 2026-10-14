@@ -16,6 +16,7 @@ namespace WhoisntCitizen.Lobby
         private sealed class RoleRow
         {
             public RoleDto Role;
+            public RectTransform Rect;
             public TMP_Text Name, Count;
             public Button Minus, Plus;
             public Toggle Candidate;
@@ -35,6 +36,12 @@ namespace WhoisntCitizen.Lobby
         private RoomHelmGraphic switchBack, switchKnob, validity;
         private CanvasGroup applyGroup;
         private CanvasGroup controls;
+        // 직업 줄의 초상화·이름 쪽을 누르면 그 줄 아래(자리가 없으면 위)에 뜨는 직업 설명
+        private RectTransform viewport, tooltip;
+        private TMP_Text tooltipTitle, tooltipBody, tooltipGoal;
+        private RoleRow tipRow;
+        private readonly Vector3[] corners = new Vector3[4];
+        private const float TooltipWidth = 620, TooltipPad = 24;
         private Color32 muted = new Color32(119, 93, 63, 255);
         private static readonly Color Good = new Color32(41, 100, 70, 255);
         private static readonly Color Bad = new Color32(147, 45, 32, 255);
@@ -160,7 +167,7 @@ namespace WhoisntCitizen.Lobby
             Text("CandidateHeader", root, 864, 602, 126, 40, "랜덤 후보", 24, Ink, true);
             Rule(root, 126, 644, 856);
 
-            var viewport = Panel("Viewport", root, 124, 650, 854, 830, null, Color.clear);
+            viewport = Panel("Viewport", root, 124, 650, 854, 830, null, Color.clear);
             viewport.GetComponent<Image>().raycastTarget = true;
             viewport.gameObject.AddComponent<RectMask2D>();
             content = Rect("Roles", viewport);
@@ -201,8 +208,94 @@ namespace WhoisntCitizen.Lobby
             apply = Button("Apply", root, 452, 1722, 548, 112, "구성 적용", 38, true);
             apply.onClick.AddListener(() => confirm());
             applyGroup = apply.gameObject.AddComponent<CanvasGroup>();
+            BuildTooltip();
             Fit();
         }
+
+        /// <summary>직업 설명 상자. 클릭을 가로채지 않도록 레이캐스트를 끄고, 다른 UI보다 위에 그린다.</summary>
+        private void BuildTooltip()
+        {
+            tooltip = Wood("RoleTooltip", root, 0, 0, TooltipWidth, 160);
+            var group = tooltip.gameObject.AddComponent<CanvasGroup>();
+            group.blocksRaycasts = false;
+            group.interactable = false;
+            float width = TooltipWidth - TooltipPad * 2;
+            tooltipTitle = Text("Title", tooltip, TooltipPad, 16, width, 42, "", 29, Cream, true);
+            tooltipBody = Text("Description", tooltip, TooltipPad, 64, width, 40, "", 25, Cream);
+            tooltipBody.textWrappingMode = TextWrappingModes.Normal;
+            tooltipBody.enableAutoSizing = false;
+            tooltipBody.overflowMode = TextOverflowModes.Overflow;
+            tooltipBody.alignment = TextAlignmentOptions.TopLeft;
+            tooltipGoal = Text("Goal", tooltip, TooltipPad, 0, width, 34, "", 23, Gold, true);
+            foreach (TMP_Text text in new[] { tooltipTitle, tooltipBody, tooltipGoal }) text.richText = false; // 이름은 서버가 준 문자열
+            tooltip.gameObject.SetActive(false);
+        }
+
+        private void ShowTooltip(RoleRow row)
+        {
+            if (tooltip == null || row?.Role == null) return;
+            tipRow = row;
+            string faction = Faction(row.Role);
+            tooltipTitle.text = (row.Role.name ?? row.Role.code) + "  ·  " + FactionLabel(faction);
+            tooltipBody.text = RoleInfoText.Description(row.Role.code);
+            tooltipGoal.text = "목표 · " + RoleInfoText.Goal(row.Role.code, faction);
+            tooltip.gameObject.SetActive(true);
+            tooltip.SetAsLastSibling();
+            float width = TooltipWidth - TooltipPad * 2;
+            float body = Mathf.Ceil(tooltipBody.GetPreferredValues(tooltipBody.text, width, 0).y);
+            Place(tooltipBody.rectTransform, TooltipPad, 64, width, body);
+            Place(tooltipGoal.rectTransform, TooltipPad, 64 + body + 10, width, 34);
+            tooltip.sizeDelta = new Vector2(TooltipWidth, 64 + body + 10 + 34 + 20);
+            PlaceTooltip();
+        }
+
+        /// <summary>row가 아직 설명을 띄운 줄일 때만 닫는다 (다른 줄로 옮겨 간 뒤 늦게 온 이탈은 무시). null이면 무조건 닫는다.</summary>
+        private void HideTooltip(RoleRow row)
+        {
+            if (row != null && row != tipRow) return;
+            tipRow = null;
+            if (tooltip != null) tooltip.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// 설명 상자를 올린 줄의 이름 쪽(초상화 오른쪽)에 맞춰 줄 바로 아래에 둔다. 목록 아래로 넘치면 줄 위에 둔다.
+        /// 줄이 목록 밖으로 스크롤되어 보이지 않으면 닫는다.
+        /// </summary>
+        private void PlaceTooltip()
+        {
+            if (tipRow == null) return;
+            if (tipRow.Rect == null || !tipRow.Rect.gameObject.activeInHierarchy)
+            {
+                HideTooltip(null);
+                return;
+            }
+            float rowTop = TopOf(tipRow.Rect, out float rowBottom, out float rowLeft);
+            float viewTop = TopOf(viewport, out float viewBottom, out _);
+            if (rowBottom <= viewTop || rowTop >= viewBottom)
+            {
+                HideTooltip(null);
+                return;
+            }
+            float height = tooltip.sizeDelta.y;
+            float x = Mathf.Clamp(rowLeft + 100, 40, root.rect.width - 40 - TooltipWidth);
+            float y = rowBottom + 6 + height <= viewBottom + 40 ? rowBottom + 6 : rowTop - 6 - height;
+            Place(tooltip, x, y, TooltipWidth, height);
+        }
+
+        /// <summary>rect의 윗변 y를 root의 Place 좌표(왼쪽 위가 0, 아래로 +)로 돌려주고, 아랫변 y와 왼쪽 x도 함께 준다.</summary>
+        private float TopOf(RectTransform rect, out float bottom, out float left)
+        {
+            rect.GetWorldCorners(corners);
+            Vector3 lower = root.InverseTransformPoint(corners[0]); // 왼쪽 아래
+            Vector3 upper = root.InverseTransformPoint(corners[1]); // 왼쪽 위
+            UnityEngine.Rect area = root.rect;
+            left = lower.x - area.xMin;
+            bottom = area.yMax - lower.y;
+            return area.yMax - upper.y;
+        }
+
+        private static string FactionLabel(string faction)
+            => faction == Factions.Crew ? "선원 진영" : faction == Factions.Pirate ? "해적 진영" : "중립 진영";
 
         public void SetSaving(bool saving)
         {
@@ -222,6 +315,7 @@ namespace WhoisntCitizen.Lobby
 
         public void BindRoles(RoleSetupOptionsDto options, Action<string, int> quantityChanged, Action<string, bool> candidateChanged)
         {
+            HideTooltip(null);
             foreach (Transform child in content) { child.gameObject.SetActive(false); Destroy(child.gameObject); }
             rows.Clear(); factionCounts.Clear();
             var seen = new HashSet<string>();
@@ -233,7 +327,7 @@ namespace WhoisntCitizen.Lobby
                 Header(faction);
                 foreach (RoleDto role in group) AddRole(role, options, quantityChanged, candidateChanged);
             }
-            catalogLabel.text = $"전체 {rows.Count}개 직업 · 목록을 내려 모든 진영을 확인하세요";
+            catalogLabel.text = $"전체 {rows.Count}개 직업 · 목록을 내려 모든 진영을 확인하세요 · 직업 이름을 누르면 설명이 나와요";
         }
 
         private void Header(string faction)
@@ -257,7 +351,7 @@ namespace WhoisntCitizen.Lobby
         {
             var row = Box("Role_" + role.code, content, null, new Color(1, 1, 1, .08f));
             row.gameObject.AddComponent<LayoutElement>().preferredHeight = 100;
-            var model = new RoleRow { Role = role, Whole = row.gameObject.AddComponent<CanvasGroup>() };
+            var model = new RoleRow { Role = role, Rect = row.rectTransform, Whole = row.gameObject.AddComponent<CanvasGroup>() };
             var mask = Icon("PortraitMask", row.transform, 16, 11, 78, RoomHelmGraphic.Symbol.Disc, new Color32(54, 34, 20, 255));
             mask.gameObject.AddComponent<Mask>().showMaskGraphic = true;
             Sprite portraitArt = portraits?.Find(PortraitId(role.code));
@@ -273,6 +367,13 @@ namespace WhoisntCitizen.Lobby
             string hint = role.code == RoleCodes.CrewSailor ? "남는 자리에 자동 배정"
                 : Faction(role) == Factions.Neutral ? "직접 설정 전용" : RoleSetupRules.IsBaseRole(role.code) ? "공격 가능한 기본 직업" : "";
             Text("Hint", row.transform, 114, 64, 338, 26, hint, 20, muted);
+            // 초상화·이름 쪽(수량 버튼 왼쪽)을 누르면 직업 설명을 띄우고, 다시 누르거나 포인터가 벗어나면 닫는다.
+            // 버튼을 누를 때는 뜨지 않는다. 초상화 그래픽도 클릭을 받으므로 그 위에 투명하게 덮는다. 드래그는 그대로 목록 스크롤로 간다.
+            var info = Panel("InfoArea", row.transform, 0, 0, 456, 100, null, Color.clear);
+            info.GetComponent<Image>().raycastTarget = true;
+            var press = info.gameObject.AddComponent<PointerPressRelay>();
+            press.Pressed = () => { if (tipRow == model) HideTooltip(model); else ShowTooltip(model); };
+            press.Exited = () => HideTooltip(model);
             var amount = Rect("Amount", row.transform); Place(amount, 462, 0, 250, 100);
             model.Amount = amount.gameObject.AddComponent<CanvasGroup>();
             model.Minus = Button("Minus", amount, 0, 12, 72, 76, "−", 32);
@@ -347,7 +448,13 @@ namespace WhoisntCitizen.Lobby
 
         public void ScrollToTop() { Canvas.ForceUpdateCanvases(); scroll.StopMovement(); scroll.verticalNormalizedPosition = 1; }
 
-        private void LateUpdate() => Fit();
+        private void LateUpdate()
+        {
+            Fit();
+            PlaceTooltip(); // 목록이 스크롤되면 설명 상자도 줄을 따라간다
+        }
+
+        private void OnDisable() => HideTooltip(null);
         private void Fit()
         {
             if (root == null) return;
@@ -380,13 +487,14 @@ namespace WhoisntCitizen.Lobby
             return button;
         }
 
-        private void Wood(string name, Transform parent, float x, float y, float w, float h)
+        private RectTransform Wood(string name, Transform parent, float x, float y, float w, float h)
         {
             var panel = Panel(name, parent, x, y, w, h, null, new Color32(38, 23, 14, 255));
             var wood = Rect("Walnut", panel).gameObject.AddComponent<RawImage>(); Fill(wood.rectTransform);
             wood.texture = cabin != null ? cabin.texture : null; wood.uvRect = new UnityEngine.Rect(.26f, .37f, .45f, .29f);
             wood.color = new Color(.48f, .48f, .48f, 1); wood.raycastTarget = false;
             var rim = Box("BrassFrame", panel, frame, Color.white); Fill(rim.rectTransform);
+            return panel;
         }
 
         private static void Rule(Transform parent, float x, float y, float width)
