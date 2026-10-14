@@ -97,19 +97,68 @@ namespace WhoisntCitizen.Game.Tests
         [Test]
         public void 승패_표시()
         {
-            Assert.AreEqual("승리", GameScreenText.Outcome(Factions.Crew, Factions.Crew));
-            Assert.AreEqual("패배", GameScreenText.Outcome(Factions.Pirate, Factions.Crew));
-            Assert.AreEqual(string.Empty, GameScreenText.Outcome(null, Factions.Crew));
+            var crewWon = new GameResultDto { ended = true, winner = Winners.Crew, endReason = EndReasons.Win };
+            crewWon.winnerIds.AddRange(new long[] { 11, 12 });
+            var me = new MyRoleDto { playerId = 11, faction = Factions.Crew };
+            var other = new MyRoleDto { playerId = 13, faction = Factions.Pirate };
+
+            Assert.AreEqual("승리", GameScreenText.ResultOutcome(crewWon, me));
+            Assert.AreEqual("패배", GameScreenText.ResultOutcome(crewWon, other));
+            Assert.AreEqual(string.Empty, GameScreenText.ResultOutcome(crewWon, null));
+            Assert.AreEqual(string.Empty, GameScreenText.ResultOutcome(new GameResultDto { ended = true, endReason = EndReasons.Win }, me));
+        }
+
+        [Test]
+        public void 승패는_진영이_아니라_서버의_승자_목록으로_정한다()
+        {
+            // 크라켄 단독 승리: 크라켄의 진영(NEUTRAL)은 winner(KRAKEN)와 다르지만 이겼다.
+            var kraken = new GameResultDto { ended = true, winner = Winners.Kraken, endReason = EndReasons.Win };
+            kraken.winnerIds.Add(14);
+            Assert.AreEqual("승리", GameScreenText.ResultOutcome(kraken, new MyRoleDto { playerId = 14, faction = Factions.Neutral }));
+            Assert.AreEqual("패배", GameScreenText.ResultOutcome(kraken, new MyRoleDto { playerId = 15, faction = Factions.Neutral }));
+
+            // 선원 팀 승리: 유혹당한 선원은 진영이 CREW여도 세이렌 팀이라 졌다.
+            var crew = new GameResultDto { ended = true, winner = Winners.Crew, endReason = EndReasons.Win };
+            crew.players.Add(new PlayerResultDto { playerId = 11, team = Teams.Crew, win = true });
+            crew.players.Add(new PlayerResultDto { playerId = 12, team = Teams.Siren, win = false });
+            Assert.AreEqual("승리", GameScreenText.ResultOutcome(crew, new MyRoleDto { playerId = 11, faction = Factions.Crew }));
+            Assert.AreEqual("패배", GameScreenText.ResultOutcome(crew, new MyRoleDto { playerId = 12, faction = Factions.Crew }));
+        }
+
+        [Test]
+        public void 승자_목록이_없는_예전_응답이면_진영으로_정한다()
+        {
+            var old = new GameResultDto { ended = true, winner = Winners.Pirate, endReason = EndReasons.Win };
+
+            Assert.AreEqual("승리", GameScreenText.ResultOutcome(old, new MyRoleDto { playerId = 1, faction = Factions.Pirate }));
+            Assert.AreEqual("패배", GameScreenText.ResultOutcome(old, new MyRoleDto { playerId = 2, faction = Factions.Crew }));
         }
 
         [Test]
         public void 결과_화면_승패는_취소된_게임이면_무효다()
         {
-            var won = new GameResultDto { ended = true, winner = Factions.Crew, endReason = EndReasons.Win };
+            var won = new GameResultDto { ended = true, winner = Winners.Crew, endReason = EndReasons.Win };
             var cancelled = new GameResultDto { ended = true, winner = null, endReason = EndReasons.CancelledNoDeaths };
+            var me = new MyRoleDto { playerId = 11, faction = Factions.Crew };
 
-            Assert.AreEqual("승리", GameScreenText.ResultOutcome(won, Factions.Crew));
-            Assert.AreEqual("무효 (전적 미반영)", GameScreenText.ResultOutcome(cancelled, Factions.Crew));
+            Assert.AreEqual("승리", GameScreenText.ResultOutcome(won, me));
+            Assert.AreEqual("무효 (전적 미반영)", GameScreenText.ResultOutcome(cancelled, me));
+        }
+
+        [Test]
+        public void 크라켄의_밤_안내()
+        {
+            var state = GameTestData.NightAllAlive();
+
+            Assert.AreEqual("표식 대상을 고르세요.\n또는 [발동]으로 표식을 남긴 2명을 끌고 갑니다.",
+                GameScreenText.NightStatus(AbilityBlock.None, ActionCodes.KrakenMark, 0, false, state, false, 2));
+            Assert.AreEqual("발동: 표식을 남긴 2명을 바다로 끌고 갑니다.\n대상을 누르면 표식으로 바꿀 수 있습니다.",
+                GameScreenText.NightStatus(AbilityBlock.None, ActionCodes.KrakenMark, 0, false, state, true, 2));
+            Assert.AreEqual("표식 대상: 영희님\n다른 사람을 골라 바꿀 수 있습니다.",
+                GameScreenText.NightStatus(AbilityBlock.None, ActionCodes.KrakenMark, 12, false, state, true, 2));
+            Assert.AreEqual("발동: 표식을 남긴 2명을 바다로 끌고 갑니다.",
+                GameScreenText.ActionAccepted(new NightActionResultDto { accepted = true }, ActionCodes.KrakenMark, 0, false, state, true, 2));
+            Assert.AreEqual("발동", GameScreenText.AbilityCutInLine(ActionCodes.KrakenStrike, 0, state));
         }
 
         [Test]

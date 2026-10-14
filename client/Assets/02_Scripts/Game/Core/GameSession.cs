@@ -17,6 +17,7 @@ namespace WhoisntCitizen.Game
     public sealed class GameSession
     {
         public const string CannotVoteMessage = "지금은 투표할 수 없습니다.";
+        public const string CannotStrikeMessage = "표식을 남긴 살아 있는 사람이 없어 발동할 수 없습니다.";
         public const string CannotSkipDayMessage = "지금은 토론을 넘길 수 없습니다.";
 
         private readonly IGameApi api;
@@ -43,12 +44,15 @@ namespace WhoisntCitizen.Game
 
         private long lockedVersion = -1;    // 앵무새가 접선한 밤의 phaseVersion
         private long nightChoiceVersion = -1;
-        private long nightChoiceTarget;     // 0 = 넘김
+        private long nightChoiceTarget;     // 0 = 넘김 (크라켄 발동도 대상이 없어 0)
+        private bool nightChoiceStrike;     // 크라켄이 발동(KRAKEN_STRIKE)을 골랐는지
         private long voteVersion = -1;
         private long voteTarget;            // 0 = 표 없음 (기권)
         private bool voteConfirmed;         // "투표 완료"를 서버가 받았는지
         private long daySkipVersion = -1;   // 토론을 넘긴 낮의 phaseVersion
         private DaySkipResultDto daySkipResult;
+        private bool markedByKraken;        // 크라켄의 표식이 내게 남아 있음 (KRAKEN_MARKED를 받았고 그 뒤 발동이 없었다)
+        private readonly HashSet<long> krakenVictims = new HashSet<long>(); // 크라켄에게 끌려가 죽은 사람 (밤 결과의 deaths, 전체 공개)
         private RoleSetupOptionsDto roleSetupOptions; // 직업 목록·추천 구성 (서버가 켜져 있는 동안 바뀌지 않아 한 번만 받는다)
         private readonly List<Action<RoleSetupOptionsDto>> roleSetupWaiters = new List<Action<RoleSetupOptionsDto>>();
 
@@ -149,7 +153,41 @@ namespace WhoisntCitizen.Game
         /// <summary>이번 밤 능력을 넘겼는지.</summary>
         public bool SkippedTonight
         {
-            get { return IsCurrentNight(nightChoiceVersion) && nightChoiceTarget == 0; }
+            get { return IsCurrentNight(nightChoiceVersion) && nightChoiceTarget == 0 && !nightChoiceStrike; }
+        }
+
+        /// <summary>크라켄이 이번 밤 발동(표식된 사람을 모두 처치)을 골랐는지.</summary>
+        public bool StruckTonight
+        {
+            get { return IsCurrentNight(nightChoiceVersion) && nightChoiceStrike; }
+        }
+
+        /// <summary>크라켄이 표식을 남긴 생존자. 크라켄이 아니면 빈 목록.</summary>
+        public List<PlayerViewDto> KrakenMarks
+        {
+            get { return AbilityRules.KrakenMarks(State, Me); }
+        }
+
+        /// <summary>
+        /// 크라켄의 표식이 내게 남아 있는지 (표식 당한 사람이 자기 명단 칸에만 보는 배지). 서버 /me에는 없어서 밤 결과로 기억한다:
+        /// KRAKEN_MARKED를 받으면 켜고, 누군가 크라켄에게 끌려간 밤(발동하면 서버가 표식을 모두 지운다)이나 내가 죽으면 끈다.
+        /// 재접속하면 처음부터 다시 기억하므로 사라질 수 있다. 발동을 선의 보호로 막아 아무도 끌려가지 않은 밤은 알 수 없어 남는다.
+        /// </summary>
+        public bool MarkedByKraken
+        {
+            get { return markedByKraken && Me != null && State != null && GameStateQueries.IsAlive(State, Me.playerId); }
+        }
+
+        /// <summary>이 사람이 크라켄에게 끌려가 죽었는지 (밤 결과의 사망 원인, 모두에게 공개된 정보).</summary>
+        public bool WasDraggedByKraken(long playerId)
+        {
+            return krakenVictims.Contains(playerId);
+        }
+
+        /// <summary>크라켄이 지금 발동할 수 있는지 (능력을 쓸 수 있고 표식을 남긴 생존자가 있다).</summary>
+        public bool CanStrike
+        {
+            get { return State != null && Me != null && AbilityRules.CanStrike(State, Me, NightAbility); }
         }
 
         /// <summary>이번 낮 토론을 넘겼는지. 다음 낮(phaseVersion이 바뀜)이 되면 저절로 false가 된다.</summary>
@@ -215,9 +253,16 @@ namespace WhoisntCitizen.Game
             get { return AbilityRules.NightTargets(State, Me); }
         }
 
+        /// <summary>지금 투표할 수 있는지: VOTE 페이즈의 생존자이고, 요리사에게 투표를 금지당하지 않았다.</summary>
         public bool CanVote
         {
-            get { return Me != null && AbilityRules.CanVote(State, Me.playerId); }
+            get { return Me != null && AbilityRules.CanVote(State, Me.playerId) && !VoteBannedToday; }
+        }
+
+        /// <summary>요리사 때문에 오늘 투표할 수 없는지 (오늘 아침 밤 결과에 VOTE_BANNED가 왔다).</summary>
+        public bool VoteBannedToday
+        {
+            get { return AbilityRules.IsVoteBanned(State, LastNightResult); }
         }
 
         public List<PlayerViewDto> VoteTargets
@@ -330,8 +375,25 @@ namespace WhoisntCitizen.Game
 
         // ================================================================ 내 입력
 
-        /// <summary>밤 능력 사용. 보냈으면 true. 쓸 수 없는 상태면 이유를 보여주고 보내지 않는다.</summary>
+        /// <summary>밤 능력 사용 (직업의 기본 능력). 보냈으면 true. 쓸 수 없는 상태면 이유를 보여주고 보내지 않는다.</summary>
         public bool SubmitNightAction(long targetId)
+        {
+            return SendNightAction(targetId, null);
+        }
+
+        /// <summary>크라켄 발동: 표식을 남긴 생존자를 모두 처치한다(대상 없음). 보냈으면 true. 판정 전에는 표식으로 다시 바꿀 수 있다.</summary>
+        public bool StrikeKraken()
+        {
+            if (CanSendAction() && NightAbility == AbilityBlock.None && !CanStrike)
+            {
+                view.ShowError(CannotStrikeMessage); // 능력을 못 쓰는 이유는 SendNightAction이 알린다
+                return false;
+            }
+            return SendNightAction(0, ActionCodes.KrakenStrike);
+        }
+
+        /// <param name="actionCode">null이면 직업의 기본 능력. 크라켄 발동만 KRAKEN_STRIKE(targetId는 0)</param>
+        private bool SendNightAction(long targetId, string actionCode)
         {
             if (!CanSendAction())
             {
@@ -345,7 +407,7 @@ namespace WhoisntCitizen.Game
             }
             long version = State.phaseVersion;
             actionInFlight = true;
-            api.SubmitNightAction(GameId, targetId, r =>
+            api.SubmitNightAction(GameId, targetId, actionCode, r =>
             {
                 if (!OnActionResponse(r))
                 {
@@ -353,6 +415,7 @@ namespace WhoisntCitizen.Game
                 }
                 nightChoiceVersion = version;
                 nightChoiceTarget = targetId;
+                nightChoiceStrike = actionCode == ActionCodes.KrakenStrike;
                 if (r.Data.contactedPirateIds.Count > 0)
                 {
                     lockedVersion = version;
@@ -386,6 +449,7 @@ namespace WhoisntCitizen.Game
                 }
                 nightChoiceVersion = version;
                 nightChoiceTarget = 0;
+                nightChoiceStrike = false;
                 view.ShowActionAccepted(r.Data);
                 PollNowIfChanged(version, r.Data.phaseVersion);
             });
@@ -438,7 +502,7 @@ namespace WhoisntCitizen.Game
             }
             if (!CanVote)
             {
-                view.ShowError(CannotVoteMessage);
+                view.ShowError(VoteBannedToday ? ReportFormatter.VoteBannedMessage : CannotVoteMessage);
                 return false;
             }
             long version = State.phaseVersion;
@@ -595,8 +659,32 @@ namespace WhoisntCitizen.Game
                 }
                 nightShownDay = r.Data.day;
                 LastNightResult = r.Data;
+                RememberKraken(r.Data);
                 view.ShowNightResult(r.Data);
             });
+        }
+
+        /// <summary>밤 결과로 크라켄 표식(내 것)과 크라켄 희생자를 기억한다. 발동이 표식을 지우므로 지우기를 먼저, 새 표식을 나중에 본다.</summary>
+        private void RememberKraken(NightResultDto night)
+        {
+            bool struck = false;
+            foreach (DeathDto death in night.Deaths)
+            {
+                if (death.cause != DeathCauses.Kraken) continue;
+                struck = true;
+                krakenVictims.Add(death.playerId);
+            }
+            if (struck)
+            {
+                markedByKraken = false;
+            }
+            foreach (ReportDto report in night.reports)
+            {
+                if (report != null && report.type == ReportTypes.KrakenMarked)
+                {
+                    markedByKraken = true;
+                }
+            }
         }
 
         /// <param name="ended">ENDED에서 부름. 밤에 승패가 났으면 그날 처형 결과가 없으므로, 없다고 확인되면 더 묻지 않는다.</param>

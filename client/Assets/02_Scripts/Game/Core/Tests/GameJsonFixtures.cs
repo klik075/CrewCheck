@@ -68,6 +68,23 @@ namespace WhoisntCitizen.Game.Tests
         public const string RoleList =
             @"{""roles"":[{""code"":""CREW_BOATSWAIN"",""name"":""갑판장"",""faction"":""CREW"",""actionCode"":""BLOCK""},{""code"":""CREW_CAPTAIN"",""name"":""선장"",""faction"":""CREW"",""actionCode"":""INVESTIGATE_FACTION""},{""code"":""CREW_DOCTOR"",""name"":""선의"",""faction"":""CREW"",""actionCode"":""PROTECT""},{""code"":""CREW_DRUNK"",""name"":""주정뱅이"",""faction"":""CREW"",""actionCode"":""READ_CORPSE_ROLE""},{""code"":""CREW_LOOKOUT"",""name"":""망루지기"",""faction"":""CREW"",""actionCode"":""WATCH_VISITORS""},{""code"":""CREW_MONKEY"",""name"":""원숭이"",""faction"":""CREW"",""actionCode"":null},{""code"":""CREW_SAILOR"",""name"":""선원"",""faction"":""CREW"",""actionCode"":null},{""code"":""PIRATE_PARROT"",""name"":""앵무새"",""faction"":""PIRATE"",""actionCode"":""WATCH_ACTION""},{""code"":""PIRATE_RAIDER"",""name"":""해적"",""faction"":""PIRATE"",""actionCode"":""SELECT_ATTACK_TARGET""}]}";
 
+        // 중립 직업(서버 dev ae74a93): 서버 record(MyRoleResponse, NightResultResponse, GameResultResponse, ChatMessageResponse)의
+        // 필드 순서대로 손으로 쓴 샘플이다. 서버에서 실제 응답을 받으면 그 출력으로 바꾼다.
+        public const string MyRoleSeducedDoctor =
+            @"{""playerId"":11,""role"":""CREW_DOCTOR"",""roleName"":""선의"",""faction"":""CREW"",""actionCode"":""PROTECT"",""remainingUses"":-1,""alive"":true,""mafiaTeammateIds"":[],""contacted"":false,""team"":""SIREN"",""sirenTeamIds"":[15],""krakenMarkIds"":[],""abilityAvailable"":true}";
+
+        public const string MyRoleSirenResting =
+            @"{""playerId"":15,""role"":""NEUTRAL_SIREN"",""roleName"":""세이렌"",""faction"":""NEUTRAL"",""actionCode"":""SEDUCE"",""remainingUses"":-1,""alive"":true,""mafiaTeammateIds"":[],""contacted"":false,""team"":""SIREN"",""sirenTeamIds"":[11],""krakenMarkIds"":[],""abilityAvailable"":false}";
+
+        public const string MyRoleKraken =
+            @"{""playerId"":14,""role"":""NEUTRAL_KRAKEN"",""roleName"":""크라켄"",""faction"":""NEUTRAL"",""actionCode"":""KRAKEN_MARK"",""remainingUses"":-1,""alive"":true,""mafiaTeammateIds"":[],""contacted"":false,""team"":""NEUTRAL"",""sirenTeamIds"":[],""krakenMarkIds"":[12,13],""abilityAvailable"":true}";
+
+        public const string NightResultKrakenSeduced =
+            @"{""day"":3,""killedPlayerId"":12,""killedNickname"":""영희"",""protectedByDoctor"":false,""reports"":[{""type"":""SEDUCED"",""targetId"":null,""targetNickname"":null,""faction"":null,""roleCode"":null,""roleName"":null,""players"":[{""playerId"":15,""nickname"":""수진""}],""actions"":[]},{""type"":""KRAKEN_MARKED"",""targetId"":null,""targetNickname"":null,""faction"":null,""roleCode"":null,""roleName"":null,""players"":[],""actions"":[]}],""deaths"":[{""playerId"":12,""nickname"":""영희"",""cause"":""ATTACK""},{""playerId"":13,""nickname"":""민수"",""cause"":""KRAKEN""}]}";
+
+        public const string GameResultKraken =
+            @"{""ended"":true,""winner"":""KRAKEN"",""endReason"":""WIN"",""lastDay"":4,""players"":[{""playerId"":11,""nickname"":""철수"",""role"":""CREW_DOCTOR"",""roleName"":""선의"",""alive"":false,""team"":""SIREN"",""win"":false},{""playerId"":14,""nickname"":""지훈"",""role"":""NEUTRAL_KRAKEN"",""roleName"":""크라켄"",""alive"":true,""team"":""NEUTRAL"",""win"":true}],""winnerIds"":[14]}";
+
         public const string Error409 =
             @"{""code"":""GAME_RULE_VIOLATION"",""message"":""이틀 연속으로 자신을 보호할 수 없습니다.""}";
 

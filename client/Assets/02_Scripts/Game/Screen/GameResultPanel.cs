@@ -87,15 +87,14 @@ namespace WhoisntCitizen.Game
             returnRequested = false;
             returnAfterIntro = autoReturn && autoReturnSeconds > 0f;
             PreparePresentation();
-            ShowBackground(result, me != null ? me.faction : null);
+            ShowBackground(result, me);
             if (winnerText != null)
             {
-                winnerText.text = !result.IsCancelled && result.winner == Factions.Neutral
-                    ? "개인 승리" : ReportFormatter.ResultHeadline(result);
+                winnerText.text = ReportFormatter.ResultHeadline(result); // 예: "크라켄 승리", "세이렌 팀 승리"
             }
             if (outcomeText != null)
             {
-                outcomeText.text = GameScreenText.ResultOutcome(result, me != null ? me.faction : null);
+                outcomeText.text = GameScreenText.ResultOutcome(result, me);
             }
             if (playersText != null)
             {
@@ -144,31 +143,35 @@ namespace WhoisntCitizen.Game
             backLabel.text = backLabelText + "\n(" + seconds + "초뒤 자동 복귀)";
         }
 
-        /// <summary>Uses the local player's outcome, not simply the winning faction. Cancelled/unknown results have no win/loss art.</summary>
-        public static string BackgroundName(GameResultDto result, string myFaction)
+        /// <summary>
+        /// Uses the local player's outcome (the server's winnerIds), not the faction: a seduced sailor wins with the siren
+        /// team, and the neutral roles win alone. Siren, kraken, ghost captain and mermaid wins use the personal art.
+        /// Cancelled/unknown results have no win/loss art.
+        /// </summary>
+        public static string BackgroundName(GameResultDto result, MyRoleDto me)
         {
-            if (result == null || !result.ended || result.IsCancelled || !KnownFaction(result.winner) || !KnownFaction(myFaction))
+            if (result == null || me == null || !result.ended || result.IsCancelled || !KnownWinner(result.winner))
                 return null;
-            if (result.winner != myFaction) return "Defeat";
+            if (!GameStateQueries.IsWinner(result, me.playerId, me.faction)) return "Defeat";
             switch (result.winner)
             {
-                case Factions.Crew: return "CrewVictory";
-                case Factions.Pirate: return "PirateVictory";
-                case Factions.Neutral: return "PersonalVictory";
-                default: return null;
+                case Winners.Crew: return "CrewVictory";
+                case Winners.Pirate: return "PirateVictory";
+                default: return "PersonalVictory";
             }
         }
 
-        private static bool KnownFaction(string faction)
+        private static bool KnownWinner(string winner)
         {
-            return faction == Factions.Crew || faction == Factions.Pirate || faction == Factions.Neutral;
+            return winner == Winners.Crew || winner == Winners.Pirate || Winners.IsPersonal(winner);
         }
 
-        private void ShowBackground(GameResultDto result, string myFaction)
+        private void ShowBackground(GameResultDto result, MyRoleDto me)
         {
-            string name = BackgroundName(result, myFaction);
+            string name = BackgroundName(result, me);
             Sprite sprite = null;
-            if (name != null && !backgrounds.TryGetValue(name, out sprite))
+            if (name == "PersonalVictory") sprite = PersonalArt(result.winner);
+            if (sprite == null && name != null && !backgrounds.TryGetValue(name, out sprite))
             {
                 sprite = Resources.Load<Sprite>("GameResult/" + name);
                 if (sprite != null) backgrounds.Add(name, sprite);
@@ -176,6 +179,34 @@ namespace WhoisntCitizen.Game
             backgroundImage.sprite = sprite;
             backgroundImage.gameObject.SetActive(sprite != null);
             if (sprite != null) backgroundFit.aspectRatio = sprite.rect.width / sprite.rect.height;
+        }
+
+        /// <summary>
+        /// The neutral winner's own picture (시안 H): GameResult/KrakenVictory, SirenVictory, GhostCaptainVictory or
+        /// MermaidVictory when that art exists, else the role's ability cut-in art (NightScene/AbilityCutIns), else null
+        /// (the shared PersonalVictory picture).
+        /// </summary>
+        private Sprite PersonalArt(string winner)
+        {
+            string art, cutIn;
+            switch (winner)
+            {
+                case Winners.Kraken: art = "KrakenVictory"; cutIn = "PIRATE_KRAKEN"; break;
+                case Winners.Siren: art = "SirenVictory"; cutIn = "CONCEPT_SIREN"; break;
+                case Winners.GhostCaptain: art = "GhostCaptainVictory"; cutIn = "CONCEPT_GHOST_CAPTAIN"; break;
+                case Winners.Mermaid: art = "MermaidVictory"; cutIn = "THIRD_MERMAID"; break;
+                default: return null;
+            }
+            Sprite sprite;
+            if (backgrounds.TryGetValue(art, out sprite)) return sprite;
+            sprite = Resources.Load<Sprite>("GameResult/" + art);
+            if (sprite == null)
+            {
+                AbilityCutInCatalog cutIns = Resources.Load<AbilityCutInCatalog>("NightScene/AbilityCutIns");
+                if (cutIns != null) cutIns.TryFind(cutIn, out sprite, out _);
+            }
+            if (sprite != null) backgrounds.Add(art, sprite);
+            return sprite;
         }
 
         private void PreparePresentation()

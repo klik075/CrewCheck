@@ -89,6 +89,28 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 세이렌_팀은_살아_있는_팀원과_세이렌_방에_있다()
+        {
+            MyRoleDto seduced = Me(11, RoleCodes.CrewDoctor, ActionCodes.Protect, -1);
+            seduced.faction = Factions.Crew;
+            seduced.team = Teams.Siren;
+            seduced.sirenTeamIds.AddRange(new long[] { 15, 14 }); // 14 지훈은 사망
+
+            NightRoom room = NightRoomRules.RoomFor(seduced, Night(), null);
+
+            Assert.AreEqual("CONCEPT_SIREN", room.DesignId);
+            Assert.IsTrue(room.Shared);
+            CollectionAssert.AreEqual(new long[] { 11, 15 }, Ids(room));
+
+            MyRoleDto siren = Me(11, "NEUTRAL_SIREN", ActionCodes.Seduce, -1);
+            siren.faction = Factions.Neutral;
+            siren.team = Teams.Siren;
+            NightRoom alone = NightRoomRules.RoomFor(siren, Night(), null);
+            Assert.AreEqual("CONCEPT_SIREN", alone.DesignId);
+            Assert.IsFalse(alone.Shared);
+        }
+
+        [Test]
         public void 죽은_나도_방에_남는다()
         {
             GameStateDto state = State(GamePhases.Night, 7, P(11, "철수", false), P(12, "영희", true));

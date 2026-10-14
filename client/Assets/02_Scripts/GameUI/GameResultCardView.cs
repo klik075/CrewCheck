@@ -11,7 +11,7 @@ namespace WhoisntCitizen.GameUI
     public sealed class GameResultCardView
     {
         private readonly RectTransform card, header, details, grid;
-        private readonly TextMeshProUGUI title, outcome, fallback, summary;
+        private readonly TextMeshProUGUI title, outcome, fallback, summary, flavor;
         private readonly CanvasGroup headerGroup, detailsGroup;
         private readonly Image headerGlow, seal, outcomeBorder, headerWood, crest, crestInset, rule;
         private readonly List<RectTransform> rows = new List<RectTransform>();
@@ -61,6 +61,9 @@ namespace WhoisntCitizen.GameUI
             outcomeBorder = Art("OutcomeBadge", header, outline, gold);
             outcomeBorder.rectTransform.anchorMin = outcomeBorder.rectTransform.anchorMax = new Vector2(.61f, .3f);
             outcomeBorder.rectTransform.sizeDelta = new Vector2(260f, 44f);
+            // The winner's line under the outcome (the server's win message): "크라켄이 배를 바다 밑으로 끌고 갔습니다"
+            flavor = Label("Flavor", header, "", 21f, new Color(.86f, .88f, .84f));
+            Top(flavor.rectTransform, 170f, 30f, 24f);
 
             details = Rect("ResultPlayerCards", card); Stretch(details, 42f, 0f);
             details.offsetMin = new Vector2(42f, 152f); details.offsetMax = new Vector2(-42f, -240f);
@@ -96,10 +99,12 @@ namespace WhoisntCitizen.GameUI
                 if (outcome != null) { Top(outcome.rectTransform, 112f, 64f, 32f); outcome.color = originalOutcomeColor; }
                 return;
             }
-            headerAccent = GameResultPalette.ForFaction(result.winner);
+            headerAccent = GameResultPalette.ForWinner(result.winner);
             headerWood.color = Color.Lerp(new Color(.015f, .025f, .04f), headerAccent, .12f);
             crest.color = rule.color = headerAccent;
             crestInset.color = headerWood.color;
+            flavor.text = ReportFormatter.ResultFlavor(result);
+            flavor.color = Color.Lerp(headerAccent, Color.white, .55f);
             if (title != null)
             {
                 Top(title.rectTransform, 64f, 68f, 0f);
@@ -113,7 +118,7 @@ namespace WhoisntCitizen.GameUI
                 outcome.rectTransform.anchorMin = new Vector2(.3f, 1f); outcome.rectTransform.anchorMax = new Vector2(.9f, 1f);
                 outcome.fontSizeMax = 29f;
             }
-            bool lost = me == null || me.faction != result.winner;
+            bool lost = me == null || !GameStateQueries.IsWinner(result, me.playerId, me.faction);
             outcomeBorder.color = lost ? GameResultPalette.Muted : headerAccent;
             if (outcome != null) outcome.color = outcomeBorder.color;
             int alive = 0;
@@ -131,7 +136,7 @@ namespace WhoisntCitizen.GameUI
         private void AddPlayer(PlayerResultDto player, MyRoleDto me, Func<long, ChibiCharacterSkin> skinOf)
         {
             bool mine = me != null && player.playerId == me.playerId;
-            Color accent = GameResultPalette.ForFaction(GameResultPalette.FactionForRole(player.role));
+            Color accent = GameResultPalette.ForFaction(GameResultPalette.FactionForPlayer(player));
             var rect = Rect("Player_" + player.playerId, grid); rows.Add(rect);
             var bg = Art("CardFill", rect, fill, Color.Lerp(new Color(.025f, .04f, .055f), accent, mine ? .23f : .13f));
             Stretch(bg.rectTransform, 0f, 0f);
@@ -161,7 +166,7 @@ namespace WhoisntCitizen.GameUI
             string roleName = string.IsNullOrEmpty(player.roleName) ? player.role : player.roleName;
             var role = Label("Role", rect, string.IsNullOrEmpty(roleName) ? "직업 미확인" : roleName, 23f, Color.Lerp(accent, Color.white, .45f));
             TextLine(role, 39f, 36f, 108f, 90f);
-            var faction = Label("Faction", rect, FactionName(player.role), 19f, accent);
+            var faction = Label("Faction", rect, FactionName(player), 19f, accent);
             TextLine(faction, 68f, 30f, 108f, 90f);
             var status = Label("Status", rect, player.alive ? "생존" : "사망", 20f,
                 player.alive ? new Color(.55f, .91f, .73f) : new Color(.69f, .71f, .74f));
@@ -206,9 +211,10 @@ namespace WhoisntCitizen.GameUI
             rows.Clear();
         }
 
-        private static string FactionName(string role)
+        private static string FactionName(PlayerResultDto player)
         {
-            switch (GameResultPalette.FactionForRole(role))
+            if (player.team == Teams.Siren) return "세이렌 팀"; // the siren and the seduced players (their roles stay)
+            switch (GameResultPalette.FactionForRole(player.role))
             {
                 case Factions.Crew: return "선원 진영";
                 case Factions.Pirate: return "해적 진영";

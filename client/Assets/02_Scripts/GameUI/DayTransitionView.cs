@@ -15,6 +15,7 @@ namespace WhoisntCitizen.GameUI
         Quiet,       // 밤사이 아무 일도 없음
         Executed,    // 투표로 처형
         NotExecuted, // 동점·투표 없음
+        Dragged,     // 밤사이 크라켄에게 끌려감 (같은 밤 습격으로 죽은 사람도 함께)
     }
 
     /// <summary>One cut-scene's content. Only what the server made public: never the role of the dead.</summary>
@@ -24,12 +25,23 @@ namespace WhoisntCitizen.GameUI
         public int Day;            // the night's day (the day that comes next), or the vote's day (the next night is Day + 1)
         public string Name;        // the dead player's nickname, without "님"
         public Sprite Portrait;    // the bust of the skin they wore at the table
-        public Sprite Figure;      // that skin standing (the plank)
+        public Sprite Figure;      // that skin bound with rope (the plank)
         public int Votes;          // executed: their votes
         public int TotalVotes;     // executed: every vote cast
         public string Reason;      // not executed: why ("동점이라 아무도 처형되지 않았습니다.")
         public bool Mine;          // I am the one who died
+        public DayTransitionVictim[] Victims; // dragged: everyone who died that night (mine first); the first four get a poster
+        public bool AlsoAttacked;  // dragged: the pirates also killed someone that night (their slashes cut in first)
         public bool GameOver;      // the game ended with this result: no next day or night to announce
+    }
+
+    /// <summary>One of the dead of a kraken night (<see cref="DayTransitionKind.Dragged"/>).</summary>
+    public sealed class DayTransitionVictim
+    {
+        public string Name;        // nickname, without "님"
+        public Sprite Portrait;    // the bust of the skin they wore at the table
+        public bool Mine;          // it is me
+        public bool Kraken;        // dragged by the kraken (else the pirates' attack: a red cut instead of ink)
     }
 
     /// <summary>
@@ -42,6 +54,8 @@ namespace WhoisntCitizen.GameUI
     /// - Executed: the table's tally (the game screen, not covered), the verdict scroll and its seal, the plank
     ///   (DayTransition/ExecutionPlank with the player's skin on it), the splash (DayTransition/ExecutionSplash), night.
     /// - Not executed: the verdict scroll with a void seal that cracks, night.
+    /// - Dragged: the night lifts, the sea parts (teal rings, two amber eyes), the kraken's picture lunges in, an ink-soaked
+    ///   poster for each of the dead is pulled down into the sea, ink and bubbles at dawn (Docs: 시안 E).
     /// Built at run time over the canvas; tapping skips to the last card. <see cref="Evaluate"/> draws any moment.
     /// </summary>
     public sealed class DayTransitionView : MonoBehaviour, IPointerClickHandler
@@ -66,6 +80,11 @@ namespace WhoisntCitizen.GameUI
         private static readonly Color Ink = new Color(0.23f, 0.11f, 0.05f);
         private static readonly Color Seal = new Color(0.66f, 0.12f, 0.1f);
         private static readonly Color Parchment = new Color(0.93f, 0.85f, 0.66f);
+        private static readonly Color DeepTeal = new Color(0.01f, 0.09f, 0.11f);
+        private static readonly Color TealGlow = new Color(0.36f, 0.94f, 0.88f);
+        private static readonly Color InkTeal = new Color(0.02f, 0.19f, 0.2f);
+        private static readonly Color Amber = new Color(1f, 0.62f, 0.2f);
+        private const int InkPosterCount = 4; // kraken night: the most posters drawn; more dead show as "+N명"
 
         public event Action Finished;
 
@@ -100,6 +119,16 @@ namespace WhoisntCitizen.GameUI
         private Image myBand;
         private TMP_FontAsset font;
 
+        // The kraken night (Dragged)
+        private Art krakenArt;
+        private readonly Image[] seaRings = new Image[3];
+        private readonly Image[] krakenEyes = new Image[2];
+        private readonly InkPoster[] inkPosters = new InkPoster[InkPosterCount];
+        private Image inkStain;
+        private TextMeshProUGUI onoKugwang, onoChwareuk, victimOverflow;
+        private int shownVictims;
+        private bool anyVictimMine;
+
         private DayTransitionInfo info;
         private bool released, skip;
         private Coroutine routine;
@@ -132,6 +161,15 @@ namespace WhoisntCitizen.GameUI
         {
             public RectTransform rect;
             public CanvasGroup group;
+        }
+
+        /// <summary>A kraken night's poster: the bust, the name, soaked in ink from below (or cut red for the pirates' victim).</summary>
+        private sealed class InkPoster
+        {
+            public Card card;
+            public Image portrait, ink, cut;
+            public TextMeshProUGUI name, line;
+            public bool kraken;
         }
 
         public static DayTransitionView Create(RectTransform canvas, TMP_FontAsset font)
@@ -194,6 +232,7 @@ namespace WhoisntCitizen.GameUI
             DayTransitionSettings settings = Settings != null ? Settings : DayTransitionSettings.Load();
             realBeats = settings.Beats(content.Kind);
             designBeats = DayTransitionSettings.DesignBeats(content.Kind);
+            PrepareVictims(content);
             beatCount = content.GameOver ? designBeats.Length - 1 : designBeats.Length; // no next day or night to announce
             realOut = Mathf.Max(DayTransitionSettings.MinBeat, settings.outLength);
             maxHold = Mathf.Max(0f, settings.maxHold);
@@ -208,6 +247,35 @@ namespace WhoisntCitizen.GameUI
             scrollPortrait.enabled = content.Portrait != null;
             nightArt.image.sprite = NightBackdrop;
             Canvas.ForceUpdateCanvases();
+        }
+
+        /// <summary>
+        /// A kraken night's posters: the first four of the dead (mine first, as given), the rest as "+N명". From the second
+        /// poster on, the dragged beat lasts a little longer (at most 1.8 times) so each name can be read.
+        /// </summary>
+        private void PrepareVictims(DayTransitionInfo content)
+        {
+            DayTransitionVictim[] victims = content.Kind == DayTransitionKind.Dragged && content.Victims != null
+                ? content.Victims : new DayTransitionVictim[0];
+            shownVictims = Mathf.Min(victims.Length, InkPosterCount);
+            anyVictimMine = false;
+            for (int i = 0; i < InkPosterCount; i++)
+            {
+                InkPoster poster = inkPosters[i];
+                DayTransitionVictim victim = i < shownVictims ? victims[i] : null;
+                poster.kraken = victim != null && victim.Kraken;
+                poster.portrait.sprite = victim != null ? victim.Portrait : null;
+                poster.portrait.enabled = poster.portrait.sprite != null;
+                poster.name.text = victim != null ? (string.IsNullOrEmpty(victim.Name) ? "?" : victim.Name) + "님" : string.Empty;
+                poster.line.text = poster.kraken ? "크라켄에게 끌려갔습니다" : "밤사이 사망했습니다";
+                poster.line.color = poster.kraken ? new Color(0.06f, 0.36f, 0.36f) : new Color(0.55f, 0.1f, 0.06f);
+                if (victim != null && victim.Mine) anyVictimMine = true;
+            }
+            victimOverflow.text = victims.Length > shownVictims ? "+" + (victims.Length - shownVictims) + "명" : string.Empty;
+            if (content.Kind == DayTransitionKind.Dragged && shownVictims > 1 && realBeats.Length > 3)
+            {
+                realBeats[3] *= Mathf.Min(1.8f, 1f + 0.22f * (shownVictims - 1));
+            }
         }
 
         /// <summary>Draws the scene as it is t seconds after it began (no hold).</summary>
@@ -314,6 +382,11 @@ namespace WhoisntCitizen.GameUI
                 Fade(calmCaption, Seg(t, 0.85f, 1.0f) * (1f - Seg(t, 1.5f, 1.65f)), -fh * 0.3f);
                 Pop(onoSswa, t, 0.9f, 1.55f, new Vector2(-w * 0.28f, -fh * 0.18f), -4f);
                 dawnAt = 1.6f;
+            }
+            else if (info.Kind == DayTransitionKind.Dragged)
+            {
+                shake = ApplyKraken(t, w, fh);
+                dawnAt = 3.6f;
             }
             else
             {
@@ -423,6 +496,126 @@ namespace WhoisntCitizen.GameUI
             }
         }
 
+        // ---------------------------------------------------------------- the kraken night (Dragged)
+        // 0.7 the sea parts · 1.3 the tentacles · 2.2 the dragged · 3.6 dawn. The kraken stays nameless; no roles shown.
+
+        private Vector2 ApplyKraken(float t, float w, float fh)
+        {
+            Vector2 shake = Vector2.zero;
+
+            // 2. The sea parts: the night turns deep teal, rings spread on the water, two amber eyes blink below it.
+            //    If the pirates also killed someone, their slashes cut in first, briefly.
+            float teal = Seg(t, 0.7f, 0.9f);
+            if (t >= 0.7f) SetColor(shade, Color.Lerp(Navy, DeepTeal, teal), Mathf.Lerp(0.62f, 0.86f, teal));
+            if (info.AlsoAttacked)
+            {
+                float slashFade = 1f - Seg(t, 0.92f, 1.05f);
+                for (int i = 0; i < SlashCount; i++)
+                {
+                    float start = 0.72f + i * 0.05f;
+                    float grow = EaseOut(Seg(t, start, start + 0.1f));
+                    Slash(i, new Vector2(-40f + i * 70f, 30f - i * 64f), w * 1.35f * grow, 1f, t >= start && t < 1.05f ? slashFade : 0f);
+                }
+                Pop(onoChaak, t, 0.74f, 1.05f, new Vector2(w * 0.2f, fh * 0.24f), -14f);
+            }
+            Vector2 water = new Vector2(0f, -fh * 0.06f);
+            float sea = 1f - Seg(t, 1.3f, 1.42f);
+            for (int i = 0; i < seaRings.Length; i++)
+            {
+                float from = 0.8f + i * 0.1f;
+                float k = EaseOut(Seg(t, from, from + 0.5f));
+                float width = Mathf.Lerp(160f, 980f, k);
+                seaRings[i].rectTransform.anchoredPosition = water;
+                seaRings[i].rectTransform.sizeDelta = new Vector2(width, width * 0.24f);
+                SetColor(seaRings[i], TealGlow, t >= from ? 0.85f * sea * (1f - 0.6f * k) : 0f);
+            }
+            float eyes = Seg(t, 0.98f, 1.06f) * (1f - Seg(t, 1.22f, 1.3f));
+            for (int i = 0; i < krakenEyes.Length; i++)
+            {
+                krakenEyes[i].rectTransform.anchoredPosition = water + new Vector2(i == 0 ? -70f : 70f, 6f);
+                SetColor(krakenEyes[i], Amber, eyes);
+            }
+            if (t >= 0.7f && t < 1.3f) shake = new Vector2(Mathf.Sin(t * 41f), Mathf.Cos(t * 37f)) * 5f * Seg(t, 0.7f, 0.85f);
+            Fade(strikeCaption, Seg(t, 0.86f, 1.0f) * (1f - Seg(t, 1.2f, 1.32f)), -fh * 0.32f);
+
+            // 3. The tentacles: the kraken's picture lunges in, two hits, a teal pulse at the edges.
+            float art = Seg(t, 1.3f, 1.38f) * (1f - Seg(t, 2.05f, 2.2f));
+            ShowArt(krakenArt, w, fh, art, Mathf.Lerp(1.18f, 1.02f, EaseOut(Seg(t, 1.3f, 2.2f))), Vector2.zero);
+            if (t >= 1.3f && t < 1.55f) SetColor(flash, TealGlow, 0.45f * Seg(t, 1.3f, 1.33f) * (1f - Seg(t, 1.33f, 1.55f)));
+            float edge = Seg(t, 1.32f, 1.45f) * (1f - Seg(t, 2.05f, 2.2f));
+            float pulse = 0.6f + 0.4f * Mathf.Abs(Mathf.Sin((t - 1.32f) * 7f));
+            SetColor(vignetteTop, DeepTeal, 0.85f * edge * pulse);
+            SetColor(vignetteBottom, DeepTeal, 0.85f * edge * pulse);
+            float hit = t >= 1.32f && t < 1.5f ? 1f - Seg(t, 1.32f, 1.5f) : t >= 1.62f && t < 1.8f ? 1f - Seg(t, 1.62f, 1.8f) : 0f;
+            if (hit > 0f) shake = new Vector2(Mathf.Sin(t * 97f), Mathf.Cos(t * 83f)) * 18f * hit;
+            Pop(onoKugwang, t, 1.34f, 2.1f, new Vector2(w * 0.16f, fh * 0.28f), -9f);
+
+            // 4. The dragged.
+            ApplyDragged(t, w, fh);
+            return shake;
+        }
+
+        private void ApplyDragged(float t, float w, float fh)
+        {
+            // An ink-soaked poster for each of the dead, fanned out, then pulled down into the sea by the tentacles.
+            if (t < 2.2f) return;
+            SetColor(shade, DeepTeal, 0.94f);
+            Fade(posterHead, Seg(t, 2.3f, 2.45f) * (1f - Seg(t, 3.4f, 3.55f)), fh * 0.5f - 80f);
+            ShowArt(krakenArt, w, fh, 0.35f * Seg(t, 2.85f, 3.05f) * (1f - Seg(t, 3.45f, 3.6f)), 1.05f, Vector2.zero, -1f);
+            int n = Mathf.Max(1, shownVictims);
+            float scale = n <= 1 ? 1f : n == 2 ? 0.92f : 0.78f;
+            float spacing = Mathf.Min(w * 0.92f / n, 430f * scale);
+            for (int i = 0; i < InkPosterCount; i++)
+            {
+                InkPoster p = inkPosters[i];
+                if (i >= shownVictims)
+                {
+                    p.card.group.alpha = 0f;
+                    continue;
+                }
+                float at = 2.25f + i * 0.08f;
+                float drop = Seg(t, at, at + 0.3f);
+                float pull = EaseIn(Seg(t, 3.0f + i * 0.04f, 3.5f + i * 0.04f));
+                float side = i % 2 == 0 ? -1f : 1f;
+                float y = Mathf.Lerp(fh * 0.8f, 20f, EaseOutBack(drop));
+                y = Mathf.Lerp(y, -fh * 0.62f, pull);
+                p.card.rect.anchoredPosition = new Vector2((i - (n - 1) * 0.5f) * spacing, y);
+                p.card.rect.localRotation = Quaternion.Euler(0f, 0f, side * (5f + 6f * pull));
+                p.card.rect.localScale = new Vector3(scale * (1f - 0.12f * pull), scale * (1f + 0.1f * pull), 1f);
+                p.card.group.alpha = (t >= at ? 1f : 0f) * (1f - Seg(t, 3.42f + i * 0.04f, 3.58f + i * 0.04f));
+                float soak = EaseOut(Seg(t, 2.6f + i * 0.06f, 3.1f + i * 0.06f));
+                p.ink.rectTransform.localScale = new Vector3(1f, Mathf.Lerp(0.2f, 1.3f, soak), 1f);
+                SetColor(p.ink, InkTeal, p.kraken ? 0.9f * soak : 0f);
+                p.cut.rectTransform.sizeDelta = new Vector2(380f * EaseOut(Seg(t, at + 0.2f, at + 0.32f)), 10f);
+                SetColor(p.cut, new Color(0.75f, 0.06f, 0.05f), p.kraken ? 0f : 0.95f);
+            }
+            Fade(victimOverflow, Seg(t, 2.6f, 2.75f) * (1f - Seg(t, 3.3f, 3.45f)), -fh * 0.3f);
+            Pop(onoChwareuk, t, 3.0f, 3.5f, new Vector2(-w * 0.26f, -fh * 0.28f), 6f);
+            if (anyVictimMine)
+            {
+                float mine = Seg(t, 2.6f, 2.8f) * (1f - Seg(t, 3.35f, 3.5f));
+                myBand.rectTransform.anchoredPosition = new Vector2(0f, -fh * 0.36f);
+                SetColor(myBand, new Color(0.62f, 0.06f, 0.05f), 0.92f * mine);
+                myLine.alpha = mine;
+            }
+        }
+
+        private void ApplyInkAtDawn(float t, float fh, float at, float rise)
+        {
+            // Only an ink stain and a few bubbles are left on the calm water.
+            Vector2 stain = new Vector2(0f, -fh * 0.24f);
+            inkStain.rectTransform.anchoredPosition = stain;
+            inkStain.rectTransform.sizeDelta = new Vector2(Mathf.Lerp(520f, 920f, Seg(t, at, at + 0.8f)), 160f);
+            SetColor(inkStain, InkTeal, 0.65f * rise);
+            for (int i = 0; i < 8; i++)
+            {
+                float k = Mathf.Repeat((t - at) * 0.6f + Hash(i, 11), 1f);
+                sparks[i].rectTransform.anchoredPosition = stain + new Vector2((Hash(i, 12) - 0.5f) * 520f, 20f + k * 220f);
+                sparks[i].rectTransform.sizeDelta = Vector2.one * Mathf.Lerp(10f, 22f, Hash(i, 13));
+                SetColor(sparks[i], new Color(0.8f, 1f, 0.97f), 0.7f * rise * Mathf.Sin(k * Mathf.PI));
+            }
+        }
+
         private void ApplyDawn(float t, float w, float fh, float at)
         {
             // Sunrise over the deck and the day's plaque. The scene holds here until the day begins.
@@ -442,6 +635,7 @@ namespace WhoisntCitizen.GameUI
                 SetColor(rays[i], new Color(1f, 0.9f, 0.62f), 0.2f * rise * (0.6f + 0.4f * Hash(i, 7)));
             }
             ShowPlaque(t, at + 0.15f, fh, true);
+            if (info.Kind == DayTransitionKind.Dragged) ApplyInkAtDawn(t, fh, at, rise);
             if (info.Kind == DayTransitionKind.Protected || info.Kind == DayTransitionKind.Quiet)
             {
                 Fade(dawnCaption, Seg(t, at + 0.35f, at + 0.5f), -fh * 0.12f);
@@ -610,6 +804,11 @@ namespace WhoisntCitizen.GameUI
             foreach (TextMeshProUGUI text in fadingTexts) text.alpha = 0f;
             foreach (Image r in ripples) SetColor(r, Color.white, 0f);
             sealCrackImage.color = Color.clear;
+            krakenArt.group.alpha = 0f;
+            foreach (Image r in seaRings) SetColor(r, TealGlow, 0f);
+            foreach (Image eye in krakenEyes) SetColor(eye, Amber, 0f);
+            foreach (InkPoster p in inkPosters) p.card.group.alpha = 0f;
+            SetColor(inkStain, InkTeal, 0f);
         }
 
         /// <summary>
@@ -699,6 +898,9 @@ namespace WhoisntCitizen.GameUI
             splashCaption.text = info.Mine ? "당신은 처형되었습니다" : name + "님이 처형되었습니다";
             myLine.text = "당신은 사망했습니다";
             dawnCaption.text = info.Kind == DayTransitionKind.Protected ? "아무도 죽지 않았습니다" : "밤사이 아무도 죽지 않았습니다";
+            bool kraken = info.Kind == DayTransitionKind.Dragged;
+            strikeCaption.text = kraken ? "어젯밤, 바다 밑에서 무언가 올라왔습니다" : "어젯밤, 누군가 습격당했습니다";
+            posterHead.text = kraken && shownVictims > 1 ? "밤사이 희생자 · " + (info.Victims != null ? info.Victims.Length : shownVictims) + "명" : "밤사이 희생자";
         }
 
         // ================================================================ build
@@ -732,6 +934,7 @@ namespace WhoisntCitizen.GameUI
             BuildSun();
             BuildFx();
             BuildPoster();
+            BuildKraken();
             BuildScroll();
             BuildPlaque();
             BuildCaptions();
@@ -740,7 +943,56 @@ namespace WhoisntCitizen.GameUI
             barBottom = Bar("BarBottom", false);
             fadingTexts = new[] { nightSmall, nightMid, strikeCaption, shieldTitle, shieldSub, calmCaption, dawnCaption,
                 nightCaption, plankCaption, splashCaption, splashSub, posterHead, onoChaak, onoDang, onoChaeng, onoSswa,
-                onoDrum, onoDeol, onoKwang, onoCrack };
+                onoDrum, onoDeol, onoKwang, onoCrack, onoKugwang, onoChwareuk, victimOverflow };
+        }
+
+        /// <summary>
+        /// The kraken night's parts: its picture (the ability cut-in art, NightScene/AbilityCutIns PIRATE_KRAKEN), the rings
+        /// and eyes on the water, four ink-soaked posters, the ink stain at dawn and the sound words.
+        /// </summary>
+        private void BuildKraken()
+        {
+            Sprite art = null;
+            AbilityCutInCatalog cutIns = Resources.Load<AbilityCutInCatalog>("NightScene/AbilityCutIns");
+            if (cutIns != null) cutIns.TryFind("PIRATE_KRAKEN", out art, out _);
+            krakenArt = NewArt("KrakenArt", art);
+            krakenArt.rect.SetAsLastSibling();
+            for (int i = 0; i < seaRings.Length; i++) seaRings[i] = Img("SeaRing", stage, NightFxSprites.Ring, TealGlow);
+            for (int i = 0; i < krakenEyes.Length; i++)
+            {
+                krakenEyes[i] = Img("KrakenEye", stage, NightFxSprites.Dot, Amber);
+                krakenEyes[i].rectTransform.sizeDelta = new Vector2(46f, 28f);
+            }
+            inkStain = Img("InkStain", stage, NightFxSprites.Dot, InkTeal);
+            for (int i = 0; i < InkPosterCount; i++) inkPosters[i] = NewInkPoster(i);
+            victimOverflow = Text("VictimOverflow", stage, 54f, Cream);
+            onoKugwang = Sound("Kugwang", stage, "쿠과광!", 140f, new Color(0.03f, 0.3f, 0.3f));
+            onoChwareuk = Sound("Chwareuk", stage, "촤르륵", 96f, new Color(0.02f, 0.2f, 0.21f));
+        }
+
+        private InkPoster NewInkPoster(int index)
+        {
+            var poster = new InkPoster { card = NewCard("InkPoster" + index, new Vector2(400f, 540f)) };
+            RectTransform window = Box("Window", poster.card.rect, new Vector2(0f, 80f), new Vector2(300f, 290f), new Color(0.16f, 0.11f, 0.08f));
+            window.gameObject.AddComponent<RectMask2D>();
+            poster.portrait = Img("Portrait", window, null, new Color(0.72f, 0.66f, 0.6f));
+            poster.portrait.rectTransform.sizeDelta = new Vector2(340f, 340f);
+            poster.portrait.rectTransform.anchoredPosition = new Vector2(0f, -20f);
+            poster.portrait.preserveAspect = true;
+            poster.cut = Img("Cut", poster.card.rect, NightFxSprites.Streak, Color.clear);
+            poster.cut.rectTransform.anchoredPosition = new Vector2(0f, 90f);
+            poster.cut.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -58f);
+            poster.name = Text("Name", poster.card.rect, 56f, Ink);
+            poster.name.outlineWidth = 0f;
+            poster.name.rectTransform.anchoredPosition = new Vector2(0f, -110f);
+            poster.line = Text("Line", poster.card.rect, 28f, new Color(0.06f, 0.36f, 0.36f));
+            poster.line.outlineWidth = 0f;
+            poster.line.rectTransform.anchoredPosition = new Vector2(0f, -170f);
+            poster.ink = Img("Ink", poster.card.rect, NightFxSprites.Dot, Color.clear);
+            poster.ink.rectTransform.pivot = new Vector2(0.5f, 0f);
+            poster.ink.rectTransform.anchoredPosition = new Vector2(0f, -300f);
+            poster.ink.rectTransform.sizeDelta = new Vector2(470f, 260f);
+            return poster;
         }
 
         private Art NewArt(string name, Sprite sprite)

@@ -31,7 +31,7 @@ namespace WhoisntCitizen.GameUI
         private GameResultCardView cardView;
         private Color surfaceColor, accent;
         private Action completed;
-        private bool initialized, active, defeat;
+        private bool initialized, active, defeat, personal; // personal: a neutral win (its motes rise like bubbles, pearls or will-o'-the-wisps)
         private float elapsed, layoutWidth, layoutHeight;
         public bool IsPlaying { get; private set; }
 
@@ -80,17 +80,18 @@ namespace WhoisntCitizen.GameUI
         {
             Stop();
             completed = onCompleted;
-            string background = GameResultPanel.BackgroundName(result, me != null ? me.faction : null);
+            string background = GameResultPanel.BackgroundName(result, me);
             if (!hasArt || background == null) { FinishImmediately(); return; }
             defeat = background == "Defeat";
-            accent = defeat ? GameResultPalette.Muted : GameResultPalette.ForFaction(result.winner);
+            personal = background == "PersonalVictory";
+            accent = defeat ? GameResultPalette.Muted : GameResultPalette.ForWinner(result.winner);
             // TMP initializes its renderer on activation, before outline materials are configured.
             stage.gameObject.SetActive(true);
-            BuildFigures(result, me, skinOf, background);
+            BuildFigures(result, me, skinOf);
             for (int i = 0; i < particles.Count; i++)
             {
                 particles[i].sprite = defeat ? NightFxSprites.Streak : NightFxSprites.Dot;
-                particles[i].rectTransform.sizeDelta = defeat ? new Vector2(45f + i % 4 * 8f, 2f) : Vector2.one * (5f + i % 5 * 2f);
+                particles[i].rectTransform.sizeDelta = defeat ? new Vector2(45f + i % 4 * 8f, 2f) : Vector2.one * (personal ? 8f + i % 5 * 3f : 5f + i % 5 * 2f);
                 particles[i].rectTransform.localRotation = Quaternion.Euler(0f, 0f, defeat ? -72f : 0f);
             }
             active = IsPlaying = true; elapsed = 0f;
@@ -101,17 +102,19 @@ namespace WhoisntCitizen.GameUI
             LayoutFigures(); Apply(0f);
         }
 
-        private void BuildFigures(GameResultDto result, MyRoleDto me, Func<long, ChibiCharacterSkin> skinOf, string background)
+        private void BuildFigures(GameResultDto result, MyRoleDto me, Func<long, ChibiCharacterSkin> skinOf)
         {
             if (skinOf == null || me == null) return;
-            bool solo = defeat || background == "PersonalVictory";
+            // Defeat shows only me; a victory shows everyone who won with me (the whole team, the siren team, or only me
+            // for a solo win). Winners come from the server (winnerIds), not from the role's faction.
             var ids = new HashSet<long>();
             if (result.players != null)
                 foreach (PlayerResultDto player in result.players)
                 {
                     if (player == null || figures.Count >= 12 || !ids.Add(player.playerId)) continue;
                     bool mine = player.playerId == me.playerId;
-                    if (solo ? !mine : !mine && GameResultPalette.FactionForRole(player.role) != result.winner) continue;
+                    bool won = GameStateQueries.IsWinner(result, player.playerId, mine ? me.faction : GameResultPalette.FactionForRole(player.role));
+                    if (defeat ? !mine : !mine && !won) continue;
                     AddFigure(player.playerId, player.nickname, skinOf);
                 }
             if (figures.Count == 0) AddFigure(me.playerId, "나", skinOf);
@@ -205,9 +208,9 @@ namespace WhoisntCitizen.GameUI
             for (int i = 0; i < particles.Count; i++)
             {
                 float x = Mathf.Repeat(i * .618034f + (defeat ? -time * .018f : Mathf.Sin(time * .7f + i) * .012f), 1f);
-                float y = Mathf.Repeat(i * .381966f + time * (defeat ? -.48f : .035f), 1f);
+                float y = Mathf.Repeat(i * .381966f + time * (defeat ? -.48f : personal ? .12f : .035f), 1f);
                 particles[i].rectTransform.anchorMin = particles[i].rectTransform.anchorMax = new Vector2(x, .4f + y * .59f);
-                particles[i].color = new Color(accent.r, accent.g, accent.b, fade * (defeat ? .22f : .45f) * Mathf.Sin(y * Mathf.PI));
+                particles[i].color = new Color(accent.r, accent.g, accent.b, fade * (defeat ? .22f : personal ? .55f : .45f) * Mathf.Sin(y * Mathf.PI));
             }
         }
 

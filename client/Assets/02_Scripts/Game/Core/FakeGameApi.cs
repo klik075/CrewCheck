@@ -234,13 +234,19 @@ namespace WhoisntCitizen.Game
             Reply(onDone, GameApiResult<MyRoleDto>.Ok(dto));
         }
 
-        public void SubmitNightAction(string gameId, long targetId, Action<GameApiResult<NightActionResultDto>> onDone)
+        public void SubmitNightAction(string gameId, long targetId, string actionCode, Action<GameApiResult<NightActionResultDto>> onDone)
         {
             if (!Begin(gameId, onDone))
             {
                 return;
             }
             FakePlayer me = Me;
+            if (!string.IsNullOrEmpty(actionCode) && actionCode != me.ActionCode)
+            {
+                // 가짜 서버에는 크라켄이 없어서 기본 능력 말고는 고를 수 없다(서버의 ActionCode.choices).
+                Reply(onDone, RuleViolation<NightActionResultDto>("이 직업이 쓸 수 없는 능력입니다: " + actionCode));
+                return;
+            }
             FakePlayer target = Find(targetId);
             string error = CheckNightAction(me, target, targetId);
             if (error != null)

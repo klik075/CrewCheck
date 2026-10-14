@@ -140,6 +140,53 @@ namespace WhoisntCitizen.Game.Tests
             CollectionAssert.AreEqual(new long[] { 11, 13 }, me.mafiaTeammateIds);
         }
 
+        [Test]
+        public void 예전_응답이면_새_필드는_기본값이다()
+        {
+            // team·sirenTeamIds·krakenMarkIds·abilityAvailable이 없던 응답. 능력 버튼이 꺼지지 않도록 abilityAvailable은 true로 남는다.
+            var me = GameJson.FromJson<MyRoleDto>(GameJsonFixtures.MyRoleRaider);
+
+            Assert.IsTrue(string.IsNullOrEmpty(me.team));
+            Assert.IsFalse(me.IsSirenTeam);
+            Assert.AreEqual(0, me.sirenTeamIds.Count);
+            Assert.AreEqual(0, me.krakenMarkIds.Count);
+            Assert.IsTrue(me.abilityAvailable);
+        }
+
+        [Test]
+        public void 내_역할_유혹당한_선원은_세이렌_팀이다()
+        {
+            var me = GameJson.FromJson<MyRoleDto>(GameJsonFixtures.MyRoleSeducedDoctor);
+
+            Assert.AreEqual(Factions.Crew, me.faction); // 직업의 진영은 그대로
+            Assert.AreEqual(Teams.Siren, me.team);
+            Assert.IsTrue(me.IsSirenTeam);
+            CollectionAssert.AreEqual(new long[] { 15 }, me.sirenTeamIds);
+            Assert.IsTrue(me.abilityAvailable);
+        }
+
+        [Test]
+        public void 내_역할_쉬는_밤의_세이렌()
+        {
+            var me = GameJson.FromJson<MyRoleDto>(GameJsonFixtures.MyRoleSirenResting);
+
+            Assert.AreEqual(Factions.Neutral, me.faction);
+            Assert.AreEqual(ActionCodes.Seduce, me.actionCode);
+            Assert.IsFalse(me.abilityAvailable);
+            Assert.AreEqual(AbilityBlock.Resting, AbilityRules.CheckNightAbility(
+                GameTestData.State(GamePhases.Night, 7, GameTestData.P(15, "수진", true), GameTestData.P(11, "철수", true)), me, false));
+        }
+
+        [Test]
+        public void 내_역할_크라켄은_표식_목록이_있다()
+        {
+            var me = GameJson.FromJson<MyRoleDto>(GameJsonFixtures.MyRoleKraken);
+
+            Assert.AreEqual(ActionCodes.KrakenMark, me.actionCode);
+            Assert.AreEqual(Teams.Neutral, me.team);
+            CollectionAssert.AreEqual(new long[] { 12, 13 }, me.krakenMarkIds);
+        }
+
         // ---------------------------------------------------------------- 밤 능력
 
         [Test]
@@ -239,6 +286,36 @@ namespace WhoisntCitizen.Game.Tests
 
             Assert.IsNotNull(n.reports);
             Assert.AreEqual(0, n.reports.Count);
+            Assert.IsNotNull(n.deaths, "deaths가 없던 예전 응답");
+            Assert.AreEqual(0, n.Deaths.Count);
+        }
+
+        [Test]
+        public void 밤_결과_사망자_목록과_원인()
+        {
+            var n = GameJson.FromJson<NightResultDto>(GameJsonFixtures.NightResultKrakenSeduced);
+
+            Assert.AreEqual(12L, n.killedPlayerId, "killedPlayerId는 해적의 습격만");
+            Assert.IsTrue(n.HasKill);
+            Assert.AreEqual(2, n.Deaths.Count);
+            Assert.AreEqual(12L, n.Deaths[0].playerId);
+            Assert.AreEqual(DeathCauses.Attack, n.Deaths[0].cause);
+            Assert.AreEqual(13L, n.Deaths[1].playerId);
+            Assert.AreEqual("민수", n.Deaths[1].nickname);
+            Assert.AreEqual(DeathCauses.Kraken, n.Deaths[1].cause);
+        }
+
+        [Test]
+        public void 밤_결과_유혹당함과_표식_당함()
+        {
+            var n = GameJson.FromJson<NightResultDto>(GameJsonFixtures.NightResultKrakenSeduced);
+
+            ReportDto seduced = n.reports[0];
+            Assert.AreEqual(ReportTypes.Seduced, seduced.type);
+            Assert.AreEqual(0L, seduced.targetId, "targetId null → 0");
+            Assert.AreEqual(15L, seduced.players.Single().playerId);
+            Assert.AreEqual("수진", seduced.players.Single().nickname);
+            Assert.AreEqual(ReportTypes.KrakenMarked, n.reports[1].type);
         }
 
         // ---------------------------------------------------------------- 투표 · 처형
@@ -312,6 +389,23 @@ namespace WhoisntCitizen.Game.Tests
             Assert.AreEqual(2, g.players.Count);
             Assert.AreEqual(RoleCodes.CrewMonkey, g.players[1].role, "원숭이는 결과에서 실제 직업으로 나온다");
             Assert.AreEqual("원숭이", g.players[1].roleName);
+            Assert.IsNotNull(g.winnerIds, "winnerIds가 없던 예전 응답");
+            Assert.AreEqual(0, g.winnerIds.Count);
+        }
+
+        [Test]
+        public void 게임_결과_단독_승리는_승자_목록과_팀으로_읽는다()
+        {
+            var g = GameJson.FromJson<GameResultDto>(GameJsonFixtures.GameResultKraken);
+
+            Assert.AreEqual(Winners.Kraken, g.winner);
+            CollectionAssert.AreEqual(new long[] { 14 }, g.winnerIds);
+            Assert.AreEqual(Teams.Siren, g.players[0].team);
+            Assert.IsFalse(g.players[0].win);
+            Assert.AreEqual(Teams.Neutral, g.players[1].team);
+            Assert.IsTrue(g.players[1].win);
+            Assert.IsTrue(GameStateQueries.IsWinner(g, 14, Factions.Neutral));
+            Assert.IsFalse(GameStateQueries.IsWinner(g, 11, Factions.Crew));
         }
 
         [Test]
@@ -373,9 +467,11 @@ namespace WhoisntCitizen.Game.Tests
         // ---------------------------------------------------------------- 요청 · 도우미
 
         [Test]
-        public void 요청_body는_targetId_하나다()
+        public void 요청_body는_targetId와_고른_능력이다()
         {
-            Assert.AreEqual("{\"targetId\":5}", GameJson.TargetBody(5));
+            // JsonUtility는 null 문자열을 ""로 보낸다. 서버는 빈 actionCode를 직업의 기본 능력으로 본다.
+            Assert.AreEqual("{\"targetId\":5,\"actionCode\":\"\"}", GameJson.TargetBody(5));
+            Assert.AreEqual("{\"targetId\":0,\"actionCode\":\"KRAKEN_STRIKE\"}", GameJson.TargetBody(0, ActionCodes.KrakenStrike));
         }
 
         [Test]

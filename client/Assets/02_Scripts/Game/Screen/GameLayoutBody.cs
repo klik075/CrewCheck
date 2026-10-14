@@ -146,8 +146,9 @@ namespace WhoisntCitizen.Game
                 return;
             }
             MyRoleDto me = session.Me;
-            popup.Show("내 역할", (me.roleName ?? string.Empty) + " · " + RoleInfoText.Goal(me.role, me.faction));
-            popup.AddRow(me.roleName ?? string.Empty, RoleInfoText.FactionName(me.faction), FactionColor(me.faction), RoleText(session));
+            popup.Show("내 역할", (me.roleName ?? string.Empty) + " · " + RoleInfoText.Goal(me));
+            popup.AddRow(me.roleName ?? string.Empty, RoleInfoText.TeamName(me), FactionColor(me.IsSirenTeam ? Factions.Neutral : me.faction),
+                RoleText(session));
         }
 
         /// <summary>What my role does, then the ability and the teammates (one per line).</summary>

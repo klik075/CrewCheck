@@ -6,7 +6,7 @@ namespace WhoisntCitizen.Game
     public sealed class NightRoom
     {
         public string DesignId;   // 밤 배경·컷인 이미지의 디자인 코드 (예: CREW_DOCTOR, PIRATE_SHARED). 모르는 직업이면 null
-        public bool Shared;       // 해적 동료와 같이 있는 방
+        public bool Shared;       // 해적 동료(또는 세이렌 팀)와 같이 있는 방
         public readonly List<PlayerViewDto> Members = new List<PlayerViewDto>();
     }
 
@@ -16,6 +16,7 @@ namespace WhoisntCitizen.Game
     /// - 해적 진영이고 살아 있는 동료를 알고 있으면 해적 공용 방(PIRATE_SHARED)에 다 같이 있다.
     /// - 앵무새는 접선 전에는 동료를 모르므로 앵무새 방에 혼자 있고, 접선하면 해적 방으로 들어간다.
     ///   해적은 다음 /me(페이즈가 바뀔 때)에 앵무새를 동료로 받으면 방에 앵무새가 들어온다.
+    /// - 세이렌 팀(세이렌, 유혹당한 사람)은 세이렌의 방(CONCEPT_SIREN)에 살아 있는 팀원과 같이 있다(/me의 sirenTeamIds).
     /// - 그 밖에는 내 직업의 방에 혼자 있다. 원숭이는 서버가 보여 주는 위장 직업의 방이다.
     /// </summary>
     public static class NightRoomRules
@@ -64,9 +65,25 @@ namespace WhoisntCitizen.Game
                     }
                 }
             }
+            else if (me.IsSirenTeam)
+            {
+                // 세이렌 팀은 서로 안다(/me의 sirenTeamIds). 유혹당한 사람도 세이렌의 방으로 간다.
+                foreach (PlayerViewDto p in state.players)
+                {
+                    if (p.playerId != me.playerId && p.alive && me.sirenTeamIds != null && me.sirenTeamIds.Contains(p.playerId))
+                    {
+                        room.Members.Add(p);
+                    }
+                }
+                room.Shared = room.Members.Count > 1;
+                room.DesignId = DesignIdFor(SirenRole);
+                return room;
+            }
             room.Shared = room.Members.Count > 1;
             room.DesignId = room.Shared ? PirateShared : DesignIdFor(me.role);
             return room;
         }
+
+        private const string SirenRole = "NEUTRAL_SIREN";
     }
 }

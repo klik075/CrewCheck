@@ -38,6 +38,7 @@ namespace WhoisntCitizen.Game
         // The strip: a portrait ring (with its anchor badge) and a name plate per player, at most this far apart.
         private const float SlotSpacing = 129f, StripMargin = 26f, PlateWidth = 116f, PlateHeight = 39f;
         private const float PlateBelowCentre = 67f; // from the ring's centre to the plate's top
+        private const float HeldChatTop = GameHudMetrics.HudHeight + 10f; // held, the chat window's top: just under the top HUD
         private static readonly Color Pick = new Color(1f, 0.82f, 0.3f), Target = new Color(0.92f, 0.3f, 0.24f);
 
         private sealed class Slot
@@ -47,7 +48,21 @@ namespace WhoisntCitizen.Game
             public GameObject ring, tally;
             public Image ringLine;
             public TextMeshProUGUI tallyText;
+            // The neutral roles' marks (시안 F·G): the kraken's mark, its pulse when the kraken strikes, the siren team's
+            // pink ring, and ink over one the kraken dragged away.
+            public GameObject krakenMark, krakenGlow, sirenRing, ink;
+            public Image krakenFill, krakenIcon, krakenGlowImage;
         }
+
+        private static readonly Color KrakenTeal = new Color(0.18f, 0.83f, 0.77f), KrakenDim = new Color(0.11f, 0.35f, 0.34f);
+        private static readonly Color KrakenInk = new Color(0.02f, 0.16f, 0.17f), SirenPink = new Color(0.94f, 0.55f, 0.78f);
+
+        // What the neutral marks were last drawn from: redrawn when these change, only the pulse every frame.
+        private MyRoleDto neutralMe;
+        private GameStateDto neutralState;
+        private bool neutralStruck, neutralMarkedMe;
+        private int neutralSlots = -1;
+        private readonly HashSet<long> krakenMarked = new HashSet<long>(), sirenTeam = new HashSet<long>();
 
         [System.Serializable]
         private sealed class ActionButton
@@ -79,6 +94,11 @@ namespace WhoisntCitizen.Game
         private string shownMarks;
         private GameObject titleRule; // the rule under the action line's title (Dress), hidden under a two-line text
         private float laidOutWidth = -1f, laidOutRaise = float.NaN;
+        // The chat log held down (RaiseChat): the window grows from the top the scene gives it, by chatRaise.
+        private ChatPressHold chatHold;
+        private readonly List<Canvas> chatLayers = new List<Canvas>();
+        private float chatBoxTop, chatRaise;
+        private bool chatRaised;
 
         public override bool PlaysDayTransitions => true;
 
@@ -155,6 +175,11 @@ namespace WhoisntCitizen.Game
             if (secondaryButton != null && secondaryButton.button != null) secondaryButton.button.onClick.AddListener(OnSecondary);
             BuildChat(ChatArea);
             if (chatUi != null) chatUi.AddTabRow(); // the tabs and filter at the log's top (made at run time, baked too)
+            if (ctx.Chat != null)
+            {
+                chatHold = ctx.Chat.GetComponent<ChatPressHold>();
+                if (chatHold == null) chatHold = ctx.Chat.gameObject.AddComponent<ChatPressHold>();
+            }
             if (ctx.Sheet != null) HideDrawer();
             // The card hand keeps the vote but is not shown: the strip picks, the action line confirms.
             if (ctx.VoteHand != null)
@@ -219,6 +244,60 @@ namespace WhoisntCitizen.Game
         }
 
         private Vector4 fittedArea = new Vector4(-1f, -1f, -1f, -1f);
+
+        // Held (ChatPressHold), the chat window grows up over the stage to just under the top HUD, so older lines show
+        // above; let go, it shrinks back to the scene's size. Meanwhile the window, its log and the input bar draw over the
+        // stage, in their own order: each is on a canvas of its own, sorted over the game canvas only while grown.
+        private void RaiseChat()
+        {
+            float open = chatHold != null ? chatHold.Open : 0f;
+            if (open <= 0f && !chatRaised) return;
+            if (backdrop == null || !(backdrop.Find("ChatBox") is RectTransform box)) return;
+            if (!chatRaised)
+            {
+                chatBoxTop = box.offsetMax.y;
+                chatRaise = Mathf.Max(0f, ChatWindow().y - HeldChatTop);
+                SetChatOver(true);
+                chatRaised = true;
+            }
+            box.offsetMax = new Vector2(box.offsetMax.x, chatBoxTop + chatRaise * open);
+            if (open > 0f) return;
+            SetChatOver(false);
+            chatRaised = false;
+        }
+
+        private void SetChatOver(bool over)
+        {
+            if (chatLayers.Count == 0)
+            {
+                RectTransform lift = ctx.Sheet != null && ctx.Sheet.parent is RectTransform l && l.name == "BottomSheetLift" ? l : null;
+                foreach (RectTransform part in new[] { backdrop, ctx.Chat, lift })
+                {
+                    if (part != null) chatLayers.Add(OwnCanvas(part));
+                }
+            }
+            Canvas root = ctx.Canvas.GetComponent<Canvas>();
+            int order = root != null ? root.sortingOrder : 0;
+            for (int i = 0; i < chatLayers.Count; i++)
+            {
+                chatLayers[i].overrideSorting = over;
+                chatLayers[i].sortingOrder = order + 1 + i;
+            }
+        }
+
+        // part on a canvas of its own: unsorted, it still draws in its place among its siblings; still clickable.
+        private static Canvas OwnCanvas(RectTransform part)
+        {
+            Canvas canvas = part.GetComponent<Canvas>();
+            if (canvas == null)
+            {
+                Canvas parent = part.parent != null ? part.parent.GetComponentInParent<Canvas>() : null;
+                canvas = part.gameObject.AddComponent<Canvas>();
+                if (parent != null) canvas.additionalShaderChannels = parent.rootCanvas.additionalShaderChannels;
+            }
+            if (part.GetComponent<GraphicRaycaster>() == null) part.gameObject.AddComponent<GraphicRaycaster>();
+            return canvas;
+        }
 
         /// <summary>
         /// Everything under the stage lies on one night-blue backdrop, the colour the nautical frames were drawn on (the
@@ -552,10 +631,15 @@ namespace WhoisntCitizen.Game
         {
             if (session.Me == null) return;
             Sprite bust = BustOf(session.Me.playerId);
-            string key = (session.Me.roleName ?? "") + "|" + (bust != null ? bust.name : "");
+            bool siren = session.Me.IsSirenTeam;
+            string key = (session.Me.roleName ?? "") + "|" + (bust != null ? bust.name : "") + (siren ? "|siren" : "");
             if (key == chipKey) return;
             chipKey = key;
             if (chipText != null) chipText.text = session.Me.roleName ?? "내 역할";
+            // 세이렌 팀(세이렌, 유혹당한 사람)이면 칩 테두리가 분홍으로 (시안 F ④)
+            Transform outline = roleChip != null ? roleChip.transform.Find("Outline") : null;
+            Image line = outline != null ? outline.GetComponent<Image>() : null;
+            if (line != null) line.color = siren ? SirenPink : GoldLine;
             if (chipAvatar == null) return;
             for (int i = chipAvatar.childCount - 1; i >= 0; i--) Destroy(chipAvatar.GetChild(i).gameObject);
             // Fits the avatar box, inset 6 (a 66 box holds a 54 avatar), so resizing the box in the scene resizes it
@@ -634,6 +718,7 @@ namespace WhoisntCitizen.Game
                     HudShapes.Panel(mark, new Color(0.16f, 0.11f, 0.06f), GoldLine, 18f);
                     AddImage(Box(mark, "Skull", 7f, 7f, 22f, 22f), Icon("skull"), Cream).preserveAspect = true;
                 }
+                BuildNeutralMarks(slot, root, mid, centre, face, outer);
                 RectTransform badge = Box(root, "Tally", mid + outer * 0.5f - 32f, centre + outer * 0.5f - 46f, 40f, 40f);
                 HudShapes.Panel(badge, new Color(0.78f, 0.22f, 0.18f), Cream, 20f);
                 slot.tallyText = NewText(badge, "Count", 24f, Color.white, FontStyles.Bold, TextAlignmentOptions.Center);
@@ -644,6 +729,88 @@ namespace WhoisntCitizen.Game
             }
             shownPick = -1;
             shownMarks = null;
+            neutralSlots = -1; // new slots: draw their neutral marks again
+        }
+
+        // The neutral roles' parts of one roster slot, all hidden until UpdateNeutralMarks shows them.
+        private static void BuildNeutralMarks(Slot slot, RectTransform root, float mid, float centre, float face, float outer)
+        {
+            // The kraken striking: a teal glow behind the face of each one it marked.
+            RectTransform glow = Box(root, "KrakenGlow", mid - outer * 0.75f, centre - outer * 0.75f, outer * 1.5f, outer * 1.5f);
+            glow.SetAsFirstSibling();
+            slot.krakenGlowImage = AddImage(glow, NightFxSprites.Dot, KrakenTeal);
+            slot.krakenGlow = glow.gameObject;
+            // The siren team: a pink ring round the portrait (only on the screens of the siren team).
+            RectTransform pink = Box(root, "SirenRing", mid - outer * 0.5f - 3f, centre - outer * 0.5f - 3f, outer + 6f, outer + 6f);
+            HudShapes.Panel(pink, new Color(0f, 0f, 0f, 0f), SirenPink, (outer + 6f) * 0.5f);
+            Image pinkLine = pink.Find("Outline").GetComponent<Image>();
+            pinkLine.pixelsPerUnitMultiplier *= 0.6f; // a thick line
+            slot.sirenRing = pink.gameObject;
+            // Dragged away by the kraken: ink seeping up from the bottom of the face.
+            RectTransform ink = Box(root, "KrakenInk", mid - face * 0.5f, centre - face * 0.05f, face, face * 0.55f);
+            AddImage(ink, NightFxSprites.Fade, new Color(KrakenInk.r, KrakenInk.g, KrakenInk.b, 0.85f));
+            slot.ink = ink.gameObject;
+            // The kraken's mark: a curled tentacle in a disc, where the pirates' skull would be (top right).
+            RectTransform mark = Box(root, "KrakenMark", mid + outer * 0.5f - 30f, centre - outer * 0.5f - 4f, 36f, 36f);
+            slot.krakenFill = HudShapes.Panel(mark, KrakenTeal, new Color(0.9f, 1f, 0.98f), 18f);
+            slot.krakenIcon = AddImage(Box(mark, "Tentacle", 5f, 5f, 26f, 26f), NightFxSprites.Tentacle, KrakenInk);
+            slot.krakenIcon.preserveAspect = true;
+            // A marked one cannot be picked again (dimmed at night), but the badge stays bright.
+            CanvasGroup bright = mark.gameObject.AddComponent<CanvasGroup>();
+            bright.ignoreParentGroups = true;
+            bright.blocksRaycasts = false;
+            slot.krakenMark = mark.gameObject;
+            foreach (GameObject part in new[] { slot.krakenGlow, slot.sirenRing, slot.ink, slot.krakenMark }) part.SetActive(false);
+        }
+
+        /// <summary>
+        /// The neutral roles' marks on the roster, from what this player knows:
+        /// - the kraken: a tentacle badge on each living one it marked (/me krakenMarkIds); a pulsing glow when it strikes;
+        /// - one the kraken marked: a dark badge on their own slot only (KRAKEN_MARKED, remembered by the session);
+        /// - the siren team (the siren and the seduced): a pink ring round each of the team (/me sirenTeamIds);
+        /// - everyone: ink over the ones the kraken dragged away (the night result's death cause is public).
+        /// </summary>
+        private void UpdateNeutralMarks(GameSession session)
+        {
+            MyRoleDto me = session.Me;
+            bool struck = session.StruckTonight, markedMe = session.MarkedByKraken;
+            if (me != neutralMe || session.State != neutralState || struck != neutralStruck || markedMe != neutralMarkedMe || slots.Count != neutralSlots)
+            {
+                neutralMe = me;
+                neutralState = session.State;
+                neutralStruck = struck;
+                neutralMarkedMe = markedMe;
+                neutralSlots = slots.Count;
+                krakenMarked.Clear();
+                sirenTeam.Clear();
+                if (me != null)
+                {
+                    foreach (PlayerViewDto p in session.KrakenMarks) krakenMarked.Add(p.playerId);
+                    if (me.IsSirenTeam)
+                    {
+                        sirenTeam.Add(me.playerId);
+                        foreach (long id in me.sirenTeamIds) sirenTeam.Add(id);
+                    }
+                }
+                foreach (Slot slot in slots)
+                {
+                    bool myMark = markedMe && me != null && slot.id == me.playerId;
+                    bool marked = krakenMarked.Contains(slot.id);
+                    slot.krakenMark.SetActive(marked || myMark);
+                    slot.krakenFill.color = myMark ? KrakenDim : KrakenTeal;
+                    slot.krakenIcon.color = myMark ? new Color(0.65f, 0.94f, 0.9f) : KrakenInk;
+                    slot.krakenGlow.SetActive(struck && marked);
+                    slot.sirenRing.SetActive(sirenTeam.Contains(slot.id));
+                    slot.ink.SetActive(session.WasDraggedByKraken(slot.id));
+                }
+            }
+            if (!struck) return;
+            // [발동]을 고른 밤: 끌려갈 칸이 1.2초마다 맥박처럼 빛난다
+            float pulse = 0.35f + 0.45f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * Mathf.PI / 1.2f));
+            foreach (Slot slot in slots)
+            {
+                if (slot.krakenGlow.activeSelf) slot.krakenGlowImage.color = new Color(KrakenTeal.r, KrakenTeal.g, KrakenTeal.b, pulse);
+            }
         }
 
         private void OnSlotClicked(long playerId)
@@ -675,12 +842,14 @@ namespace WhoisntCitizen.Game
             }
             // The stage can be retuned while playing. Baked, the backdrop stays where the scene has it.
             if (!baked && backdrop != null) backdrop.offsetMax = new Vector2(0f, -GameHudMetrics.StageBottom);
+            RaiseChat();
             FitChat(); // a taller screen stretches the chat window
 
             GameSession session = ctx.Session();
             if (session == null || session.State == null) return;
             if (phase == null) phase = session.State.phase;
             UpdateMarks(session);
+            UpdateNeutralMarks(session);
             ApplyAction(StateFor(session));
         }
 
@@ -734,15 +903,19 @@ namespace WhoisntCitizen.Game
                     if (me == null) break;
                     AbilityBlock block = session.NightAbility;
                     long shown = ctx.NightPanel != null ? ctx.NightPanel.ShownTarget : session.MyNightTarget;
-                    Split(GameScreenText.NightStatus(block, me.actionCode, shown, session.SkippedTonight, state), ref s);
+                    int marks = session.KrakenMarks.Count;
+                    Split(GameScreenText.NightStatus(block, me.actionCode, shown, session.SkippedTonight, state, session.StruckTonight, marks), ref s);
                     if (block != AbilityBlock.None) break;
                     bool picked = ctx.NightPanel != null && ctx.NightPanel.CanConfirm;
+                    bool strike = ctx.NightPanel != null && ctx.NightPanel.CanStrike; // 크라켄: 대상 없이 누르면 발동
                     if (picked) s.sub = "오른쪽 버튼을 누르면 확정됩니다.";
-                    else if (shown == 0 && !session.SkippedTonight) s.sub = "아래 명단에서 대상을 누르세요.";
+                    else if (strike) s.sub = "명단에서 표식할 대상을 누르거나, [발동]으로 " + marks + "명을 끌고 갑니다.";
+                    else if (shown == 0 && !session.SkippedTonight && !session.StruckTonight) s.sub = "아래 명단에서 대상을 누르세요.";
                     s.secondary = session.SkippedTonight ? "넘김" : "넘기기";
                     s.secondaryOn = !session.SkippedTonight;
-                    s.primary = ReportFormatter.ActionName(me.actionCode) + (session.MyNightTarget != 0 ? " 변경" : string.Empty);
-                    s.primaryOn = picked;
+                    s.primary = ctx.NightPanel != null ? ctx.NightPanel.ConfirmLabel
+                        : ReportFormatter.ActionName(me.actionCode) + (session.MyNightTarget != 0 ? " 변경" : string.Empty);
+                    s.primaryOn = picked || strike;
                     break;
                 }
                 case GamePhases.Vote:
@@ -750,7 +923,7 @@ namespace WhoisntCitizen.Game
                     s.chip = "투표";
                     if (!session.CanVote)
                     {
-                        s.title = "사망한 플레이어는 투표할 수 없습니다.";
+                        s.title = session.VoteBannedToday ? ReportFormatter.VoteBannedMessage : "사망한 플레이어는 투표할 수 없습니다.";
                         break;
                     }
                     if (ctx.VoteHand == null || !ctx.VoteHand.IsShown)

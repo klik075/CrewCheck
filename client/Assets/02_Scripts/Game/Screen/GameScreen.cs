@@ -91,6 +91,8 @@ namespace WhoisntCitizen.Game
         private DayTransitionView transition;                            // 밤 결과·처형 컷신 (배치가 쓰면. 지금은 GameScene3)
         private long joinedPhaseVersion = -1;                            // 새 게임·재접속으로 들어온 페이즈: 그 결과는 컷신 없이 보여 준다
         private GameResultDto pendingGameResult;                         // 컷신이 끝나면 띄울 게임 결과
+        private SirenSongView sirenSong;                                 // 유혹당했을 때의 세이렌 컷인, 세이렌 본인의 유혹 결과 띠
+        private System.Action pendingSiren;                              // 밤 결과 컷신이 끝나(낮이 열리면) 틀 세이렌 연출
         private string announcedRole;
         private string announcedTeammates;
         private bool nightDrawerOpened;
@@ -98,6 +100,7 @@ namespace WhoisntCitizen.Game
         private int shownSeconds = -1;
         private bool shownWaiting;
         private bool deadVoteNoticeShown;
+        private int voteBanNoticeDay;      // 요리사의 투표 금지를 투표 시간에 다시 알린 일차 (하루에 한 번)
         private readonly List<PlayerView> voteTargets = new List<PlayerView>();
 
         // 투표 전송 대기: 앞 요청(밤 행동·투표)이 처리 중이면 보낼 수 없으므로, 마지막으로 원한 상태만 남겨 두었다가 보낸다
@@ -231,6 +234,7 @@ namespace WhoisntCitizen.Game
                 nightPanel.PortraitResolver = PortraitOf;
                 nightPanel.Confirmed += OnNightConfirmed;
                 nightPanel.Skipped += OnNightSkipped;
+                nightPanel.Struck += OnNightStruck;
             }
             if (dayPanel != null)
             {
@@ -301,6 +305,7 @@ namespace WhoisntCitizen.Game
             {
                 nightPanel.Confirmed -= OnNightConfirmed;
                 nightPanel.Skipped -= OnNightSkipped;
+                nightPanel.Struck -= OnNightStruck;
             }
             if (dayPanel != null)
             {
@@ -489,7 +494,107 @@ namespace WhoisntCitizen.Game
             {
                 AddSystem(line); // 개인 결과 (나에게만 온다. 서버 채팅에는 없다)
             }
+            GameSession session = Session;
+            if (voteCardHand != null && voteCardHand.IsShown && session != null && session.VoteBannedToday)
+            {
+                // 투표 도중 재접속해 밤 결과가 카드패보다 늦게 왔다: 요리사에게 투표를 금지당했으면 카드패를 내리고 알린다
+                ClearPendingVote();
+                HideVoteHand();
+                TryShowVoteHand();
+            }
             PlayNightTransition(result);
+            QueueSirenSong(result);
+        }
+
+        /// <summary>세이렌 연출은 밤 결과 컷신이 재생 중이면 그것이 끝나 낮이 열릴 때, 아니면 바로 튼다.</summary>
+        private void QueueSirenSong(NightResultDto result)
+        {
+            System.Action play = SirenSongFor(result);
+            if (play == null)
+            {
+                return;
+            }
+            if (transition != null && transition.IsPlaying)
+            {
+                pendingSiren = play;
+            }
+            else
+            {
+                play();
+            }
+        }
+
+        /// <summary>
+        /// 이 밤 결과로 틀 세이렌 연출 (시안 F). 없으면 null.
+        /// - 내가 유혹당함(SEDUCED): 노랫소리 → 세이렌 컷인 → 세이렌 팀. 재접속으로 그날 늦게 받으면 세이렌 팀만.
+        /// - 세이렌 본인(SEDUCE_SUCCESS/FAIL): 성공은 분홍 띠, 실패는 회색 띠 (막 받은 결과일 때만).
+        /// 그 밤 내가 죽었으면 사망 띠만 보이도록 틀지 않는다. 게임이 끝났으면 결과 화면이 먼저다.
+        /// </summary>
+        private System.Action SirenSongFor(NightResultDto result)
+        {
+            GameSession session = Session;
+            GameStateDto state = session != null ? session.State : null;
+            if (session == null || session.Me == null || state == null || state.phase == GamePhases.Ended)
+            {
+                return null;
+            }
+            bool live = IsLiveResult(GamePhases.NightResult);
+            bool sameDay = state.day == result.day && (state.phase == GamePhases.NightResult || state.phase == GamePhases.Day);
+            if ((!live && !sameDay) || result.Deaths.Exists(d => d.playerId == MyId))
+            {
+                return null;
+            }
+            foreach (ReportDto report in result.reports)
+            {
+                if (report == null) continue;
+                if (report.type == ReportTypes.Seduced)
+                {
+                    List<SirenSongMate> team = SirenTeam(report);
+                    string role = session.Me.roleName;
+                    string goal = RoleInfoText.Goal("NEUTRAL_SIREN", Factions.Neutral);
+                    bool teamOnly = !live;
+                    return () => SirenSong.PlaySeduced(team, role, goal, teamOnly);
+                }
+                if (live && (report.type == ReportTypes.SeduceSuccess || report.type == ReportTypes.SeduceFail))
+                {
+                    bool success = report.type == ReportTypes.SeduceSuccess;
+                    string target = !string.IsNullOrEmpty(report.targetNickname) ? report.targetNickname : GameStateQueries.NicknameOf(state, report.targetId);
+                    return () => SirenSong.PlayBand(success, target);
+                }
+            }
+            return null;
+        }
+
+        /// <summary>유혹당했을 때 보여 줄 세이렌 팀: 서버가 알려 준 동료(누가 세이렌인지는 모른다)와 가운데의 나. 스킨의 흉상.</summary>
+        private List<SirenSongMate> SirenTeam(ReportDto seduced)
+        {
+            var team = new List<SirenSongMate>();
+            foreach (PlayerRefDto p in seduced.players)
+            {
+                if (p != null && p.playerId != MyId) team.Add(MateOf(p.playerId, p.nickname, false));
+            }
+            team.Insert(team.Count / 2, MateOf(MyId, null, true));
+            return team;
+        }
+
+        private SirenSongMate MateOf(long playerId, string nickname, bool me)
+        {
+            ChibiCharacterSkin skin = dayTable != null ? dayTable.SkinOf(playerId) : null;
+            return new SirenSongMate
+            {
+                Name = !string.IsNullOrEmpty(nickname) ? nickname : GameStateQueries.NicknameOf(Session != null ? Session.State : null, playerId),
+                Portrait = skin != null && hud != null && hud.Portraits != null ? hud.Portraits.Find(skin.DesignId) : null,
+                Me = me,
+            };
+        }
+
+        private SirenSongView SirenSong
+        {
+            get
+            {
+                if (sirenSong == null) sirenSong = SirenSongView.Create((RectTransform)transform, LabelFont);
+                return sirenSong;
+            }
         }
 
         public void ShowExecutionResult(ExecutionResultDto result)
@@ -547,7 +652,8 @@ namespace WhoisntCitizen.Game
             {
                 return;
             }
-            AddSystem(GameScreenText.ActionAccepted(result, session.Me.actionCode, session.MyNightTarget, session.SkippedTonight, session.State));
+            AddSystem(GameScreenText.ActionAccepted(result, session.Me.actionCode, session.MyNightTarget, session.SkippedTonight, session.State,
+                session.StruckTonight, session.KrakenMarks.Count));
             foreach (long pirateId in result.contactedPirateIds)
             {
                 if (!contactedPirates.Contains(pirateId)) contactedPirates.Add(pirateId); // 앵무새 접선: 해적 방으로 간다
@@ -744,6 +850,14 @@ namespace WhoisntCitizen.Game
             }
         }
 
+        private void OnNightStruck()
+        {
+            if (controller != null)
+            {
+                controller.StrikeKraken();
+            }
+        }
+
         private void OnDaySkipped()
         {
             if (controller != null)
@@ -775,6 +889,8 @@ namespace WhoisntCitizen.Game
             cutInVersion = -1;
             if (transition != null) transition.Stop();
             pendingGameResult = null;
+            if (sirenSong != null) sirenSong.Stop();
+            pendingSiren = null;
             if (hud != null) hud.ShowNotice(string.Empty);
             announcedRole = null;
             announcedTeammates = null;
@@ -798,6 +914,7 @@ namespace WhoisntCitizen.Game
             }
             CloseDrawer();
             deadVoteNoticeShown = false;
+            voteBanNoticeDay = 0;
             ClearPendingVote();
             voteConfirmAnnounced = false;
             if (voteCardHand != null)
@@ -887,15 +1004,17 @@ namespace WhoisntCitizen.Game
                 return;
             }
             long target = session.MyNightTarget;
-            if (target == 0)
+            bool struck = session.StruckTonight; // 크라켄 발동은 대상이 없다
+            if (target == 0 && !struck)
             {
                 return;
             }
             bool firstTonight = cutInVersion != session.State.phaseVersion;
             cutInVersion = session.State.phaseVersion;
             MyRoleDto me = session.Me;
-            nightRoom.PlayAbility(NightRoomRules.DesignIdFor(me.role), me.actionCode, me.roleName,
-                GameScreenText.AbilityCutInLine(me.actionCode, target, session.State), firstTonight);
+            string action = struck ? ActionCodes.KrakenStrike : me.actionCode;
+            nightRoom.PlayAbility(NightRoomRules.DesignIdFor(me.role), action, me.roleName,
+                GameScreenText.AbilityCutInLine(action, target, session.State), firstTonight);
         }
 
         // ================================================================ 결과 컷신
@@ -917,7 +1036,10 @@ namespace WhoisntCitizen.Game
                 && state.phaseVersion != joinedPhaseVersion;
         }
 
-        /// <summary>밤 결과 컷신: 사망(희생자 수배서), 선의 보호(금빛 고리), 아무 일 없음(고요한 바다). 끝나면 낮 명패.</summary>
+        /// <summary>
+        /// 밤 결과 컷신: 사망(희생자 수배서), 선의 보호(금빛 고리), 아무 일 없음(고요한 바다), 크라켄(먹물 수배서). 끝나면 낮 명패.
+        /// 크라켄에게 끌려간 사람이 있으면 크라켄 장면에서 그 밤의 희생자 모두(습격 포함, 내가 있으면 맨 앞)를 수배서로 보여 준다.
+        /// </summary>
         private void PlayNightTransition(NightResultDto result)
         {
             if (!PlaysTransitions || !IsLiveResult(GamePhases.NightResult))
@@ -925,10 +1047,26 @@ namespace WhoisntCitizen.Game
                 return;
             }
             var info = new DayTransitionInfo { Day = result.day, GameOver = currentPhase == GamePhases.Ended };
-            if (result.HasKill)
+            List<DeathDto> deaths = result.Deaths;
+            if (deaths.Exists(d => d.cause == DeathCauses.Kraken))
             {
+                info.Kind = DayTransitionKind.Dragged;
+                info.AlsoAttacked = deaths.Exists(d => d.cause != DeathCauses.Kraken);
+                var victims = new List<DayTransitionVictim>();
+                foreach (DeathDto death in deaths)
+                {
+                    DayTransitionVictim victim = DescribeVictim(death);
+                    if (victim.Mine) victims.Insert(0, victim); else victims.Add(victim);
+                }
+                info.Victims = victims.ToArray();
+                DeathDto first = deaths.Find(d => d.playerId == MyId) ?? deaths[0];
+                DescribeDead(info, first.playerId, first.nickname); // 내 사망 띠(Mine)와 같은 사람
+            }
+            else if (result.HasKill)
+            {
+                DeathDto first = deaths.Find(d => d.playerId == MyId) ?? deaths[0]; // 내가 죽었으면 나를
                 info.Kind = DayTransitionKind.Killed;
-                DescribeDead(info, result.killedPlayerId, result.killedNickname);
+                DescribeDead(info, first.playerId, first.nickname);
             }
             else
             {
@@ -963,14 +1101,27 @@ namespace WhoisntCitizen.Game
             PlayTransition(info);
         }
 
-        /// <summary>죽은 사람: 닉네임과 테이블에서 입은 스킨(흉상·서 있는 모습). 직업은 서버가 알려 주지 않으므로 없다.</summary>
+        /// <summary>죽은 사람: 닉네임과 테이블에서 입은 스킨(흉상·널빤지 위 묶인 모습). 직업은 서버가 알려 주지 않으므로 없다.</summary>
         private void DescribeDead(DayTransitionInfo info, long playerId, string nickname)
         {
             info.Name = !string.IsNullOrEmpty(nickname) ? nickname : GameStateQueries.NicknameOf(Session != null ? Session.State : null, playerId);
             ChibiCharacterSkin skin = dayTable != null ? dayTable.SkinOf(playerId) : null;
-            info.Figure = skin != null ? skin.Standing : null;
+            info.Figure = skin != null ? skin.Bound : null;
             info.Portrait = skin != null && hud != null && hud.Portraits != null ? hud.Portraits.Find(skin.DesignId) : null;
             info.Mine = playerId == MyId;
+        }
+
+        /// <summary>크라켄이 있던 밤의 희생자 한 명: 닉네임과 테이블에서 입은 스킨의 흉상, 사망 원인. 직업은 없다.</summary>
+        private DayTransitionVictim DescribeVictim(DeathDto death)
+        {
+            ChibiCharacterSkin skin = dayTable != null ? dayTable.SkinOf(death.playerId) : null;
+            return new DayTransitionVictim
+            {
+                Name = !string.IsNullOrEmpty(death.nickname) ? death.nickname : GameStateQueries.NicknameOf(Session != null ? Session.State : null, death.playerId),
+                Portrait = skin != null && hud != null && hud.Portraits != null ? hud.Portraits.Find(skin.DesignId) : null,
+                Mine = death.playerId == MyId,
+                Kraken = death.cause == DeathCauses.Kraken,
+            };
         }
 
         private void PlayTransition(DayTransitionInfo info)
@@ -987,8 +1138,11 @@ namespace WhoisntCitizen.Game
 
         private void OnTransitionFinished()
         {
+            System.Action siren = pendingSiren;
+            pendingSiren = null;
             if (pendingGameResult == null)
             {
+                siren?.Invoke(); // 낮이 열렸다: 유혹당함·유혹 결과 연출
                 return;
             }
             GameResultDto result = pendingGameResult;
@@ -1023,13 +1177,25 @@ namespace WhoisntCitizen.Game
             voteCardHand.VoteConfirmed += OnCardVoteConfirmed;
         }
 
-        /// <summary>VOTE 페이즈이고 내가 투표할 수 있으면 카드패를 올린다. 이미 올라와 있으면 아무것도 하지 않는다.</summary>
+        /// <summary>
+        /// VOTE 페이즈이고 내가 투표할 수 있으면 카드패를 올린다. 이미 올라와 있으면 아무것도 하지 않는다.
+        /// 요리사에게 투표를 금지당했거나 사망했으면 올리지 않고 이유를 알린다.
+        /// </summary>
         private void TryShowVoteHand()
         {
             GameSession session = Session;
             if (voteCardHand == null || voteCardHand.IsShown || session == null || session.State == null || session.Me == null
                 || currentPhase != GamePhases.Vote)
             {
+                return;
+            }
+            if (session.VoteBannedToday)
+            {
+                if (voteBanNoticeDay != session.State.day)
+                {
+                    voteBanNoticeDay = session.State.day;
+                    AddSystem(ReportFormatter.VoteBannedMessage);
+                }
                 return;
             }
             if (!session.CanVote)

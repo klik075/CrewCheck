@@ -28,6 +28,7 @@ namespace WhoisntCitizen.Chat
     ///  - 내 화면 전용 안내(ChatNotice: 로그인, 방 입장, 연결 상태 등) → [안내] + Unity 콘솔 [Chat][안내]
     ///  - 사망자 채팅(type=DEAD, 서버가 사망자에게만 보내 줌) → 닉네임·내용 모두 회색
     ///  - 밤 채팅: 밤에는 해적만 입력할 수 있고(그 밖은 서버가 403 → 안내 문장 표시), 서버가 해적에게만 보내 줌 → 닉네임·내용 모두 주황색
+    ///  - 세이렌 팀 채팅: 밤에 살아 있는 세이렌도 입력할 수 있고(유혹당한 팀원은 읽기만), 서버가 세이렌 팀에게만 보내 줌 → 내용 분홍색
     ///  - 오류는 채팅용 문장으로 바꿔 표시하고 콘솔에는 원문도 남김. 401이면 다시 로그인
     ///  - 도배 방지(서버 ChatSpamGuard): 같은 내용 3번째부터 전송 응답의 경고 문구를 내 화면에만 주황색으로,
     ///    10번째(429 CHAT_MUTED)에는 경고(주황색)와 3분 채팅 금지 안내(붉은색)를 표시. 금지 중에는 서버에 보내지 않고 남은 시간을 붉은색으로 안내
@@ -78,6 +79,8 @@ namespace WhoisntCitizen.Chat
         public Color deadColor = new Color(0.6f, 0.6f, 0.6f);
         [Tooltip("밤에 해적이 입력한 채팅(nightChat)의 내용 글자색. 닉네임은 일반 채팅과 같은 색(내 것/남의 것)을 씁니다")]
         public Color nightChatColor = new Color(1f, 0.6f, 0.2f);
+        [Tooltip("밤에 세이렌이 입력한 채팅(sirenChat, 세이렌 팀에게만 보임)의 내용 글자색. 닉네임은 일반 채팅과 같은 색을 씁니다")]
+        public Color sirenChatColor = new Color(0.95f, 0.55f, 0.85f);
         [Tooltip("도배 경고 문구(같은 내용을 3번 이상 연속으로 보냈을 때) 글자색: 주황색")]
         public Color spamWarningColor = new Color(1f, 0.55f, 0.1f);
         [Tooltip("도배 채팅 금지 안내(10번째, 금지 중 전송 시도) 글자색: 붉은색")]

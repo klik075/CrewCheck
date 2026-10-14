@@ -142,6 +142,12 @@ namespace WhoisntCitizen.Game
             return Session != null && Session.SkipNightAction();
         }
 
+        /// <summary>크라켄 발동 (표식을 남긴 생존자를 모두 처치).</summary>
+        public bool StrikeKraken()
+        {
+            return Session != null && Session.StrikeKraken();
+        }
+
         public bool SkipDay()
         {
             return Session != null && Session.SkipDay();

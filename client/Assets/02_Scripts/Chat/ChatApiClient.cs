@@ -19,6 +19,7 @@ namespace WhoisntCitizen.Chat
         public string content;    // message
         public string createdAt;  // 전송 응답에만 있음 (조회 응답에는 없음)
         public bool nightChat;    // 밤에 해적이 입력한 채팅 (type=USER, 서버가 해적에게만 보내 줌 → 내용을 주황색으로 표시)
+        public bool sirenChat;    // 밤에 세이렌이 입력한 채팅 (type=USER, 서버가 세이렌 팀에게만 보내 줌 → 내용을 분홍색으로 표시)
 
         public bool IsSystem
         {
@@ -92,6 +93,7 @@ namespace WhoisntCitizen.Chat
 
         [Header("JSON 필드명 (API 명세)")]
         public string nightChatField = "nightChat";
+        public string sirenChatField = "sirenChat";
         public string messageIdField = "messageId";
         public string typeField = "type";
         public string userIdField = "userId";
@@ -361,7 +363,8 @@ namespace WhoisntCitizen.Chat
                     nickname = Str(d, nicknameField),
                     content = Str(d, messageField),
                     createdAt = Str(d, createdAtField),
-                    nightChat = Bool(d, nightChatField)
+                    nightChat = Bool(d, nightChatField),
+                    sirenChat = Bool(d, sirenChatField)
                 });
             }
             return result;
