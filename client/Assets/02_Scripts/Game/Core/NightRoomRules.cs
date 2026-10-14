@@ -6,12 +6,13 @@ namespace WhoisntCitizen.Game
     public sealed class NightRoom
     {
         public string DesignId;   // 밤 배경·컷인 이미지의 디자인 코드 (예: CREW_DOCTOR, PIRATE_SHARED). 모르는 직업이면 null
-        public bool Shared;       // 해적 동료(또는 세이렌 팀)와 같이 있는 방
+        public bool Shared;       // 해적 동료, 세이렌 팀 또는 다른 사망자와 같이 있는 방
         public readonly List<PlayerViewDto> Members = new List<PlayerViewDto>();
     }
 
     /// <summary>
     /// 밤에 누가 어느 방에 있는지 정한다. 화면 연출용이고 새 정보를 드러내지 않는다:
+    /// - 내가 사망했으면 직업·진영과 무관하게 모든 사망자와 망자들의 갑판(DEAD_SHARED)에 모인다.
     /// 해적 방에는 내가 이미 아는 해적 동료(/me의 mafiaTeammateIds, 이번 판 접선으로 알게 된 해적)만 들어온다.
     /// - 해적 진영이고 살아 있는 동료를 알고 있으면 해적 공용 방(PIRATE_SHARED)에 다 같이 있다.
     /// - 앵무새는 접선 전에는 동료를 모르므로 앵무새 방에 혼자 있고, 접선하면 해적 방으로 들어간다.
@@ -22,6 +23,7 @@ namespace WhoisntCitizen.Game
     public static class NightRoomRules
     {
         public const string PirateShared = "PIRATE_SHARED";
+        public const string DeadShared = "DEAD_SHARED";
 
         /// <summary>직업 코드 → 밤 배경·능력 컷인의 디자인 코드. 서버의 중립 직업은 아트 이름이 다르다. 모르면 null.</summary>
         public static string DesignIdFor(string roleCode)
@@ -49,6 +51,17 @@ namespace WhoisntCitizen.Game
             }
             PlayerViewDto self = GameStateQueries.FindPlayer(state, me.playerId);
             room.Members.Add(self ?? new PlayerViewDto { playerId = me.playerId, nickname = string.Empty, alive = me.alive });
+            // The public roster is refreshed more often than /me; use its current life state when available.
+            if (!room.Members[0].alive)
+            {
+                room.DesignId = DeadShared;
+                foreach (PlayerViewDto p in state.players)
+                {
+                    if (p.playerId != me.playerId && !p.alive) room.Members.Add(p);
+                }
+                room.Shared = room.Members.Count > 1;
+                return room;
+            }
             if (me.faction == Factions.Pirate)
             {
                 foreach (PlayerViewDto p in state.players)

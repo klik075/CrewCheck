@@ -111,7 +111,7 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
-        public void 죽은_나도_방에_남는다()
+        public void 첫_사망자도_망자_공용_방으로_간다()
         {
             GameStateDto state = State(GamePhases.Night, 7, P(11, "철수", false), P(12, "영희", true));
             MyRoleDto me = Me(11, RoleCodes.CrewLookout, ActionCodes.WatchVisitors, -1);
@@ -120,7 +120,87 @@ namespace WhoisntCitizen.Game.Tests
             NightRoom room = NightRoomRules.RoomFor(me, state, null);
 
             Assert.AreEqual(1, room.Members.Count);
+            Assert.AreEqual(NightRoomRules.DeadShared, room.DesignId);
+            Assert.IsFalse(room.Shared);
             Assert.IsFalse(room.Members[0].alive);
+        }
+
+        [TestCase(Factions.Crew)]
+        [TestCase(Factions.Pirate)]
+        [TestCase(Factions.Neutral)]
+        public void 사망자는_진영과_접선에_관계없이_모든_사망자와_모인다(string faction)
+        {
+            MyRoleDto me = Pirate(RoleCodes.PirateRaider, 12, 15);
+            me.faction = faction;
+            // /me is still alive, but the more recent public roster has recorded the death.
+            GameStateDto state = State(GamePhases.Night, 8,
+                P(14, "지훈", false), P(12, "영희", true), P(11, "철수", false), P(15, "수진", false));
+            NightRoom room = NightRoomRules.RoomFor(me, state, new List<long> { 12 });
+            Assert.AreEqual(NightRoomRules.DeadShared, room.DesignId);
+            Assert.IsTrue(room.Shared);
+            CollectionAssert.AreEqual(new long[] { 11, 14, 15 }, Ids(room));
+            Assert.IsTrue(room.Members.TrueForAll(p => !p.alive));
+        }
+
+        [Test]
+        public void 죽은_세이렌_팀원도_팀방_대신_망자_공용_방으로_간다()
+        {
+            MyRoleDto me = Me(11, RoleCodes.CrewDoctor, ActionCodes.Protect, -1);
+            me.faction = Factions.Crew;
+            me.team = Teams.Siren;
+            me.sirenTeamIds.Add(12);
+            GameStateDto state = State(GamePhases.Night, 8, P(11, "철수", false), P(12, "영희", true), P(14, "지훈", false));
+            NightRoom room = NightRoomRules.RoomFor(me, state, null);
+            Assert.AreEqual(NightRoomRules.DeadShared, room.DesignId);
+            CollectionAssert.AreEqual(new long[] { 11, 14 }, Ids(room));
+        }
+
+        [Test]
+        public void 명단에_내가_없으면_me의_사망_상태로_망자방을_정한다()
+        {
+            MyRoleDto me = Me(11, RoleCodes.CrewDoctor, ActionCodes.Protect, -1);
+            me.alive = false;
+            GameStateDto state = State(GamePhases.Night, 8, P(12, "영희", true), P(14, "지훈", false));
+            NightRoom room = NightRoomRules.RoomFor(me, state, null);
+            Assert.AreEqual(NightRoomRules.DeadShared, room.DesignId);
+            CollectionAssert.AreEqual(new long[] { 11, 14 }, Ids(room));
+            Assert.IsFalse(room.Members[0].alive);
+        }
+
+        [Test]
+        public void 부활하면_최신_명단을_따라_자기_직업방으로_돌아간다()
+        {
+            MyRoleDto me = Me(11, RoleCodes.CrewDoctor, ActionCodes.Protect, -1);
+            me.faction = Factions.Crew;
+            me.alive = false; // old /me; public roster has already revived me
+            NightRoom room = NightRoomRules.RoomFor(me, Night(), null);
+            Assert.AreEqual("CREW_DOCTOR", room.DesignId);
+            CollectionAssert.AreEqual(new long[] { 11 }, Ids(room));
+            Assert.IsTrue(room.Members[0].alive);
+        }
+
+        [Test]
+        public void 추가_사망자는_합류하고_부활한_동료는_망자방에서_빠진다()
+        {
+            MyRoleDto me = Me(11, RoleCodes.CrewDoctor, ActionCodes.Protect, -1);
+            var state = State(GamePhases.Night, 8, P(11, "철수", false), P(12, "영희", true), P(14, "지훈", false));
+            CollectionAssert.AreEqual(new long[] { 11, 14 }, Ids(NightRoomRules.RoomFor(me, state, null)));
+            state.players[1].alive = false;
+            CollectionAssert.AreEqual(new long[] { 11, 12, 14 }, Ids(NightRoomRules.RoomFor(me, state, null)));
+            state.players[2].alive = true;
+            CollectionAssert.AreEqual(new long[] { 11, 12 }, Ids(NightRoomRules.RoomFor(me, state, null)));
+        }
+
+        [Test]
+        public void 열두_명의_사망자를_모두_포함하고_나를_먼저_배치한다()
+        {
+            MyRoleDto me = Me(6, RoleCodes.CrewDoctor, ActionCodes.Protect, -1);
+            var state = State(GamePhases.Night, 8);
+            for (int i = 1; i <= 12; i++) state.players.Add(P(i, "선원" + i, false));
+            NightRoom room = NightRoomRules.RoomFor(me, state, null);
+            Assert.AreEqual(12, room.Members.Count);
+            Assert.AreEqual(6, room.Members[0].playerId);
+            Assert.AreEqual(12, new HashSet<long>(Ids(room)).Count);
         }
 
         [TestCase("NEUTRAL_SIREN", "CONCEPT_SIREN")]
