@@ -273,6 +273,26 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 선장의_조사_결과를_판이_끝날_때까지_기억한다()
+        {
+            Start(RoleCodes.CrewCaptain, false);
+            session.Tick();
+            Assert.AreEqual(0, session.Investigations.Count);
+
+            Assert.IsTrue(session.SubmitNightAction(102)); // 철수: 해적
+            SkipUntil(GamePhases.NightResult);
+            Assert.AreEqual(Factions.Pirate, session.Investigations[102]);
+
+            SkipUntil(GamePhases.Night);
+            Assert.IsTrue(session.SubmitNightAction(105)); // 지훈: 선의
+            SkipUntil(GamePhases.NightResult);
+
+            Assert.AreEqual(2, session.Investigations.Count);
+            Assert.AreEqual(Factions.Pirate, session.Investigations[102], "전날 결과도 남아 있다");
+            Assert.AreEqual(Factions.Crew, session.Investigations[105]);
+        }
+
+        [Test]
         public void 밤에_고른_대상이_도중에_나가면_선택을_지우고_다시_고르라고_알린다()
         {
             Start(RoleCodes.CrewCaptain, false);

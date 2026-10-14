@@ -204,6 +204,20 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 관찰_보고_컷인은_행동마다_채팅과_같은_문장을_쓴다()
+        {
+            var report = new ReportDto { type = ReportTypes.Actions, targetId = 11, targetNickname = "철수" };
+            var attack = new ActionViewDto { actionCode = ActionCodes.SelectAttackTarget, targetId = 12, targetNickname = "영희" };
+            var strike = new ActionViewDto { actionCode = ActionCodes.KrakenStrike };
+
+            Assert.AreEqual("철수님이 영희님을 공격 대상으로 골랐습니다.", ReportFormatter.ObservedAction(report, attack));
+            Assert.AreEqual("철수님이 표식을 남긴 사람들을 바다로 끌고 갔습니다.", ReportFormatter.ObservedAction(report, strike));
+            Assert.AreEqual("철수님은 아무 행동도 하지 않았습니다.", ReportFormatter.ObservedNothing(report));
+            Assert.AreEqual("플레이어 13님은 아무 행동도 하지 않았습니다.",
+                ReportFormatter.ObservedNothing(new ReportDto { type = ReportTypes.Actions, targetId = 13 }));
+        }
+
+        [Test]
         public void 모르는_결과_종류는_건너뛴다()
         {
             var r = new NightResultDto();

@@ -90,6 +90,9 @@ namespace WhoisntCitizen.Game
         /// <summary>Whether GameScreen plays the full-screen cut-scenes for the night's result and the execution (DayTransitionView).</summary>
         public virtual bool PlaysDayTransitions => false;
 
+        /// <summary>The player's place on this layout (the roster slot), where a cut-in can fly to. Null if it has none.</summary>
+        public virtual RectTransform PlayerSlot(long playerId) => null;
+
         protected float CanvasHeight => ctx.Canvas.rect.height;
 
         // ------------------------------------------------------------------ shared parts

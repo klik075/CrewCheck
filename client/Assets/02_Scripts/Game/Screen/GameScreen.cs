@@ -93,6 +93,10 @@ namespace WhoisntCitizen.Game
         private GameResultDto pendingGameResult;                         // 컷신이 끝나면 띄울 게임 결과
         private SirenSongView sirenSong;                                 // 유혹당했을 때의 세이렌 컷인, 세이렌 본인의 유혹 결과 띠
         private System.Action pendingSiren;                              // 밤 결과 컷신이 끝나(낮이 열리면) 틀 세이렌 연출
+        private InvestigationRevealView investigation;                   // 선장의 조사 보고 (조사한 사람의 진영 도장)
+        private System.Action pendingInvestigation;                      // 밤 결과 컷신이 끝나(낮이 열리면) 틀 조사 보고
+        private NightReportRevealView nightReport;                       // 망루지기·주정뱅이·앵무새의 밤 보고, 차단당했을 때의 띠
+        private System.Action pendingNightReport;                        // 밤 결과 컷신이 끝나(낮이 열리면) 틀 밤 보고
         private string announcedRole;
         private string announcedTeammates;
         private bool nightDrawerOpened;
@@ -504,6 +508,189 @@ namespace WhoisntCitizen.Game
             }
             PlayNightTransition(result);
             QueueSirenSong(result);
+            QueueInvestigation(result);
+            QueueNightReport(result);
+        }
+
+        /// <summary>선장의 조사 보고는 밤 결과 컷신이 재생 중이면 그것이 끝나 낮이 열릴 때, 아니면 바로 튼다(세이렌 연출이 떠 있으면 그 뒤에).</summary>
+        private void QueueInvestigation(NightResultDto result)
+        {
+            System.Action play = InvestigationFor(result);
+            if (play == null)
+            {
+                return;
+            }
+            if (transition != null && transition.IsPlaying)
+            {
+                pendingInvestigation = play;
+            }
+            else
+            {
+                play();
+            }
+        }
+
+        /// <summary>
+        /// 이 밤 결과로 틀 조사 보고: 선장(위장한 원숭이 포함)이 받은 진영 조사 결과(FACTION). 없으면 null.
+        /// 막 받은 결과면 보고서가 올라와 도장이 찍히고, 재접속으로 그날 늦게 받으면 도장이 찍힌 채로 연다.
+        /// 그 밤 내가 죽었거나 게임이 끝났으면 틀지 않는다(채팅의 개인 결과 줄은 그대로 남는다).
+        /// </summary>
+        private System.Action InvestigationFor(NightResultDto result)
+        {
+            GameSession session = Session;
+            GameStateDto state = session != null ? session.State : null;
+            if (session == null || session.Me == null || state == null || state.phase == GamePhases.Ended)
+            {
+                return null;
+            }
+            bool live = IsLiveResult(GamePhases.NightResult);
+            bool sameDay = state.day == result.day && (state.phase == GamePhases.NightResult || state.phase == GamePhases.Day);
+            if ((!live && !sameDay) || result.Deaths.Exists(d => d.playerId == MyId))
+            {
+                return null;
+            }
+            foreach (ReportDto report in result.reports)
+            {
+                if (report == null || report.type != ReportTypes.Faction || report.targetId == 0 || string.IsNullOrEmpty(report.faction)) continue;
+                long target = report.targetId;
+                string name = !string.IsNullOrEmpty(report.targetNickname) ? report.targetNickname : GameStateQueries.NicknameOf(state, target);
+                string faction = report.faction;
+                int day = result.day;
+                bool stamped = !live;
+                return () => Investigation.Play(day, name, BustOf(target), faction, body != null ? body.PlayerSlot(target) : null, stamped,
+                    () => sirenSong != null && sirenSong.IsPlaying);
+            }
+            return null;
+        }
+
+        private InvestigationRevealView Investigation
+        {
+            get
+            {
+                if (investigation == null) investigation = InvestigationRevealView.Create((RectTransform)transform, LabelFont);
+                return investigation;
+            }
+        }
+
+        /// <summary>망루지기·주정뱅이·앵무새의 밤 보고는 밤 결과 컷신이 재생 중이면 그것이 끝나 낮이 열릴 때, 아니면 바로 튼다.</summary>
+        private void QueueNightReport(NightResultDto result)
+        {
+            System.Action play = NightReportFor(result);
+            if (play == null)
+            {
+                return;
+            }
+            if (transition != null && transition.IsPlaying)
+            {
+                pendingNightReport = play;
+            }
+            else
+            {
+                play();
+            }
+        }
+
+        /// <summary>
+        /// 이 밤 결과로 틀 개인 밤 보고 (선장의 조사 보고와 같은 양피지). 없으면 null. 원숭이가 받은 가짜 결과도 같은 모양이라 똑같이 보여 준다.
+        /// - 망루지기(VISITORS): 감시한 사람과 찾아온 사람들의 흉상 (없으면 "아무도 찾아오지 않았습니다")
+        /// - 주정뱅이(CORPSE_ROLE): 시체의 흉상과 뒤집히는 직업 카드 (직업 컷인 그림과 이름)
+        /// - 앵무새(ACTIONS): 관찰한 사람과 그 사람이 한 행동 한 줄씩 (채팅과 같은 ReportFormatter 문장)
+        /// - 차단당함(BLOCKED): 회색 띠 (막 받은 결과일 때만)
+        /// 막 받은 결과면 차례로 펼쳐지고, 재접속으로 그날 늦게 받으면 다 펼쳐진 채로 연다. 세이렌 연출이나 조사 보고가 떠 있으면 그 뒤에.
+        /// 그 밤 내가 죽었거나 게임이 끝났으면 틀지 않는다(채팅의 개인 결과 줄은 그대로 남는다).
+        /// </summary>
+        private System.Action NightReportFor(NightResultDto result)
+        {
+            GameSession session = Session;
+            GameStateDto state = session != null ? session.State : null;
+            if (session == null || session.Me == null || state == null || state.phase == GamePhases.Ended)
+            {
+                return null;
+            }
+            bool live = IsLiveResult(GamePhases.NightResult);
+            bool sameDay = state.day == result.day && (state.phase == GamePhases.NightResult || state.phase == GamePhases.Day);
+            if ((!live && !sameDay) || result.Deaths.Exists(d => d.playerId == MyId))
+            {
+                return null;
+            }
+            int day = result.day;
+            bool opened = !live;
+            System.Func<bool> wait = () => (sirenSong != null && sirenSong.IsPlaying) || (investigation != null && investigation.IsPlaying);
+            foreach (ReportDto report in result.reports)
+            {
+                if (report == null) continue;
+                switch (report.type)
+                {
+                    case ReportTypes.Visitors:
+                    {
+                        NightReportFace watched = FaceOf(report.targetId, report.targetNickname);
+                        var visitors = new List<NightReportFace>();
+                        foreach (PlayerRefDto v in report.players)
+                        {
+                            if (v != null) visitors.Add(FaceOf(v.playerId, v.nickname));
+                        }
+                        return () => NightReport.PlayVisitors(day, watched, visitors, opened, wait);
+                    }
+                    case ReportTypes.CorpseRole:
+                    {
+                        NightReportFace corpse = FaceOf(report.targetId, report.targetNickname);
+                        string roleCode = report.roleCode;
+                        string roleName = report.roleName;
+                        return () => NightReport.PlayCorpseRole(day, corpse, roleCode, roleName, opened, wait);
+                    }
+                    case ReportTypes.Actions:
+                    {
+                        NightReportFace watched = FaceOf(report.targetId, report.targetNickname);
+                        var actions = new List<NightReportAction>();
+                        foreach (ActionViewDto a in report.actions)
+                        {
+                            if (a == null) continue;
+                            actions.Add(new NightReportAction
+                            {
+                                ActionCode = a.actionCode,
+                                Line = ReportFormatter.ObservedAction(report, a),
+                                Target = a.targetId != 0 ? FaceOf(a.targetId, a.targetNickname) : null, // 크라켄 발동은 대상이 없다
+                            });
+                        }
+                        string nothing = ReportFormatter.ObservedNothing(report);
+                        return () => NightReport.PlayActions(day, watched, actions, nothing, opened, wait);
+                    }
+                    case ReportTypes.Blocked:
+                        if (live)
+                        {
+                            return () => NightReport.PlayBlocked(wait);
+                        }
+                        break;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>밤 보고에 나오는 사람: 닉네임(없으면 상태의 닉네임)과 테이블에서 입은 스킨의 흉상.</summary>
+        private NightReportFace FaceOf(long playerId, string nickname)
+        {
+            return new NightReportFace
+            {
+                Name = !string.IsNullOrEmpty(nickname) ? nickname : GameStateQueries.NicknameOf(Session != null ? Session.State : null, playerId),
+                Portrait = BustOf(playerId),
+                Me = playerId == MyId,
+            };
+        }
+
+        private NightReportRevealView NightReport
+        {
+            get
+            {
+                if (nightReport == null) nightReport = NightReportRevealView.Create((RectTransform)transform, LabelFont);
+                return nightReport;
+            }
+        }
+
+        /// <summary>그 사람이 테이블에서 입은 스킨의 흉상. 모르면 null.</summary>
+        private Sprite BustOf(long playerId)
+        {
+            ChibiCharacterSkin skin = dayTable != null ? dayTable.SkinOf(playerId) : null;
+            return skin != null && hud != null && hud.Portraits != null ? hud.Portraits.Find(skin.DesignId) : null;
         }
 
         /// <summary>세이렌 연출은 밤 결과 컷신이 재생 중이면 그것이 끝나 낮이 열릴 때, 아니면 바로 튼다.</summary>
@@ -891,6 +1078,10 @@ namespace WhoisntCitizen.Game
             pendingGameResult = null;
             if (sirenSong != null) sirenSong.Stop();
             pendingSiren = null;
+            if (investigation != null) investigation.Stop();
+            pendingInvestigation = null;
+            if (nightReport != null) nightReport.Stop();
+            pendingNightReport = null;
             if (hud != null) hud.ShowNotice(string.Empty);
             announcedRole = null;
             announcedTeammates = null;
@@ -1140,9 +1331,15 @@ namespace WhoisntCitizen.Game
         {
             System.Action siren = pendingSiren;
             pendingSiren = null;
+            System.Action report = pendingInvestigation;
+            pendingInvestigation = null;
+            System.Action nightReportPlay = pendingNightReport;
+            pendingNightReport = null;
             if (pendingGameResult == null)
             {
-                siren?.Invoke(); // 낮이 열렸다: 유혹당함·유혹 결과 연출
+                siren?.Invoke();           // 낮이 열렸다: 유혹당함·유혹 결과 연출
+                report?.Invoke();          // 선장의 조사 보고 (세이렌 연출이 떠 있으면 끝난 뒤에)
+                nightReportPlay?.Invoke(); // 망루지기·주정뱅이·앵무새의 밤 보고, 차단당함 띠 (앞의 연출이 끝난 뒤에)
                 return;
             }
             GameResultDto result = pendingGameResult;
