@@ -102,6 +102,13 @@ namespace WhoisntCitizen.Game
         public MyRoleDto Me { get; private set; }
 
         public NightResultDto LastNightResult { get; private set; }
+
+        /// <summary>
+        /// 이번 판에 내가 조사해 알아낸 진영 (선장의 밤 결과, 대상 → Factions.Crew/Pirate. 중립은 선원으로 보인다).
+        /// 받은 밤 결과에서만 모으므로 재접속하면 마지막 밤 것부터 다시 모인다. 원숭이가 받은 가짜 결과도 같은 모양이다.
+        /// </summary>
+        public IReadOnlyDictionary<long, string> Investigations => investigations;
+        private readonly Dictionary<long, string> investigations = new Dictionary<long, string>();
         public ExecutionResultDto LastExecutionResult { get; private set; }
         public GameResultDto Result { get; private set; }
 
@@ -660,6 +667,7 @@ namespace WhoisntCitizen.Game
                 nightShownDay = r.Data.day;
                 LastNightResult = r.Data;
                 RememberKraken(r.Data);
+                RememberInvestigations(r.Data);
                 view.ShowNightResult(r.Data);
             });
         }
@@ -683,6 +691,18 @@ namespace WhoisntCitizen.Game
                 if (report != null && report.type == ReportTypes.KrakenMarked)
                 {
                     markedByKraken = true;
+                }
+            }
+        }
+
+        /// <summary>선장의 진영 조사 결과(FACTION)를 판이 끝날 때까지 기억한다. 같은 사람을 다시 조사하면 새 결과로 바꾼다.</summary>
+        private void RememberInvestigations(NightResultDto night)
+        {
+            foreach (ReportDto report in night.reports)
+            {
+                if (report != null && report.type == ReportTypes.Faction && report.targetId != 0 && !string.IsNullOrEmpty(report.faction))
+                {
+                    investigations[report.targetId] = report.faction;
                 }
             }
         }

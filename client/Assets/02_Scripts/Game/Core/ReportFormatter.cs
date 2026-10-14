@@ -136,13 +136,13 @@ namespace WhoisntCitizen.Game
                 case ReportTypes.Actions: // 앵무새
                     if (report.actions.Count == 0)
                     {
-                        return target + "을 관찰했습니다. " + target + "은 아무 행동도 하지 않았습니다.";
+                        return target + "을 관찰했습니다. " + ObservedNothing(report);
                     }
                     var actions = new List<string>();
                     actions.Add(target + "을 관찰했습니다.");
                     foreach (ActionViewDto a in report.actions)
                     {
-                        actions.Add(ActionSentence(target, a));
+                        actions.Add(ObservedAction(report, a));
                     }
                     return string.Join("\n", actions.ToArray());
 
@@ -195,6 +195,18 @@ namespace WhoisntCitizen.Game
 
         /// <summary>크라켄이 표식을 남긴 사람에게 보여 주는 문구 (본인에게만, 누가 남겼는지는 모른다)</summary>
         public const string KrakenMarkedMessage = "몸에 크라켄의 표식이 남았습니다. 크라켄이 발동하면 끌려갑니다.";
+
+        /// <summary>앵무새가 관찰한 사람이 한 행동 한 건 (관찰 보고 컷인의 한 줄). 예: "철수님이 영희님을 공격 대상으로 골랐습니다."</summary>
+        public static string ObservedAction(ReportDto report, ActionViewDto action)
+        {
+            return ActionSentence(Name(report.targetNickname, report.targetId) + "님", action);
+        }
+
+        /// <summary>앵무새가 관찰한 사람이 아무것도 하지 않았을 때. 예: "철수님은 아무 행동도 하지 않았습니다."</summary>
+        public static string ObservedNothing(ReportDto report)
+        {
+            return Name(report.targetNickname, report.targetId) + "님은 아무 행동도 하지 않았습니다.";
+        }
 
         /// <summary>앵무새가 관찰한 행동 한 건. actor는 "님"까지 붙은 이름.</summary>
         private static string ActionSentence(string actor, ActionViewDto action)

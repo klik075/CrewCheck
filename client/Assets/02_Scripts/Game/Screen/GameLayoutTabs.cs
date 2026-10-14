@@ -102,6 +102,15 @@ namespace WhoisntCitizen.Game
 
         public override bool PlaysDayTransitions => true;
 
+        public override RectTransform PlayerSlot(long playerId)
+        {
+            foreach (Slot slot in slots)
+            {
+                if (slot.id == playerId && slot.group != null) return (RectTransform)slot.group.transform;
+            }
+            return null;
+        }
+
         protected override bool NauticalChat => true;
 
         /// <summary>The parts are in the scene (Bake), laid out there.</summary>
@@ -656,6 +665,7 @@ namespace WhoisntCitizen.Game
             var key = new System.Text.StringBuilder();
             foreach (PlayerViewDto p in players) key.Append(p.playerId).Append(p.alive ? '+' : '-').Append(BustOf(p.playerId) != null ? 'b' : 'n').Append(',');
             if (session.Me != null) foreach (long id in session.Me.mafiaTeammateIds) key.Append('m').Append(id);
+            foreach (KeyValuePair<long, string> investigated in session.Investigations) key.Append('i').Append(investigated.Key).Append(investigated.Value);
             if (key.ToString() == rosterKey || strip == null) return;
             rosterKey = key.ToString();
 
@@ -717,6 +727,15 @@ namespace WhoisntCitizen.Game
                     RectTransform mark = Box(root, "Mate", mid + outer * 0.5f - 30f, centre - outer * 0.5f - 4f, 36f, 36f);
                     HudShapes.Panel(mark, new Color(0.16f, 0.11f, 0.06f), GoldLine, 18f);
                     AddImage(Box(mark, "Skull", 7f, 7f, 22f, 22f), Icon("skull"), Cream).preserveAspect = true;
+                }
+                string found;
+                if (session.Investigations.TryGetValue(p.playerId, out found))
+                {
+                    // What my investigation found (captain): top left, red with a skull for a pirate, blue with an anchor for crew.
+                    bool pirate = found == Factions.Pirate;
+                    RectTransform mark = Box(root, "Investigated", mid - outer * 0.5f - 6f, centre - outer * 0.5f - 4f, 36f, 36f);
+                    HudShapes.Panel(mark, pirate ? InvestigationRevealView.PirateRed : InvestigationRevealView.CrewBlue, GoldLine, 18f);
+                    AddImage(Box(mark, "Icon", 7f, 7f, 22f, 22f), Icon(pirate ? "skull" : "anchor"), Cream).preserveAspect = true;
                 }
                 BuildNeutralMarks(slot, root, mid, centre, face, outer);
                 RectTransform badge = Box(root, "Tally", mid + outer * 0.5f - 32f, centre + outer * 0.5f - 46f, 40f, 40f);
