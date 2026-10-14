@@ -38,6 +38,7 @@ namespace WhoisntCitizen.Game
         // The strip: a portrait ring (with its anchor badge) and a name plate per player, at most this far apart.
         private const float SlotSpacing = 129f, StripMargin = 26f, PlateWidth = 116f, PlateHeight = 39f;
         private const float PlateBelowCentre = 67f; // from the ring's centre to the plate's top
+        private const float HeldChatTop = GameHudMetrics.HudHeight + 10f; // held, the chat window's top: just under the top HUD
         private static readonly Color Pick = new Color(1f, 0.82f, 0.3f), Target = new Color(0.92f, 0.3f, 0.24f);
 
         private sealed class Slot
@@ -93,6 +94,11 @@ namespace WhoisntCitizen.Game
         private string shownMarks;
         private GameObject titleRule; // the rule under the action line's title (Dress), hidden under a two-line text
         private float laidOutWidth = -1f, laidOutRaise = float.NaN;
+        // The chat log held down (RaiseChat): the window grows from the top the scene gives it, by chatRaise.
+        private ChatPressHold chatHold;
+        private readonly List<Canvas> chatLayers = new List<Canvas>();
+        private float chatBoxTop, chatRaise;
+        private bool chatRaised;
 
         public override bool PlaysDayTransitions => true;
 
@@ -169,6 +175,11 @@ namespace WhoisntCitizen.Game
             if (secondaryButton != null && secondaryButton.button != null) secondaryButton.button.onClick.AddListener(OnSecondary);
             BuildChat(ChatArea);
             if (chatUi != null) chatUi.AddTabRow(); // the tabs and filter at the log's top (made at run time, baked too)
+            if (ctx.Chat != null)
+            {
+                chatHold = ctx.Chat.GetComponent<ChatPressHold>();
+                if (chatHold == null) chatHold = ctx.Chat.gameObject.AddComponent<ChatPressHold>();
+            }
             if (ctx.Sheet != null) HideDrawer();
             // The card hand keeps the vote but is not shown: the strip picks, the action line confirms.
             if (ctx.VoteHand != null)
@@ -233,6 +244,60 @@ namespace WhoisntCitizen.Game
         }
 
         private Vector4 fittedArea = new Vector4(-1f, -1f, -1f, -1f);
+
+        // Held (ChatPressHold), the chat window grows up over the stage to just under the top HUD, so older lines show
+        // above; let go, it shrinks back to the scene's size. Meanwhile the window, its log and the input bar draw over the
+        // stage, in their own order: each is on a canvas of its own, sorted over the game canvas only while grown.
+        private void RaiseChat()
+        {
+            float open = chatHold != null ? chatHold.Open : 0f;
+            if (open <= 0f && !chatRaised) return;
+            if (backdrop == null || !(backdrop.Find("ChatBox") is RectTransform box)) return;
+            if (!chatRaised)
+            {
+                chatBoxTop = box.offsetMax.y;
+                chatRaise = Mathf.Max(0f, ChatWindow().y - HeldChatTop);
+                SetChatOver(true);
+                chatRaised = true;
+            }
+            box.offsetMax = new Vector2(box.offsetMax.x, chatBoxTop + chatRaise * open);
+            if (open > 0f) return;
+            SetChatOver(false);
+            chatRaised = false;
+        }
+
+        private void SetChatOver(bool over)
+        {
+            if (chatLayers.Count == 0)
+            {
+                RectTransform lift = ctx.Sheet != null && ctx.Sheet.parent is RectTransform l && l.name == "BottomSheetLift" ? l : null;
+                foreach (RectTransform part in new[] { backdrop, ctx.Chat, lift })
+                {
+                    if (part != null) chatLayers.Add(OwnCanvas(part));
+                }
+            }
+            Canvas root = ctx.Canvas.GetComponent<Canvas>();
+            int order = root != null ? root.sortingOrder : 0;
+            for (int i = 0; i < chatLayers.Count; i++)
+            {
+                chatLayers[i].overrideSorting = over;
+                chatLayers[i].sortingOrder = order + 1 + i;
+            }
+        }
+
+        // part on a canvas of its own: unsorted, it still draws in its place among its siblings; still clickable.
+        private static Canvas OwnCanvas(RectTransform part)
+        {
+            Canvas canvas = part.GetComponent<Canvas>();
+            if (canvas == null)
+            {
+                Canvas parent = part.parent != null ? part.parent.GetComponentInParent<Canvas>() : null;
+                canvas = part.gameObject.AddComponent<Canvas>();
+                if (parent != null) canvas.additionalShaderChannels = parent.rootCanvas.additionalShaderChannels;
+            }
+            if (part.GetComponent<GraphicRaycaster>() == null) part.gameObject.AddComponent<GraphicRaycaster>();
+            return canvas;
+        }
 
         /// <summary>
         /// Everything under the stage lies on one night-blue backdrop, the colour the nautical frames were drawn on (the
@@ -777,6 +842,7 @@ namespace WhoisntCitizen.Game
             }
             // The stage can be retuned while playing. Baked, the backdrop stays where the scene has it.
             if (!baked && backdrop != null) backdrop.offsetMax = new Vector2(0f, -GameHudMetrics.StageBottom);
+            RaiseChat();
             FitChat(); // a taller screen stretches the chat window
 
             GameSession session = ctx.Session();
