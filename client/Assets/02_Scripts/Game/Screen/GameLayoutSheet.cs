@@ -58,7 +58,7 @@ namespace WhoisntCitizen.Game
             RectTransform chip = Box(ctx.Canvas, "RoleChip", 24f, ChipTop, 360f, ChipHeight);
             chip.SetSiblingIndex(steps.GetSiblingIndex() + 1);
             HudShapes.Panel(chip, Teal, GoldLine, 12f).raycastTarget = true;
-            chip.gameObject.AddComponent<Button>().onClick.AddListener(ShowRoleWindow);
+            chip.gameObject.AddClickSoundButton().onClick.AddListener(ShowRoleWindow);
             chipAvatar = Box(chip, "Avatar", 0f, 0f, ChipHeight, ChipHeight);
             chipText = NewText(chip, "Text", 26f, Cream, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
             Stretch(chipText.rectTransform, ChipHeight + 12f, 4f, 44f, 4f);
@@ -151,7 +151,7 @@ namespace WhoisntCitizen.Game
             label = NewText(rect, "Label", 28f, Cream, FontStyles.Bold, TextAlignmentOptions.Center);
             Stretch(label.rectTransform, 4f, 2f, 4f, 2f);
             label.text = text;
-            rect.gameObject.AddComponent<Button>().onClick.AddListener(() => onClick());
+            rect.gameObject.AddClickSoundButton().onClick.AddListener(() => onClick());
             return fill;
         }
 

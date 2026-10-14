@@ -218,7 +218,7 @@ namespace WhoisntCitizen.Game
             text.fontSizeMin = 16f;
             text.fontSizeMax = 26f;
             text.text = label;
-            Button button = rect.gameObject.AddComponent<Button>();
+            Button button = rect.gameObject.AddClickSoundButton();
             if (onClick != null) button.onClick.AddListener(() => onClick()); // null: wired later (a baked layout)
             return button;
         }

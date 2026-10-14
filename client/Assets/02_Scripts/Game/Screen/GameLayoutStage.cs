@@ -41,7 +41,7 @@ namespace WhoisntCitizen.Game
             header.pivot = new Vector2(0.5f, 1f);
             header.sizeDelta = new Vector2(0f, PanelHeader);
             AddImage(header, null, new Color(0f, 0f, 0f, 0f)).raycastTarget = true;
-            header.gameObject.AddComponent<Button>().onClick.AddListener(() => expanded = !expanded);
+            header.gameObject.AddClickSoundButton().onClick.AddListener(() => expanded = !expanded);
             AddImage(Box(header, "Icon", 18f, 12f, 26f, 26f), Icon("chat_1"), Gold).preserveAspect = true;
             TextMeshProUGUI title = NewText(header, "Title", 22f, Gold, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
             Stretch(title.rectTransform, 54f, 0f, 200f, 0f);
@@ -67,7 +67,7 @@ namespace WhoisntCitizen.Game
             badge.anchoredPosition = new Vector2(18f, -250f);
             badge.sizeDelta = new Vector2(112f, 150f);
             AddImage(badge, null, new Color(0f, 0f, 0f, 0f)).raycastTarget = true;
-            badge.gameObject.AddComponent<Button>().onClick.AddListener(ShowRoleWindow);
+            badge.gameObject.AddClickSoundButton().onClick.AddListener(ShowRoleWindow);
             RectTransform round = Box(badge, "Portrait", 6f, 0f, 100f, 100f);
             AddImage(round, NightFxSprites.Circle, new Color(0.09f, 0.11f, 0.15f));
             round.gameObject.AddComponent<Mask>().showMaskGraphic = true;
@@ -91,7 +91,7 @@ namespace WhoisntCitizen.Game
             if (lift != null) button.SetSiblingIndex(lift.GetSiblingIndex() + 1);
             buttonGroup = button.gameObject.AddComponent<CanvasGroup>();
             HudShapes.Panel(button, new Color(0.08f, 0.2f, 0.22f, 0.97f), Gold, 75f).raycastTarget = true;
-            button.gameObject.AddComponent<Button>().onClick.AddListener(ToggleDrawer);
+            button.gameObject.AddClickSoundButton().onClick.AddListener(ToggleDrawer);
             AddImage(Box(button, "Icon", 45f, 24f, 60f, 60f), Icon("energy"), Gold).preserveAspect = true;
             TextMeshProUGUI label = NewText(button, "Label", 26f, Cream, FontStyles.Bold, TextAlignmentOptions.Center);
             RectTransform labelRect = label.rectTransform;

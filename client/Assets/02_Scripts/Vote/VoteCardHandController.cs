@@ -785,7 +785,7 @@ namespace WhoisntCitizen.Vote
             var confirmImage = confirmButtonRt.gameObject.AddComponent<Image>();
             confirmImage.color = Color.white; // 색은 Button의 colors로 칠한다
             confirmImage.raycastTarget = true;
-            confirmButton = confirmButtonRt.gameObject.AddComponent<Button>();
+            confirmButton = confirmButtonRt.gameObject.AddClickSoundButton();
             confirmButton.targetGraphic = confirmImage;
             confirmButton.navigation = new Navigation { mode = Navigation.Mode.None };
             ColorBlock colors = confirmButton.colors;

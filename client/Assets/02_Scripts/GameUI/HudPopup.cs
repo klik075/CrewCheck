@@ -66,7 +66,7 @@ namespace WhoisntCitizen.GameUI
             subtitle = NewText("Subtitle", window, 26f, new Color(0.8f, 0.76f, 0.66f), FontStyles.Normal);
             Place(subtitle.rectTransform, 70f, 124f, 70f, 36f);
 
-            Button close = NewText("Close", window, 48f, TitleColor, FontStyles.Bold).gameObject.AddComponent<Button>();
+            Button close = NewText("Close", window, 48f, TitleColor, FontStyles.Bold).gameObject.AddClickSoundButton();
             var closeText = close.GetComponent<TextMeshProUGUI>();
             closeText.text = "X"; // plain letter: the game fonts may not have the multiplication sign
             closeText.raycastTarget = true;
