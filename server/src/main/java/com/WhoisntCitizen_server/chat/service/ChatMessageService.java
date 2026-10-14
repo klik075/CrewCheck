@@ -58,11 +58,19 @@ import java.util.function.Predicate;
  *
  * 도배 방지: 같은 내용을 연속으로 3번째 보낼 때부터 응답에 경고 문구(spamWarning)를 넣고, 10번째에는 그 메시지를 저장하지 않고
  * 3분간 채팅을 금지합니다(429 CHAT_MUTED). 금지 중에 보낸 메시지도 모두 429입니다. (ChatSpamGuard, 사망자·해적·세이렌 채팅 포함)
+ *
+ * 로비 채팅: 로비 전체를 방 하나(LOBBY_ROOM_ID = 0)로 보고 같은 저장소에 둡니다. 로비 방 id는 1부터라 겹치지 않습니다.
+ * 로그인한 사용자(프로필 있음)는 누구나 보내고 읽을 수 있고, 닉네임은 프로필 닉네임을 씁니다. 욕설 검열·도배 방지도 똑같이 적용합니다.
+ * "로비에 들어온 뒤의 대화만" 보여 주는 것은 클라이언트가 합니다. (입장할 때 마지막 messageId를 받아 두고 그 뒤만 afterId로 조회)
+ * 로비에는 실시간 구독이 없어 저장 알림(ChatMessageSavedEvent)을 보내지 않고, 클라이언트가 폴링합니다.
  */
 @Service
 public class ChatMessageService {
 
     public static final int DEFAULT_LIMIT = 50;
+
+    /** 로비 채팅 메시지를 두는 채팅 저장소의 방 id (로비 방 id는 room:id:sequence로 1부터 발급되므로 겹치지 않는다) */
+    public static final long LOBBY_ROOM_ID = 0L;
     public static final int MAX_LIMIT = 200;
 
     /** 숨긴 메시지 때문에 결과가 비지 않도록 더 읽어 올 때, 한 번 조회에서 읽는 최대 메시지 수 (방당 보관 개수와 같은 규모) */
@@ -210,6 +218,38 @@ public class ChatMessageService {
         ChatMessage saved = repository.save(roomId, type, player.getUserId(), player.getNickname(), text,
                 gameId, rule == Rule.NIGHT_PIRATE, rule == Rule.NIGHT_SIREN);
         publishSaved(saved, decided.audience());
+        return ChatMessageResponse.from(saved, spamWarning);
+    }
+
+    // ---------- 로비 채팅 ----------
+
+    /**
+     * 로비 채팅 조회. 오래된 순(messageId 오름차순)으로 반환합니다.
+     * - afterId가 없으면: 최신 limit개 (로비에 들어올 때 limit=1로 마지막 id만 받아 두는 데 씁니다)
+     * - afterId가 있으면: 그 messageId 이후에 들어온 메시지 최대 limit개 (폴링용)
+     */
+    public List<ChatMessageSummary> getLobbyMessages(Long afterId, Integer limit) {
+        int size = normalizeLimit(limit);
+        List<ChatMessage> messages = (afterId != null)
+                ? repository.findAfter(LOBBY_ROOM_ID, afterId, size)
+                : repository.findLatest(LOBBY_ROOM_ID, size);
+        return messages.stream().map(ChatMessageSummary::from).toList();
+    }
+
+    /**
+     * 로비 채팅 전송. 400: 프로필(User)이 없는 계정
+     * 방 채팅과 같이 도배 확인(429 CHAT_MUTED, 3번째부터 spamWarning) → 욕설 필터 → 저장 순서입니다.
+     */
+    public ChatMessageResponse sendLobby(Long memberId, String message) {
+        User user = userRepository.findByMemberId(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
+
+        String spamWarning = spamGuard.check(user.getId(), message);
+
+        String text = profanityFilter.mask(message.trim());
+        String nickname = user.getNickname() == null || user.getNickname().isBlank() ? "?" : user.getNickname();
+        ChatMessage saved = repository.save(LOBBY_ROOM_ID, MessageType.USER, user.getId(), nickname, text,
+                null, false, false);
         return ChatMessageResponse.from(saved, spamWarning);
     }
 
