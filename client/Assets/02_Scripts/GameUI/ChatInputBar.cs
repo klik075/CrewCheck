@@ -19,6 +19,16 @@ namespace WhoisntCitizen.GameUI
 
         public event Action<string> ChatSubmitted;
 
+        /// <summary>코드로 만든 입력 바(로비 채팅 등)에서 인스펙터 대신 입력칸·전송 버튼을 연결합니다.</summary>
+        public void Configure(TMP_InputField input, Button send)
+        {
+            bool bound = isActiveAndEnabled;
+            if (bound) OnDisable();
+            chatInput = input;
+            sendButton = send;
+            if (bound) OnEnable();
+        }
+
         private void OnEnable()
         {
             if (chatInput != null) chatInput.onSubmit.AddListener(Submit);

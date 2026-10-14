@@ -51,6 +51,14 @@ namespace WhoisntCitizen.GameUI
 
         private readonly List<Row> rows = new List<Row>();
 
+        // 코드로 만든 채팅창(로비 채팅 등)에서 인스펙터 대신 연결한다. 줄을 넣기 전에 부른다
+        public void Configure(ScrollRect scroll, RectTransform contentRoot, TextMeshProUGUI line)
+        {
+            scrollRect = scroll;
+            content = contentRoot;
+            linePrefab = line;
+        }
+
         public int VisibleCount
         {
             get
