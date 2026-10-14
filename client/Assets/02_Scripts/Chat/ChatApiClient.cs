@@ -33,6 +33,26 @@ namespace WhoisntCitizen.Chat
         }
     }
 
+    /// <summary>채팅 전송 성공 응답 (201)</summary>
+    public class ChatSendResult
+    {
+        public long userId = -1;     // 서버가 토큰으로 판단한 내 userId
+        public long messageId = -1;  // 저장된 메시지 id
+        public string spamWarning;   // 같은 내용을 연속으로 3번 이상 보냈을 때의 도배 경고 문구 (없으면 null) → 주황색
+    }
+
+    /// <summary>
+    /// 도배로 채팅 금지 (429, code = CHAT_MUTED). 메시지는 저장되지 않았습니다.
+    ///  - 금지가 막 시작됨(같은 내용 10번째): warning(주황색) + message(붉은색)
+    ///  - 이미 금지 중: warning 없음, message에 남은 시간
+    /// </summary>
+    public class ChatMuteInfo
+    {
+        public string message;
+        public string warning;
+        public long remainingSeconds;
+    }
+
     /// <summary>로그인 응답 (MemberDto.AuthResult)</summary>
     public class LoginResult
     {
@@ -49,6 +69,8 @@ namespace WhoisntCitizen.Chat
     ///  - 조회: GET  /api/v1/rooms/{roomId}/messages[?limit=N][&amp;afterId=ID]   200 / 404 방 없음
     ///  - 전송: POST /api/v1/rooms/{roomId}/messages  {"message":"..."}
     ///          201 / 403 방 참가자가 아님 / 404 방 없음 / 400 프로필 없음
+    ///          201 응답의 spamWarning: 같은 내용 3번째부터 도배 경고 문구
+    ///          429 CHAT_MUTED: 같은 내용 10번째(경고 + 3분 채팅 금지) 또는 채팅 금지 중 → onMuted
     ///  - 공지: POST /api/v1/rooms/{roomId}/system-messages  {"message":"..."}  (헤더 X-Admin-Key, 서버 chat.admin-key가 비어 있으면 생략 가능)
     ///          201 / 403 공지 권한 없음 / 404 방 없음
     ///  - [개발용] 로그인:  POST /api/members/login  {"username","password"}
@@ -78,6 +100,7 @@ namespace WhoisntCitizen.Chat
         public string nicknameField = "nickname";
         public string messageField = "message";
         public string createdAtField = "createdAt";
+        public string spamWarningField = "spamWarning";
 
         string Base
         {
@@ -128,8 +151,13 @@ namespace WhoisntCitizen.Chat
             }
         }
 
-        /// <summary>채팅 전송: {"message":"..."} (보낸 사람은 토큰으로 식별). 성공 시 서버가 판단한 내 userId를 넘겨줍니다.</summary>
-        public IEnumerator PostMessage(string message, Action<long> onSuccess, Action<string, long> onError)
+        /// <summary>
+        /// 채팅 전송: {"message":"..."} (보낸 사람은 토큰으로 식별).
+        /// 성공 시 서버가 판단한 내 userId, 저장된 messageId, 도배 경고 문구(spamWarning)를 넘겨줍니다.
+        /// 도배로 채팅이 금지되면(429 CHAT_MUTED) onError 대신 onMuted를 부릅니다. (onMuted가 없으면 onError)
+        /// </summary>
+        public IEnumerator PostMessage(string message, Action<ChatSendResult> onSuccess, Action<string, long> onError,
+                                       Action<ChatMuteInfo> onMuted = null)
         {
             string body = "{" + MiniJson.Quote(messageField) + ":" + MiniJson.Quote(message) + "}";
             using (var req = PostJson(MessagesUrl, body, true))
@@ -137,18 +165,45 @@ namespace WhoisntCitizen.Chat
                 yield return req.SendWebRequest();
                 if (req.result != UnityWebRequest.Result.Success)
                 {
-                    if (onError != null) onError(ErrorText("전송 실패", req), req.responseCode);
+                    ChatMuteInfo mute = onMuted != null ? ParseMute(req) : null;
+                    if (mute != null) onMuted(mute);
+                    else if (onError != null) onError(ErrorText("전송 실패", req), req.responseCode);
                     yield break;
                 }
-                long senderId = -1;
+                var result = new ChatSendResult();
                 try
                 {
                     var obj = MiniJson.Parse(Body(req)) as Dictionary<string, object>;
-                    if (obj != null) senderId = Long(obj, userIdField);
+                    if (obj != null)
+                    {
+                        result.userId = Long(obj, userIdField);
+                        result.messageId = Long(obj, messageIdField);
+                        string warning = Str(obj, spamWarningField);
+                        result.spamWarning = string.IsNullOrEmpty(warning) ? null : warning;
+                    }
                 }
                 catch (Exception) { /* 응답을 못 읽어도 전송은 성공 */ }
-                if (onSuccess != null) onSuccess(senderId);
+                if (onSuccess != null) onSuccess(result);
             }
+        }
+
+        /// <summary>429 {"code":"CHAT_MUTED","message","warning","remainingSeconds"} 이면 내용을, 아니면 null</summary>
+        ChatMuteInfo ParseMute(UnityWebRequest req)
+        {
+            if (req.responseCode != 429) return null;
+            try
+            {
+                var obj = MiniJson.Parse(Body(req)) as Dictionary<string, object>;
+                if (obj == null || !string.Equals(Str(obj, "code"), "CHAT_MUTED", StringComparison.Ordinal)) return null;
+                string warning = Str(obj, "warning");
+                return new ChatMuteInfo
+                {
+                    message = Str(obj, "message"),
+                    warning = string.IsNullOrEmpty(warning) ? null : warning,
+                    remainingSeconds = Math.Max(0, Long(obj, "remainingSeconds")),
+                };
+            }
+            catch (Exception) { return null; }
         }
 
         /// <summary>시스템 메시지(공지) 전송: {"message":"..."}. 채팅창에는 type=SYSTEM(녹색)으로 표시됩니다.</summary>
