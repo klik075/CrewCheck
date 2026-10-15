@@ -51,7 +51,12 @@ namespace WhoisntCitizen.Profile
         [SerializeField] private Button avatarEditButton;
         [Tooltip("(선택) 아바타 선택 창 루트. 시작할 때 닫힌다.")]
         [SerializeField] private GameObject avatarPopup;
-        [SerializeField] private Button avatarCloseButton;
+        [Tooltip("(선택) 아바타 선택 창의 확인 버튼. 고른 아바타를 서버에 저장하고 창을 닫는다.")]
+        [SerializeField] private Button avatarConfirmButton;
+        [Tooltip("(선택) 아바타 선택 창의 취소 버튼. 저장하지 않고 창을 닫는다.")]
+        [SerializeField] private Button avatarCancelButton;
+        [Tooltip("(선택) 아바타 선택 창 안의 메시지 텍스트. 비우면 프로필 팝업의 메시지를 쓴다.")]
+        [SerializeField] private StatusMessageView avatarStatusMessage;
         [Tooltip("(선택) 아바타 선택 버튼들. 순서가 곧 아바타 번호(0부터). AvatarCatalog.Count개까지 사용")]
         [SerializeField] private Button[] avatarButtons;
         [SerializeField] private TMP_Text levelText;
@@ -76,7 +81,8 @@ namespace WhoisntCitizen.Profile
 
         private bool isLoading;     // 프로필 조회 중
         private Action<bool> pendingDone; // 조회 중에 들어온 LoadProfile 호출의 콜백 (같은 응답으로 함께 완료한다)
-        private bool isChanging;    // 닉네임 변경 중
+        private bool isChanging;    // 닉네임/아바타 변경 중
+        private int pendingAvatarId = -1; // 선택 창에서 고른(아직 저장 전인) 아바타 번호
 
         private void Awake()
         {
@@ -85,7 +91,8 @@ namespace WhoisntCitizen.Profile
             BindIfEmpty(closeButton, ClosePopup);
             BindIfEmpty(changeNicknameButton, OnChangeNicknameClicked);
             BindIfEmpty(avatarEditButton, OpenAvatarPopup);
-            BindIfEmpty(avatarCloseButton, CloseAvatarPopup);
+            BindIfEmpty(avatarConfirmButton, OnAvatarConfirmClicked);
+            BindIfEmpty(avatarCancelButton, CloseAvatarPopup);
             if (avatarButtons != null)
             {
                 for (int i = 0; i < avatarButtons.Length; i++)
@@ -93,7 +100,7 @@ namespace WhoisntCitizen.Profile
                     int id = i; // 클로저용 복사
                     if (avatarButtons[i] == null) continue;
                     AvatarCatalog.Apply(avatarButtons[i].targetGraphic as Image, id);
-                    avatarButtons[i].onClick.AddListener(() => OnAvatarClicked(id));
+                    avatarButtons[i].onClick.AddListener(() => OnAvatarSelected(id));
                 }
             }
 
@@ -126,7 +133,8 @@ namespace WhoisntCitizen.Profile
             if (closeButton != null) closeButton.onClick.RemoveListener(ClosePopup);
             if (changeNicknameButton != null) changeNicknameButton.onClick.RemoveListener(OnChangeNicknameClicked);
             if (avatarEditButton != null) avatarEditButton.onClick.RemoveListener(OpenAvatarPopup);
-            if (avatarCloseButton != null) avatarCloseButton.onClick.RemoveListener(CloseAvatarPopup);
+            if (avatarConfirmButton != null) avatarConfirmButton.onClick.RemoveListener(OnAvatarConfirmClicked);
+            if (avatarCancelButton != null) avatarCancelButton.onClick.RemoveListener(CloseAvatarPopup);
         }
 
         // ------------------------------------------------------------------
@@ -287,13 +295,29 @@ namespace WhoisntCitizen.Profile
         // 프로필 이미지(아바타) 선택
         // ------------------------------------------------------------------
 
-        private void OnAvatarClicked(int id)
+        // 선택 창에서 아바타를 고른다. 저장은 확인 버튼을 눌렀을 때 한다.
+        private void OnAvatarSelected(int id)
         {
             if (isChanging || SceneLoader.IsLoading) return;
-            if (Current != null && Current.profileImageId == id) return;
+            pendingAvatarId = id;
+            AvatarStatus?.Clear();
+            HighlightAvatar(id);
+        }
+
+        // 확인: 고른 아바타를 서버에 저장하고 선택 창을 닫는다. 바뀐 게 없으면 그냥 닫는다.
+        public void OnAvatarConfirmClicked()
+        {
+            if (isChanging || SceneLoader.IsLoading) return;
+
+            int id = pendingAvatarId;
+            if (id < 0 || (Current != null && Current.profileImageId == id))
+            {
+                CloseAvatarPopup();
+                return;
+            }
 
             SetChanging(true);
-            statusMessage?.ShowInfo("프로필 이미지를 변경하는 중...", keep: true);
+            AvatarStatus?.ShowInfo("프로필 이미지를 변경하는 중...", keep: true);
 
             UserApi.ChangeProfileImage(id, result =>
             {
@@ -302,7 +326,7 @@ namespace WhoisntCitizen.Profile
                 if (!result.success)
                 {
                     SetChanging(false);
-                    statusMessage?.ShowError(result.message);
+                    AvatarStatus?.ShowError(result.message); // 선택 창은 열어 둔다. 다시 확인하거나 취소할 수 있다.
                     return;
                 }
 
@@ -313,10 +337,14 @@ namespace WhoisntCitizen.Profile
                 LoadProfile(ok =>
                 {
                     SetChanging(false);
+                    if (avatarPopup != null) avatarPopup.SetActive(false);
                     statusMessage?.ShowSuccess("프로필 이미지가 변경되었습니다.");
                 });
             });
         }
+
+        // 선택 창 안의 메시지 영역. 없으면 프로필 팝업의 메시지를 쓴다.
+        private StatusMessageView AvatarStatus => avatarStatusMessage != null ? avatarStatusMessage : statusMessage;
 
         // 선택된 아바타는 밝게, 나머지는 어둡게 표시한다.
         private void HighlightAvatar(int selectedId)
@@ -336,12 +364,16 @@ namespace WhoisntCitizen.Profile
         {
             if (isChanging || SceneLoader.IsLoading || avatarPopup == null) return;
             avatarPopup.SetActive(true);
-            if (Current != null) HighlightAvatar(Current.profileImageId);
+            AvatarStatus?.Clear();
+            pendingAvatarId = Current != null ? Current.profileImageId : -1; // 처음엔 지금 쓰는 아바타가 선택된 상태
+            HighlightAvatar(pendingAvatarId);
         }
 
+        // 취소(또는 바뀐 게 없는 확인): 저장하지 않고 닫는다.
         public void CloseAvatarPopup()
         {
             if (isChanging) return;
+            pendingAvatarId = -1;
             if (avatarPopup != null) avatarPopup.SetActive(false);
         }
 
@@ -354,7 +386,8 @@ namespace WhoisntCitizen.Profile
             if (avatarButtons != null)
                 foreach (Button b in avatarButtons) if (b != null) b.interactable = !value;
             if (closeButton != null) closeButton.interactable = !value;
-            if (avatarCloseButton != null) avatarCloseButton.interactable = !value;
+            if (avatarConfirmButton != null) avatarConfirmButton.interactable = !value;
+            if (avatarCancelButton != null) avatarCancelButton.interactable = !value;
         }
 
         // ------------------------------------------------------------------
