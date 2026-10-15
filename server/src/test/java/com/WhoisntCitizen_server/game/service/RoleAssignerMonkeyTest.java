@@ -149,4 +149,23 @@ class RoleAssignerMonkeyTest {
             assertThat(assigner.shownRoleOf(MONKEY, roles)).isSameAs(SAILOR);
         }
     }
+
+    @Test
+    void 랜덤_구성에_제3_세력이_섞여도_한_명까지라_원숭이가_위장할_직업이_남는다() {
+        // 선원 진영 후보가 원숭이와 위장 후보가 아닌 제3 세력(세이렌·크라켄)뿐이어도
+        // 제3 세력은 1명까지라 남는 선원 진영 자리는 선원으로 채워지고, 원숭이는 선원으로 보인다.
+        RoleSetup setup = assigner.normalize(new RoleSetup(RoleSetupMode.RANDOM, List.of(),
+                List.of("CREW_MONKEY", "NEUTRAL_SIREN", "NEUTRAL_KRAKEN")));
+
+        for (int playerCount = RoleAssigner.MIN_PLAYERS; playerCount <= RoleAssigner.MAX_PLAYERS; playerCount++) {
+            for (int i = 0; i < 20; i++) {
+                List<RoleDefinition> roles = assigner.assign(playerCount, setup);
+
+                assertThat(roles).contains(MONKEY);
+                assertThat(roles.stream().filter(RoleDefinition::isNeutral).count())
+                        .isLessThanOrEqualTo(RoleAssigner.MAX_RANDOM_NEUTRALS);
+                assertThat(assigner.shownRoleOf(MONKEY, roles)).isSameAs(SAILOR);
+            }
+        }
+    }
 }
