@@ -35,7 +35,7 @@ namespace WhoisntCitizen.Lobby
         private TMP_Text roomCode, privacy, rosterHeading, hint;
         private ScrollRect rosterScroll;
         private GameObject chatSheet;
-        private ChatUnreadDot chatUnreadDot;          // [채팅] 버튼 오른쪽 위 미확인 채팅 표시 (빨간 점)
+        private NotificationDot chatUnreadDot;          // [채팅] 버튼 오른쪽 위 미확인 채팅 표시 (빨간 점)
         private GameChatController chatController;    // 새 채팅 신호(LiveMessageReceived)를 받는 곳
         private CanvasGroup statusBackdrop;
         private DesignSpriteCatalog portraits;
@@ -101,7 +101,7 @@ namespace WhoisntCitizen.Lobby
             rosterHeading.fontStyle = FontStyles.Bold;
             var chat = MakeButton("OpenChat", Root, 800, 532, 204, 60, "채팅", 26);
             AddActionIcon(chat, RoomHelmGraphic.Symbol.Chat);
-            chatUnreadDot = ChatUnreadDot.Attach(chat);
+            chatUnreadDot = NotificationDot.AttachTo((RectTransform)chat.transform);
             chat.onClick.AddListener(() => { if (chatSheet != null) chatSheet.SetActive(!chatSheet.activeSelf); });
 
             var viewport = Rect("RosterViewport", board); Place(viewport, 30, 104, 920, 958);
