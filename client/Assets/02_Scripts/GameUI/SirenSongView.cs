@@ -2,7 +2,6 @@ using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace WhoisntCitizen.GameUI
@@ -18,12 +17,13 @@ namespace WhoisntCitizen.GameUI
     /// <summary>
     /// The siren's song (Docs: 시안 F), only on the screen of the player it concerns:
     /// - Seduced: the song (pink waves at the edges, notes rising) → the siren's picture "이제 당신은 세이렌 팀입니다" →
-    ///   the siren team joined by a pink thread, the role kept and the new goal. About 2.4 s; a tap skips to the end.
+    ///   the siren team joined by a pink thread, the role kept and the new goal. About 2.4 s.
     ///   After a reconnect only the team part plays.
     /// - The siren's own band: "유혹 성공 · 영희님 / 다음 밤은 쉽니다" in pink, or a grey band when it failed.
-    /// Built at run time over the canvas; inactive between plays. Uses unscaled time.
+    /// Both always play to the end (a tap does not skip them). Built at run time over the canvas; inactive between plays.
+    /// Uses unscaled time.
     /// </summary>
-    public sealed class SirenSongView : MonoBehaviour, IPointerClickHandler
+    public sealed class SirenSongView : MonoBehaviour
     {
         private const float SongEnd = 0.6f, PictureEnd = 1.5f, TeamEnd = 2.4f, OutEnd = 2.7f;
         private const float BandIn = 0.2f, BandOut = 0.25f;
@@ -54,7 +54,6 @@ namespace WhoisntCitizen.GameUI
         private TextMeshProUGUI bandTitle, bandSub;
         private TMP_FontAsset font;
         private Coroutine routine;
-        private bool skip;
         private int shownMates;
 
         private sealed class Mate
@@ -128,16 +127,10 @@ namespace WhoisntCitizen.GameUI
             if (gameObject.activeSelf) gameObject.SetActive(false);
         }
 
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            skip = true;
-        }
-
         private void Begin()
         {
             gameObject.SetActive(true);
             root.SetAsLastSibling(); // over the drawer, the chat and the day's cut-scene
-            skip = false;
         }
 
         // ================================================================ seduced
@@ -148,12 +141,6 @@ namespace WhoisntCitizen.GameUI
             while (true)
             {
                 float t = Time.unscaledTime - start;
-                if (skip && t < TeamEnd)
-                {
-                    start -= TeamEnd - t; // straight to the fade
-                    t = TeamEnd;
-                }
-                skip = false;
                 if (t >= OutEnd) break;
                 ApplySeduced(t, from);
                 yield return null;
@@ -232,12 +219,6 @@ namespace WhoisntCitizen.GameUI
             while (true)
             {
                 float t = Time.unscaledTime - start;
-                if (skip && t < outAt)
-                {
-                    start -= outAt - t;
-                    t = outAt;
-                }
-                skip = false;
                 if (t >= end) break;
                 ApplyBand(t, outAt, end);
                 yield return null;
@@ -277,7 +258,7 @@ namespace WhoisntCitizen.GameUI
             Stretch(root);
             Image blocker = GetComponent<Image>();
             blocker.color = Color.clear;
-            blocker.raycastTarget = true; // blocks the screen while playing; a tap skips
+            blocker.raycastTarget = true; // blocks the screen while playing
             group = GetComponent<CanvasGroup>();
 
             dim = Img("Dim", root, null, Color.clear);

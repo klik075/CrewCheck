@@ -1,7 +1,6 @@
 using System.Collections;
 using TMPro;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace WhoisntCitizen.GameUI
@@ -9,9 +8,9 @@ namespace WhoisntCitizen.GameUI
     /// <summary>
     /// Full-screen ability cut-in: the role's illustration (<see cref="AbilityCutInCatalog"/>) sweeps in over the whole
     /// game screen with a flash and speed lines, holds with the role name and the ability line, then sweeps out.
-    /// Tapping skips to the exit. Built at run time on top of the canvas; inactive between plays.
+    /// It always plays to the end (a tap does not skip it). Built at run time on top of the canvas; inactive between plays.
     /// </summary>
-    public sealed class AbilityCutInView : MonoBehaviour, IPointerClickHandler
+    public sealed class AbilityCutInView : MonoBehaviour
     {
         private const float InEnd = 0.24f, HoldEnd = 1.3f, OutEnd = 1.58f;
         private const int LineCount = 12;
@@ -25,7 +24,6 @@ namespace WhoisntCitizen.GameUI
         private RectTransform caption;
         private TextMeshProUGUI title;
         private TextMeshProUGUI line;
-        private bool skip;
 
         public bool IsPlaying => gameObject.activeSelf;
 
@@ -46,7 +44,7 @@ namespace WhoisntCitizen.GameUI
             Stretch(root);
             Image dim = GetComponent<Image>();
             dim.color = new Color(0f, 0f, 0f, 0.72f);
-            dim.raycastTarget = true; // blocks the screen while playing; a tap skips
+            dim.raycastTarget = true; // blocks the screen while playing
             group = GetComponent<CanvasGroup>();
 
             artHolder = NewRect("Art", root);
@@ -83,7 +81,7 @@ namespace WhoisntCitizen.GameUI
             flash.raycastTarget = false;
         }
 
-        /// <summary>Plays the cut-in once (about 1.6 s, less when tapped). Yield it from a coroutine.</summary>
+        /// <summary>Plays the cut-in once (about 1.6 s). Yield it from a coroutine.</summary>
         public IEnumerator Play(Sprite illustration, string roleTitle, string abilityLine, Color tint)
         {
             gameObject.SetActive(true);
@@ -97,17 +95,10 @@ namespace WhoisntCitizen.GameUI
             {
                 lines[i].sizeDelta = new Vector2(Mathf.Lerp(420f, 900f, Hash(i, 1)), Mathf.Lerp(5f, 12f, Hash(i, 2)));
             }
-            skip = false;
             float start = Time.unscaledTime;
             while (true)
             {
                 float t = Time.unscaledTime - start;
-                if (skip && t < HoldEnd)
-                {
-                    start -= HoldEnd - t; // jump to the exit
-                    t = HoldEnd;
-                }
-                skip = false;
                 if (t >= OutEnd) break;
                 Apply(t);
                 yield return null;
@@ -118,11 +109,6 @@ namespace WhoisntCitizen.GameUI
         public void Hide()
         {
             if (gameObject.activeSelf) gameObject.SetActive(false);
-        }
-
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            skip = true;
         }
 
         private void Apply(float t)

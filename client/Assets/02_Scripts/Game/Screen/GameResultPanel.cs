@@ -106,8 +106,6 @@ namespace WhoisntCitizen.Game
             sequence.Play(result, me, SkinOf, backgroundImage.sprite != null, OnIntroFinished);
         }
 
-        public void SkipIntro() { if (sequence != null) sequence.Skip(); }
-
         private void OnIntroFinished()
         {
             if (returnAfterIntro && Root.activeInHierarchy && !returnRequested) StartCountdown();
@@ -300,7 +298,7 @@ namespace WhoisntCitizen.Game
 
         private void OnBackClicked()
         {
-            if (IsIntroPlaying) { SkipIntro(); return; }
+            if (IsIntroPlaying) return; // 등장 연출은 끝까지 보여 준다 (누르면 넘기지 않는다)
             if (returnRequested) return;
             returnRequested = true;
             StopCountdown(); // 버튼과 타이머가 두 번 보내지 않게
