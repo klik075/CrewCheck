@@ -222,7 +222,7 @@ namespace WhoisntCitizen.LobbyTest
             }
 
             // 로비/게임에서 쓰는 userId, nickname까지 모두 세션에 저장한다.
-            AuthSession.SetSession(res.memberId, res.userId, res.username, res.nickname, res.accessToken);
+            AuthSession.SetSession(res.memberId, res.userId, res.username, res.nickname, res.accessToken, res.refreshToken);
             AppendLog($"로그인 성공: {res.username} (memberId={res.memberId}, userId={res.userId}, token={AuthSession.TokenPreview()})", OkColor);
             ChatNotice.Post($"{(string.IsNullOrEmpty(res.nickname) ? res.username : res.nickname)}님, 환영합니다.");
             RefreshLoginState();

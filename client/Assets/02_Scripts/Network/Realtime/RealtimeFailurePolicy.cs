@@ -9,7 +9,10 @@ namespace WhoisntCitizen.Network.Realtime
         Reconnect,
 
         /// <summary>토큰이 만료됐다. 다시 연결해도 또 거절되므로 멈추고, 다시 로그인하라고 알린다. (4401, 핸드셰이크 401)</summary>
-        StopAuthExpired
+        StopAuthExpired,
+
+        /// <summary>같은 계정으로 다른 곳에서 로그인했다. 다시 연결하면 상대를 다시 쫓아내게 되므로 멈추고 로그아웃한다. (4409)</summary>
+        StopDuplicateLogin
     }
 
     /// <summary>서버 error 메시지를 받았을 때 할 일.</summary>
@@ -30,6 +33,7 @@ namespace WhoisntCitizen.Network.Realtime
     ///
     ///  종료 코드                          → 할 일
     ///  4401 토큰 만료 / 핸드셰이크 401    → 멈춤 + 다시 로그인 안내
+    ///  4409 다른 곳에서 로그인            → 멈춤 + 로그아웃 (다시 연결하지 않음)
     ///  4408 응답 없음                     → 재연결 (앱이 잠시 멈췄던 경우가 대부분)
     ///  1000·1001(서버 종료/재시작), 1006(비정상 끊김), 코드 없음(네트워크 오류), 그 밖 → 재연결
     ///
@@ -47,6 +51,10 @@ namespace WhoisntCitizen.Network.Realtime
         /// <param name="handshakeUnauthorized">연결 단계에서 HTTP 401을 받았다(토큰이 이미 만료된 채로 연결 시도).</param>
         public static CloseAction ForClose(int? closeCode, bool handshakeUnauthorized)
         {
+            if (closeCode == RealtimeProtocol.CloseDuplicateLogin)
+            {
+                return CloseAction.StopDuplicateLogin;
+            }
             if (handshakeUnauthorized || closeCode == RealtimeProtocol.CloseTokenExpired)
             {
                 return CloseAction.StopAuthExpired;

@@ -119,6 +119,12 @@ namespace WhoisntCitizen.Network
         public event Action AuthExpired;
 
         /// <summary>
+        /// 같은 계정으로 다른 곳에서 새로 로그인해 서버가 이 연결을 닫았다(4409). 재연결은 멈춘 상태다.
+        /// 받은 쪽은 로그아웃하고 타이틀로 돌아간다. 메인 스레드에서 불린다.
+        /// </summary>
+        public event Action DuplicateLogin;
+
+        /// <summary>
         /// 서버가 방 구독을 거절했다(NOT_IN_ROOM) (거절된 roomId). 이 방의 신호는 오지 않고 빠른 폴링으로 돌아간다.
         /// 방 화면은 바로 GET해서 실제로 방에서 나가졌는지(강퇴·방 삭제) 확인한다. 메인 스레드에서 불린다.
         /// </summary>
@@ -533,7 +539,14 @@ namespace WhoisntCitizen.Network
                 return;
             }
 
-            if (RealtimeFailurePolicy.ForClose(closeCode, handshakeUnauthorized) == CloseAction.StopAuthExpired)
+            CloseAction closeAction = RealtimeFailurePolicy.ForClose(closeCode, handshakeUnauthorized);
+            if (closeAction == CloseAction.StopDuplicateLogin)
+            {
+                StopForDuplicateLogin();
+                return;
+            }
+
+            if (closeAction == CloseAction.StopAuthExpired)
             {
                 StopForAuthExpired(handshakeUnauthorized ? "연결 거절(401)" : $"서버가 연결을 닫음({closeCode})");
                 return;
@@ -548,6 +561,22 @@ namespace WhoisntCitizen.Network
             double delay = backoff.NextDelaySeconds();
             nextConnectAt = Now + delay;
             Log($"연결 끊김 (code={closeCode?.ToString() ?? "-"}, {reason}) → {delay:0.0}초 뒤 다시 연결");
+        }
+
+        /// <summary>다른 곳에서 로그인함: 재연결을 멈추고 DuplicateLogin을 알린다.</summary>
+        private void StopForDuplicateLogin()
+        {
+            wantConnected = false;
+            nextResubscribeAt = 0;
+            Debug.LogWarning("[Realtime] 같은 계정으로 다른 곳에서 로그인해 서버가 연결을 닫았습니다(4409). 로그아웃합니다.");
+            try
+            {
+                DuplicateLogin?.Invoke();
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
         }
 
         /// <summary>토큰 만료: 재연결을 멈추고 AuthExpired를 알린다. 다시 로그인한 뒤 Connect()로 재개한다.</summary>

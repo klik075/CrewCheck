@@ -26,7 +26,9 @@ namespace WhoisntCitizen.Network
     ///   - requireAuth(needsAuth)가 true면 Authorization: Bearer {accessToken} 헤더를 붙인다.
     ///     (/api/v1/** 는 모두 토큰 필요, 회원가입/로그인만 불필요)
     ///   - 서버 에러 { "code": "...", "message": "..." } 를 파싱해서 result.message에 넣는다.
-    ///   - 인증이 필요한 요청에서 401(토큰 없음/만료)을 받으면 세션을 비우고 타이틀 씬으로 보낸다.
+    ///   - 인증이 필요한 요청에서 401(토큰 만료)을 받으면 먼저 리프레시 토큰으로 재발급(TokenRefresher)을 시도하고,
+    ///     성공하면 새 토큰으로 같은 요청을 한 번 다시 보낸다. 재발급이 거절당했을 때만 세션을 비우고 타이틀 씬으로 보낸다.
+    ///     (액세스 토큰이 만료되기 직전이면 요청을 보내기 전에 미리 재발급한다)
     ///
     /// 주의 (콜백에서 꼭 확인할 것)
     ///   ApiRunner는 씬이 바뀌어도 살아 있어서, 응답 전에 씬이 바뀌면 콜백이 실행될 때
@@ -135,41 +137,91 @@ namespace WhoisntCitizen.Network
 
             string jsonBody = JsonHelper.ToJson(body);
 
-            using (var req = new UnityWebRequest(baseUrl + path, method))
+            // 만료 직전이면 401을 맞고 다시 보내느니 미리 재발급한다. (재발급 요청 자체는 needsAuth=false라 여기를 지나지 않는다)
+            if (needsAuth && ShouldRefreshBeforeSend())
             {
-                req.downloadHandler = new DownloadHandlerBuffer();
-                if (jsonBody != null)
-                    req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(jsonBody));
+                RefreshOutcome? early = null;
+                TokenRefresher.Refresh(o => early = o);
+                while (early == null) yield return null;
+            }
 
-                req.SetRequestHeader("Content-Type", "application/json");
-                if (needsAuth) req.SetRequestHeader("Authorization", AuthSession.AuthorizationHeader);
-                req.timeout = timeoutSeconds;
+            bool retried = false;
+            while (true)
+            {
+                // 재발급 중에 로그아웃됐거나 재발급이 거절돼 세션이 비었으면 보내지 않고 401로 끝낸다.
+                if (needsAuth && !AuthSession.IsAuthenticated)
+                {
+                    onDone?.Invoke(new ApiResult { success = false, statusCode = 401, message = "로그인이 필요합니다." });
+                    yield break;
+                }
 
-                if (ApiConfig.LogRequests)
-                    Debug.Log($"[Api] → {method} {path}" + (jsonBody != null ? $"  {MaskPassword(jsonBody)}" : ""));
+                ApiResult result;
+                using (var req = new UnityWebRequest(baseUrl + path, method))
+                {
+                    req.downloadHandler = new DownloadHandlerBuffer();
+                    if (jsonBody != null)
+                        req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(jsonBody));
 
-                yield return req.SendWebRequest();
+                    req.SetRequestHeader("Content-Type", "application/json");
+                    if (needsAuth) req.SetRequestHeader("Authorization", AuthSession.AuthorizationHeader);
+                    req.timeout = timeoutSeconds;
 
-                ApiResult result = BuildResult(req);
+                    if (ApiConfig.LogRequests)
+                        Debug.Log($"[Api] → {method} {path}" + (jsonBody != null ? $"  {MaskSecrets(jsonBody)}" : "") + (retried ? "  (재발급 후 재시도)" : ""));
+
+                    yield return req.SendWebRequest();
+
+                    result = BuildResult(req);
+                }
 
                 if (ApiConfig.LogRequests)
                 {
                     string log = $"[Api] ← {method} {path}  {result.statusCode}  {(result.success ? "성공" : result.message)}";
-                    if (result.success) Debug.Log(log + (string.IsNullOrEmpty(result.body) ? "" : $"\n{MaskToken(result.body)}"));
+                    if (result.success) Debug.Log(log + (string.IsNullOrEmpty(result.body) ? "" : $"\n{MaskSecrets(result.body)}"));
                     else Debug.LogWarning(log);
                 }
 
-                // 인증이 필요한 요청에서 401 → 토큰 만료/무효. 세션을 비우고 타이틀로 보낸다.
+                // 인증이 필요한 요청에서 401 → 액세스 토큰 만료/무효. 리프레시 토큰으로 재발급을 시도하고 한 번만 다시 보낸다.
                 // (로그인/회원가입은 needsAuth=false라 비밀번호가 틀려도 여기에 걸리지 않는다)
-                if (needsAuth && result.IsUnauthorized) HandleUnauthorized();
+                if (needsAuth && result.IsUnauthorized)
+                {
+                    if (!retried && !string.IsNullOrEmpty(AuthSession.RefreshToken))
+                    {
+                        retried = true;
+                        RefreshOutcome? outcome = null;
+                        TokenRefresher.Refresh(o => outcome = o);
+                        while (outcome == null) yield return null;
+
+                        if (outcome == RefreshOutcome.Success) continue; // 새 토큰으로 같은 요청을 다시 보낸다
+                        if (outcome == RefreshOutcome.Failed)
+                        {
+                            // 서버에 닿지 못해 재발급을 확인하지 못했다. 세션은 그대로 두고 이번 요청만 실패로 돌려준다.
+                            onDone?.Invoke(result);
+                            yield break;
+                        }
+                        // Rejected: 리프레시 토큰도 만료/폐기됨 → 아래에서 세션을 정리하고 타이틀로
+                    }
+                    HandleUnauthorized();
+                }
 
                 onDone?.Invoke(result);
+                yield break;
             }
         }
 
         // ==================================================================
         // 내부 처리
         // ==================================================================
+
+        // 액세스 토큰이 곧(1분 안에) 만료되고 리프레시 토큰이 있을 때만 미리 재발급한다.
+        private const double RefreshBeforeExpiryMinutes = 1.0;
+
+        private static bool ShouldRefreshBeforeSend()
+        {
+            double? minutesLeft = AuthSession.TokenMinutesLeft;
+            return minutesLeft.HasValue && minutesLeft.Value < RefreshBeforeExpiryMinutes
+                && !string.IsNullOrEmpty(AuthSession.RefreshToken);
+        }
 
         // 콜백 방식 요청을 ApiConfig 설정으로 실행한다. (코루틴은 ApiRunner가 돌린다)
         private static void Run(string method, string path, object body, bool requireAuth, Action<ApiResult> onDone)
@@ -240,20 +292,21 @@ namespace WhoisntCitizen.Network
         /// 세션이 만료됐다고 다른 곳에서 알았을 때 부른다(예: 실시간 연결이 4401로 닫힘).
         /// REST 응답이 401일 때와 똑같이 안내 → 세션 비우기 → 타이틀 이동을 한다. 이미 로그아웃 상태면 아무것도 하지 않는다.
         /// </summary>
-        public static void ExpireSession()
+        /// <param name="notice">화면에 띄울 안내. 비우면 "로그인 시간이 만료되었습니다"</param>
+        public static void ExpireSession(string notice = null)
         {
             if (!AuthSession.IsAuthenticated) return;
-            HandleUnauthorized();
+            HandleUnauthorized(notice);
         }
 
         /// <summary>
         /// 세션 만료 처리: 로그인/방 정보를 비우고 타이틀 씬으로 보낸다.
         /// 이미 타이틀 씬이면 씬 이동은 하지 않는다.
         /// </summary>
-        private static void HandleUnauthorized()
+        private static void HandleUnauthorized(string notice = null)
         {
             Debug.LogWarning("[Api] 인증이 없거나 만료되어 로그아웃합니다.");
-            WhoisntCitizen.Chat.ChatNotice.Post("로그인 시간이 만료되었습니다. 다시 로그인해 주세요.");
+            WhoisntCitizen.Chat.ChatNotice.Post(notice ?? "로그인 시간이 만료되었습니다. 다시 로그인해 주세요.");
             AuthSession.Clear();
             RoomSession.Clear();
             Unauthorized?.Invoke();
@@ -265,16 +318,11 @@ namespace WhoisntCitizen.Network
         // 로그 마스킹: Console에 비밀번호/토큰 원문이 찍히지 않게 가린다.
         // ------------------------------------------------------------------
 
-        // 요청 body의 "password":"..." 값을 ***로 바꾼다.
-        private static string MaskPassword(string json)
+        // 요청/응답 body의 "password" 값은 ***로, "accessToken"/"refreshToken" 값은 앞 10자만 남기고 가린다.
+        private static string MaskSecrets(string json)
         {
-            return System.Text.RegularExpressions.Regex.Replace(json, "(\"password\"\\s*:\\s*\")[^\"]*(\")", "$1***$2");
-        }
-
-        // 응답 body의 "accessToken":"..." 값을 앞 10자만 남긴다.
-        private static string MaskToken(string json)
-        {
-            return System.Text.RegularExpressions.Regex.Replace(json, "(\"accessToken\"\\s*:\\s*\")([^\"]{0,10})[^\"]*(\")", "$1$2...$3");
+            json = System.Text.RegularExpressions.Regex.Replace(json, "(\"password\"\\s*:\\s*\")[^\"]*(\")", "$1***$2");
+            return System.Text.RegularExpressions.Regex.Replace(json, "(\"(?:accessToken|refreshToken)\"\\s*:\\s*\")([^\"]{0,10})[^\"]*(\")", "$1$2...$3");
         }
     }
 }
