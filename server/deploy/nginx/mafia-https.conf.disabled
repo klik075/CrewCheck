@@ -1,0 +1,57 @@
+# 443포트(HTTPS): itch.io의 WebGL 빌드가 https:// · wss:// 로 접속하는 입구.
+# 받은 요청을 같은 EC2의 Spring 서버(127.0.0.1:8080, systemd mafia-server)로 넘긴다. (역방향 프록시)
+#
+# 처음에는 꺼져 있다: nginx는 conf.d/*.conf 만 읽으므로 ".disabled"가 붙은 이 파일은 무시된다.
+# 인증서가 없는데 이 설정을 켜면 nginx가 시작하지 못하기 때문이다.
+# 인증서를 발급받은 뒤 이름을 mafia-https.conf 로 바꾸고 nginx를 재시작하면 켜진다.
+#
+# 처음 한 번 (EC2 /opt/mafia 에서)
+#   1) sudo docker compose -f docker-compose.prod.yml --env-file .env up -d nginx certbot
+#   2) sudo docker compose -f docker-compose.prod.yml --env-file .env run --rm --entrypoint certbot certbot \
+#        certonly --webroot -w /var/www/certbot -d 3-38-222-51.sslip.io \
+#        --email <팀 메일> --agree-tos --no-eff-email
+#   3) sudo mv nginx/mafia-https.conf.disabled nginx/mafia-https.conf
+#   4) sudo docker compose -f docker-compose.prod.yml --env-file .env restart nginx
+#
+# 도메인: 3-38-222-51.sslip.io (무료. IP가 이름에 들어 있어 별도 설정 없이 3.38.222.51로 연결된다)
+#         도메인을 바꾸면 아래 server_name과 인증서 경로 두 줄을 같이 바꾼다.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name 3-38-222-51.sslip.io;
+
+    ssl_certificate     /etc/letsencrypt/live/3-38-222-51.sslip.io/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/3-38-222-51.sslip.io/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # 프로필 이미지 업로드 등. nginx 기본값(1MB)이 Spring 기본 요청 한도(10MB)보다 작아서 맞춰 둔다
+    client_max_body_size 10m;
+
+    # 실시간 WebSocket (/ws/v1). HTTP 연결을 WebSocket으로 "업그레이드"하는 헤더를 그대로 넘겨야 한다.
+    location /ws/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        # 클라이언트가 10초마다 ping을 보내므로 75초 동안 아무것도 안 오면 끊긴 것으로 본다
+        proxy_read_timeout 75s;
+        proxy_send_timeout 75s;
+    }
+
+    # REST API (/api/...)와 나머지
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
