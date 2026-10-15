@@ -74,10 +74,19 @@ namespace WhoisntCitizen.Game
             AudioSystemManager.PlayBGM(background == "Defeat" ? Defeat : Victory, loop: false);
         }
 
-        /// <summary>게임 화면을 떠날 때 (씬 전환). 매니저는 DontDestroy 라서 직접 꺼야 한다.</summary>
+        /// <summary>
+        /// 게임 화면을 떠날 때 (씬 전환). 매니저는 DontDestroy 라서 직접 꺼야 한다.
+        /// 다음 씬의 SceneBGM 이 먼저 다른 곡을 틀었을 수 있으므로, 지금 흐르는 곡이 게임 BGM 일 때만 끈다.
+        /// </summary>
         public static void Stop()
         {
-            if (AudioSystemManager.HasInstance) AudioSystemManager.StopBGM();
+            if (!AudioSystemManager.HasInstance) return;
+            var current = AudioSystemManager.CurrentBGM;
+            if (current != null && IsGameBgm(current.name)) AudioSystemManager.StopBGM();
         }
+
+        private static bool IsGameBgm(string name)
+            => name == Night || name == Discussion || name == Vote
+            || name == WalkThePlank || name == Victory || name == Defeat;
     }
 }
