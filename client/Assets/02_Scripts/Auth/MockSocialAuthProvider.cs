@@ -36,5 +36,11 @@ public class MockSocialAuthProvider : ISocialAuthProvider
         return kakaoToken;
     }
 
-    private Task SimulateLoginWindow() => delayMilliseconds > 0 ? Task.Delay(delayMilliseconds) : Task.CompletedTask;
+    // WebGL에는 스레드/타이머 풀이 없어 Task.Delay가 끝나지 않거나 불안정할 수 있다.
+    // Awaitable은 Unity 플레이어 루프에서 돌아가므로 WebGL에서도 안전하고, 끝난 뒤 메인 스레드로 돌아온다.
+    private async Task SimulateLoginWindow()
+    {
+        if (delayMilliseconds <= 0) return;
+        await Awaitable.WaitForSecondsAsync(delayMilliseconds / 1000f);
+    }
 }

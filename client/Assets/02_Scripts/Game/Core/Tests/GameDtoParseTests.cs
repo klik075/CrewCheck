@@ -36,6 +36,24 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 게임_상태는_직업과_별개인_프로필_번호를_읽는다()
+        {
+            var s = GameJson.FromJson<GameStateDto>(
+                "{\"players\":[{\"playerId\":11,\"profileImageId\":13},{\"playerId\":12,\"profileImageId\":0}]}");
+
+            Assert.AreEqual(13, s.players[0].profileImageId);
+            Assert.AreEqual(0, s.players[1].profileImageId, "0번도 선택한 스킨이다");
+        }
+
+        [Test]
+        public void 프로필_번호가_없는_이전_응답은_기존_스킨을_유지한다()
+        {
+            var s = GameJson.FromJson<GameStateDto>(GameJsonFixtures.GameState);
+
+            Assert.AreEqual(-1, s.players[0].profileImageId);
+        }
+
+        [Test]
         public void 남은_시간은_서버_시각_기준으로_계산한다()
         {
             var s = GameJson.FromJson<GameStateDto>(GameJsonFixtures.GameState);
