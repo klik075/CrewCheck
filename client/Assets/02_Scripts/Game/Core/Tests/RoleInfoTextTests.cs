@@ -93,6 +93,27 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 랜덤_구성의_중립은_6인_이상에서만_나올_수_있다()
+        {
+            RoleSetupOptionsDto options = Options();
+            options.roles.Add(new RoleDto { code = "NEUTRAL_KRAKEN", name = "크라켄", faction = Factions.Neutral });
+            options.roles.Add(new RoleDto { code = "NEUTRAL_SIREN", name = "세이렌", faction = Factions.Neutral });
+            var five = new RoleCompositionDto { playerCount = 5 };
+            five.roles.AddRange(new[] { RoleCodes.PirateRaider, RoleCodes.CrewCaptain, RoleCodes.CrewDoctor, RoleCodes.CrewSailor, RoleCodes.CrewSailor });
+            options.recommended.Add(five);
+            var setup = new RoleSetupDto { mode = RoleSetupModes.Random };
+            setup.randomCandidates.AddRange(new[] { RoleCodes.CrewCaptain, "NEUTRAL_KRAKEN", "NEUTRAL_SIREN" });
+
+            // 6인: 선원 진영 4자리. 중립은 둘 다 후보지만 한 판에 1명까지라 선장 + 중립 1 = 2자리, 남는 자리는 선원
+            CollectionAssert.AreEqual(new[] { "해적", "선장", "선원", "크라켄", "세이렌" },
+                RoleInfoText.Lineup(options, setup, 6).Select(l => l.Role.name).ToArray());
+
+            // 5인: 중립은 나오지 않는다
+            CollectionAssert.AreEqual(new[] { "해적", "선장", "선원" },
+                RoleInfoText.Lineup(options, setup, 5).Select(l => l.Role.name).ToArray());
+        }
+
+        [Test]
         public void 부제는_이번_판의_배정_방식()
         {
             var custom = new RoleSetupDto { mode = RoleSetupModes.Custom };

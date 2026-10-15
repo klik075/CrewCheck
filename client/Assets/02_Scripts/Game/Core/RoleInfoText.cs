@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -129,15 +130,20 @@ namespace WhoisntCitizen.Game
 
         /// <summary>
         /// 랜덤 구성에서 나올 수 있는 직업 (서버 RoleAssigner.randomComposition과 같은 규칙). 해적은 항상, 고른 후보 중 해적 진영은
-        /// 해적 진영 자리가 2개 이상일 때만, 나머지 후보는 항상, 선원은 나머지 후보가 남은 자리보다 적어 빈자리를 채울 때만.
+        /// 해적 진영 자리가 2개 이상일 때만, 중립은 MinPlayersForRandomNeutral명 이상일 때만(한 판에 MaxRandomNeutrals명까지),
+        /// 나머지 후보는 항상, 선원은 선원 진영 자리를 후보로 다 채우지 못할 때만.
         /// </summary>
         private static List<string> RandomPool(RoleSetupDto setup, RoleSetupOptionsDto options, int playerCount)
         {
             int pirateSlots = RoleSetupRules.PirateSlots(options, playerCount);
-            List<string> candidates = (setup?.randomCandidates ?? new List<string>()).Where(c => !RoleSetupRules.IsBaseRole(c)).ToList();
+            bool neutralAllowed = playerCount >= RoleSetupRules.MinPlayersForRandomNeutral;
+            List<string> candidates = (setup?.randomCandidates ?? new List<string>())
+                .Where(c => !RoleSetupRules.IsBaseRole(c) && (neutralAllowed || !RoleSetupRules.IsNeutral(options, c))).ToList();
             var pool = new List<string> { RoleCodes.PirateRaider };
             pool.AddRange(candidates.Where(c => pirateSlots > 1 || !RoleSetupRules.IsPirate(options, c)));
-            if (candidates.Count(c => !RoleSetupRules.IsPirate(options, c)) < playerCount - pirateSlots) pool.Add(RoleCodes.CrewSailor);
+            int neutrals = candidates.Count(c => RoleSetupRules.IsNeutral(options, c));
+            int crewFill = candidates.Count(c => !RoleSetupRules.IsPirate(options, c)) - neutrals + Math.Min(neutrals, RoleSetupRules.MaxRandomNeutrals);
+            if (crewFill < playerCount - pirateSlots) pool.Add(RoleCodes.CrewSailor);
             return pool;
         }
     }
