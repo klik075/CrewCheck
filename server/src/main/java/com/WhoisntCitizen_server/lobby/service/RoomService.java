@@ -36,9 +36,11 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -71,7 +73,7 @@ public class RoomService {
      */
 
     private final LobbyRoomRepository roomRepository;
-    // 닉네임이 필요한 방 생성·입장에서만 User(프로필)를 조회한다. (findUser 참고)
+    // 방 생성·입장의 닉네임과 게임 시작 시 선택한 프로필 이미지를 조회한다.
     private final UserRepository userRepository;
     private final RoomLock roomLock; // 방 단위 잠금. 잠금 순서: 방 잠금 → 게임 잠금
     private final GameService gameService;
@@ -508,9 +510,13 @@ public class RoomService {
             if (room.getPlayers().size() < MIN_PLAYERS) throw new IllegalStateException("게임을 시작하려면 최소 " + MIN_PLAYERS + "명이 필요합니다.");
             if (!room.allGuestsReady()) throw new IllegalStateException("모든 참가자가 준비해야 게임을 시작할 수 있습니다.");
 
-            // Room 참가자(userId = User.id)를 그대로 게임 참가자(playerId)로 넘긴다.
+            // 시작할 때 최신 프로필을 한 번에 조회한다. 게임 상태 폴링은 DB를 다시 읽지 않는다.
+            List<Long> playerIds = room.getPlayers().stream().map(RoomPlayer::getUserId).toList();
+            Map<Long, Integer> profileImages = userRepository.findAllById(playerIds).stream()
+                    .collect(Collectors.toMap(User::getId, User::getProfileImageId));
             List<GameParticipant> participants = room.getPlayers().stream()
-                    .map(p -> new GameParticipant(p.getUserId(), p.getNickname()))
+                    .map(p -> new GameParticipant(p.getUserId(), p.getNickname(),
+                            profileImages.getOrDefault(p.getUserId(), 0)))
                     .toList();
 
             // 채팅: 여기부터 게임 중 메시지. 게임 생성이 곧바로 안내(역할 배정, 첫 밤)를 남기므로 그보다 먼저 알린다.

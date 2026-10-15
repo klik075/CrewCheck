@@ -34,7 +34,7 @@ class GameSnapshotJsonTest {
 
     private static PlayerSnapshot player(long id, String nickname, RoleSnapshot role, RoleSnapshot shownRole) {
         return new PlayerSnapshot(id, nickname, role, shownRole, Team.CREW, true, null, null,
-                Map.of(), null, null, null, null, List.of(), Map.of(), Map.of(), null, null, false);
+                Map.of(), null, null, null, null, List.of(), Map.of(), Map.of(), null, null, false, 13);
     }
 
     private static GameSnapshot fullSnapshot() {
@@ -48,13 +48,13 @@ class GameSnapshotJsonTest {
                 NOW.minusSeconds(100), DeathCause.ATTACK,
                 Map.of(ActionCode.READ_CORPSE_ROLE, 1), 2, 1, 4L, null,
                 List.of(5L, 4L), Map.of(1L, Faction.PIRATE), Map.of(4L, captain),
-                null, null, false);
+                null, null, false, 19);
         PlayerSnapshot contactedParrot = new PlayerSnapshot(2L, "앵무새", parrot, parrot, Team.PIRATE, true,
                 null, null, Map.of(), null, null, null, null, List.of(), Map.of(), Map.of(),
-                NOW.minusSeconds(30), null, false);
+                NOW.minusSeconds(30), null, false, 0);
         PlayerSnapshot departed = new PlayerSnapshot(4L, "선장", captain, captain, Team.CREW, false,
                 NOW.minusSeconds(10), DeathCause.DISCONNECT, Map.of(), null, null, null, null,
-                List.of(), Map.of(), Map.of(), null, null, true);
+                List.of(), Map.of(), Map.of(), null, null, true, 4);
 
         Map<Long, List<PrivateReport>> reports = new LinkedHashMap<>();
         reports.put(2L, List.of(PrivateReport.actions(1L,
@@ -80,6 +80,16 @@ class GameSnapshotJsonTest {
                 2,
                 nightResult, executionResult,
                 null, List.of(), null);
+    }
+
+    @Test
+    void 프로필_번호가_없는_이전_저장_데이터는_기본_스킨으로_복원된다() {
+        String json = jsonMapper.writeValueAsString(fullSnapshot())
+                .replaceAll(",\"profileImageId\":\\d+", "");
+
+        GameSnapshot restored = jsonMapper.readValue(json, GameSnapshot.class);
+
+        assertThat(restored.players()).allSatisfy(p -> assertThat(p.profileImageId()).isZero());
     }
 
     @Test

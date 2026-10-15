@@ -34,9 +34,11 @@ public record PlayerSnapshot(
         Map<Long, RoleSnapshot> fakeCorpseRoles, // 원숭이 가짜 시체 확인 결과 (대상 → 직업)
         Instant contactedAt,
         Instant seducedAt,
-        boolean departed
+        boolean departed,
+        Integer profileImageId                  // 기존 저장 데이터에 없으면 기본 아바타 0
 ) {
     public PlayerSnapshot {
+        profileImageId = profileImageId == null ? 0 : profileImageId;
         usedCounts = usedCounts == null ? Map.of() : Map.copyOf(usedCounts);
         krakenMarks = krakenMarks == null ? List.of() : List.copyOf(krakenMarks);
         fakeFactions = fakeFactions == null ? Map.of() : Map.copyOf(fakeFactions);

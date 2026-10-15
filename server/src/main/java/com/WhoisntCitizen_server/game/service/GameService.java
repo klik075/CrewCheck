@@ -118,7 +118,7 @@ public class GameService {
             GameParticipant p = participants.get(i);
             RoleDefinition role = roles.get(i);
             // 원숭이는 여기서 이번 구성 안의 위장 직업이 정해지고 게임 끝까지 바뀌지 않는다.
-            players.add(new GamePlayer(p.userId(), p.nickname(), role, roleAssigner.shownRoleOf(role, roles)));
+            players.add(new GamePlayer(p.userId(), p.nickname(), role, roleAssigner.shownRoleOf(role, roles), p.profileImageId()));
         }
 
         String gameId = gameRepository.save(new Game(roomId, players, recordStats)).getGameId();
