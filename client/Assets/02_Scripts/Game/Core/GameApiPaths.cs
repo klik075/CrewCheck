@@ -33,6 +33,16 @@ namespace WhoisntCitizen.Game
             return State(gameId) + "/day/skip";
         }
 
+        /// <summary>
+        /// 낮 토론 시간 연장. 아직 서버에 없다(없는 서버는 404, GameSession이 버튼만 거둔다). 서버에 필요한 것:
+        /// POST, 본문 없음, 응답 DayExtendResultDto. DAY에 살아 있는 사람만(아니면 409 GAME_RULE_VIOLATION), 낮마다 한 사람 한 번
+        /// phaseEndsAt을 GameSession.DayExtendSeconds초 늦추고 phaseVersion은 그대로 둔 채 같은 버전으로 타이머를 다시 건다.
+        /// </summary>
+        public static string ExtendDay(string gameId)
+        {
+            return State(gameId) + "/day/extend";
+        }
+
         public static string NightResult(string gameId)
         {
             return State(gameId) + "/night-result";

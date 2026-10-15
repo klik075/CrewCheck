@@ -245,6 +245,7 @@ namespace WhoisntCitizen.Game
             {
                 dayPanel.PortraitResolver = PortraitOf;
                 dayPanel.Skipped += OnDaySkipped;
+                dayPanel.Extended += OnDayExtended;
             }
             if (resultPanel != null)
             {
@@ -316,6 +317,7 @@ namespace WhoisntCitizen.Game
             if (dayPanel != null)
             {
                 dayPanel.Skipped -= OnDaySkipped;
+                dayPanel.Extended -= OnDayExtended;
             }
             if (resultPanel != null)
             {
@@ -866,6 +868,16 @@ namespace WhoisntCitizen.Game
             RefreshPanels(); // 넘긴 인원은 패널 안내에 항상 보인다
         }
 
+        public void ShowDayExtendAccepted(DayExtendResultDto result)
+        {
+            // 실제 서버는 방 채팅에 "OO님이 토론 시간을 10초 늘렸습니다."를 보내므로, 서버 안내가 이 채팅창에 없을 때만 남긴다
+            if (AnnouncePublic && result.addedSeconds > 0)
+            {
+                AddSystem(GameScreenText.DayExtendAccepted(result));
+            }
+            RefreshPanels(); // [+10초 연장] → [연장 완료]
+        }
+
         public void ShowVoteAccepted(VoteResultDto result)
         {
             GameSession session = Session;
@@ -1056,6 +1068,14 @@ namespace WhoisntCitizen.Game
             if (controller != null)
             {
                 controller.SkipDay();
+            }
+        }
+
+        private void OnDayExtended()
+        {
+            if (controller != null)
+            {
+                controller.ExtendDay();
             }
         }
 

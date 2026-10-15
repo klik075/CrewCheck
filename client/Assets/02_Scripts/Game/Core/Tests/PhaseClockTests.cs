@@ -111,5 +111,24 @@ namespace WhoisntCitizen.Game.Tests
             Assert.AreEqual(4L, clock.PhaseVersion);
             Assert.AreEqual(60.0, clock.RemainingSeconds(5.0), 0.001);
         }
+
+        [Test]
+        public void 같은_페이즈에서_마감이_늦춰지면_새로_잡고_연장_전_응답은_무시한다()
+        {
+            var clock = new PhaseClock();
+            clock.Sync(State(3, "2026-10-01T12:00:30Z", "2026-10-01T12:00:00Z"), 0.0);   // 마감 추정 = 30.0
+
+            // 낮 토론 시간 연장: 같은 페이즈에서 phaseEndsAt이 10초 늦춰졌다 (지연 때문에 더 늦은 추정이어도 반영한다)
+            clock.Sync(State(3, "2026-10-01T12:00:40Z", "2026-10-01T12:00:05Z"), 5.5);   // 추정 = 40.5
+            Assert.AreEqual(30.5, clock.RemainingSeconds(10.0), 0.001);
+
+            // 연장 전에 보낸 요청의 응답이 늦게 왔다: 옛 마감은 반영하지 않는다
+            clock.Sync(State(3, "2026-10-01T12:00:30Z", "2026-10-01T12:00:04Z"), 6.0);   // 추정 = 32.0
+            Assert.AreEqual(30.5, clock.RemainingSeconds(10.0), 0.001);
+
+            // 늘어난 마감에서도 가장 이른 추정을 쓴다
+            clock.Sync(State(3, "2026-10-01T12:00:40Z", "2026-10-01T12:00:07Z"), 7.2);   // 추정 = 40.2
+            Assert.AreEqual(30.2, clock.RemainingSeconds(10.0), 0.001);
+        }
     }
 }

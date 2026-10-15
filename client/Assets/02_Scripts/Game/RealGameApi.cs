@@ -38,6 +38,11 @@ namespace WhoisntCitizen.Game
             ApiClient.Post<DaySkipResultDto>(GameApiPaths.SkipDay(gameId), null, r => Reply(onDone, r));
         }
 
+        public void ExtendDay(string gameId, Action<GameApiResult<DayExtendResultDto>> onDone)
+        {
+            ApiClient.Post<DayExtendResultDto>(GameApiPaths.ExtendDay(gameId), null, r => Reply(onDone, r));
+        }
+
         public void GetNightResult(string gameId, Action<GameApiResult<NightResultDto>> onDone)
         {
             ApiClient.Get<NightResultDto>(GameApiPaths.NightResult(gameId), r => Reply(onDone, r));

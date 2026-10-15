@@ -68,6 +68,11 @@ namespace WhoisntCitizen.Game
             Debug.Log(Tag + "토론 넘기기 접수 (" + result.skippedCount + "/" + result.requiredCount + ")");
         }
 
+        public void ShowDayExtendAccepted(DayExtendResultDto result)
+        {
+            Debug.Log(Tag + "토론 시간 연장 접수 (+" + result.addedSeconds + "초, 마감 " + result.phaseEndsAt + ")");
+        }
+
         public void ShowVoteAccepted(VoteResultDto result)
         {
             Debug.Log(Tag + "투표 접수");
