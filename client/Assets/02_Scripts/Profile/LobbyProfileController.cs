@@ -99,6 +99,8 @@ namespace WhoisntCitizen.Profile
                 {
                     int id = i; // 클로저용 복사
                     if (avatarButtons[i] == null) continue;
+                    avatarButtons[i].gameObject.SetActive(id < AvatarCatalog.Count);
+                    if (id >= AvatarCatalog.Count) continue;
                     AvatarCatalog.Apply(avatarButtons[i].targetGraphic as Image, id);
                     avatarButtons[i].onClick.AddListener(() => OnAvatarSelected(id));
                 }
@@ -298,7 +300,7 @@ namespace WhoisntCitizen.Profile
         // 선택 창에서 아바타를 고른다. 저장은 확인 버튼을 눌렀을 때 한다.
         private void OnAvatarSelected(int id)
         {
-            if (isChanging || SceneLoader.IsLoading) return;
+            if (isChanging || SceneLoader.IsLoading || id < 0 || id >= AvatarCatalog.Count) return;
             pendingAvatarId = id;
             AvatarStatus?.Clear();
             HighlightAvatar(id);
@@ -310,7 +312,7 @@ namespace WhoisntCitizen.Profile
             if (isChanging || SceneLoader.IsLoading) return;
 
             int id = pendingAvatarId;
-            if (id < 0 || (Current != null && Current.profileImageId == id))
+            if (id < 0 || id >= AvatarCatalog.Count || (Current != null && Current.profileImageId == id))
             {
                 CloseAvatarPopup();
                 return;
@@ -350,6 +352,7 @@ namespace WhoisntCitizen.Profile
         private void HighlightAvatar(int selectedId)
         {
             if (avatarButtons == null) return;
+            if (selectedId >= 0) selectedId = AvatarCatalog.NormalizeId(selectedId);
             for (int i = 0; i < avatarButtons.Length; i++)
             {
                 if (avatarButtons[i] == null || !(avatarButtons[i].targetGraphic is Image img)) continue;
@@ -365,7 +368,7 @@ namespace WhoisntCitizen.Profile
             if (isChanging || SceneLoader.IsLoading || avatarPopup == null) return;
             avatarPopup.SetActive(true);
             AvatarStatus?.Clear();
-            pendingAvatarId = Current != null ? Current.profileImageId : -1; // 처음엔 지금 쓰는 아바타가 선택된 상태
+            pendingAvatarId = Current != null ? AvatarCatalog.NormalizeId(Current.profileImageId) : -1;
             HighlightAvatar(pendingAvatarId);
         }
 

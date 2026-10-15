@@ -45,6 +45,7 @@ namespace WhoisntCitizen.Game
         public long playerId;       // = userId
         public string nickname;
         public bool alive;
+        public int profileImageId = -1; // 로비에서 선택한 외형. 구버전 응답/미리보기는 -1로 기존 자리별 스킨 사용.
     }
 
     // ---------------------------------------------------------------- 내 역할 GET /games/{id}/me
