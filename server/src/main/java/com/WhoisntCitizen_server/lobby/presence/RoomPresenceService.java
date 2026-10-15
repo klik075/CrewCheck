@@ -28,8 +28,8 @@ import java.util.stream.Collectors;
 /**
  * 대기실 연결 끊김 처리 (고아룸 정리).
  *
- * 클라이언트는 대기실(Room 씬)에서 1초마다 방 조회(GET /api/v1/rooms/{roomId})를 보낸다.
- * 이 활동이 idleTimeoutSeconds(기본 30초) 동안 끊긴 참가자는 앱 종료·강제 종료·네트워크 끊김·토큰 만료 등으로 보고 방에서 뺀다.
+ * 클라이언트는 대기실(Room 씬)에서 1초마다(웹소켓으로 방을 구독 중이면 15초마다) 방 조회(GET /api/v1/rooms/{roomId})를 보낸다.
+ * 이 활동이 idleTimeoutSeconds(기본 45초) 동안 끊긴 참가자는 앱 종료·강제 종료·네트워크 끊김·토큰 만료 등으로 보고 방에서 뺀다.
  *  - 방장이면 남은 사람 중 가장 먼저 들어온 사람에게 위임된다. (Room.removePlayer)
  *  - 남은 사람이 있으면 퇴장 알림(RoomPlayerLeftEvent), 아무도 없으면 방 삭제(RoomDeletedEvent → 방 채팅·접속 기록 삭제)
  * 게임 중 연결 끊김은 게임 쪽 InactivePlayerMonitor가 맡는다. 이 클래스는 대기 중(WAITING)인 방만 정리한다.
@@ -66,7 +66,7 @@ import java.util.stream.Collectors;
  *   - 기록이 Redis에 있어 모든 서버가 같은 기록을 본다.
  *   - 모든 서버가 같은 검사를 돌지만, 빼는 일은 방 잠금 안에서 최신 기록으로 다시 판단하므로
  *     실제로 빼고 이벤트를 발행하는 것은 한 서버뿐이다. (나머지는 이미 빠진 상태를 보고 아무것도 하지 않는다)
- *   - 서버 A가 쓴 시각을 서버 B의 시계로 비교한다. 서버 시계가 NTP로 맞춰져 있다고 가정한다. (1초 안팎 차이는 30초 기준에서 문제없음)
+ *   - 서버 A가 쓴 시각을 서버 B의 시계로 비교한다. 서버 시계가 NTP로 맞춰져 있다고 가정한다. (1초 안팎 차이는 45초 기준에서 문제없음)
  */
 @Service
 public class RoomPresenceService {
