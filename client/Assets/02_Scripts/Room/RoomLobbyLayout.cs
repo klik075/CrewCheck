@@ -2,6 +2,7 @@ using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using WhoisntCitizen.Chat;
 using WhoisntCitizen.Common;
 using WhoisntCitizen.GameUI;
 
@@ -34,6 +35,8 @@ namespace WhoisntCitizen.Lobby
         private TMP_Text roomCode, privacy, rosterHeading, hint;
         private ScrollRect rosterScroll;
         private GameObject chatSheet;
+        private ChatUnreadDot chatUnreadDot;          // [채팅] 버튼 오른쪽 위 미확인 채팅 표시 (빨간 점)
+        private GameChatController chatController;    // 새 채팅 신호(LiveMessageReceived)를 받는 곳
         private CanvasGroup statusBackdrop;
         private DesignSpriteCatalog portraits;
         private Sprite cabinArt, helmArt;
@@ -98,6 +101,7 @@ namespace WhoisntCitizen.Lobby
             rosterHeading.fontStyle = FontStyles.Bold;
             var chat = MakeButton("OpenChat", Root, 800, 532, 204, 60, "채팅", 26);
             AddActionIcon(chat, RoomHelmGraphic.Symbol.Chat);
+            chatUnreadDot = ChatUnreadDot.Attach(chat);
             chat.onClick.AddListener(() => { if (chatSheet != null) chatSheet.SetActive(!chatSheet.activeSelf); });
 
             var viewport = Rect("RosterViewport", board); Place(viewport, 30, 104, 920, 958);
@@ -144,6 +148,9 @@ namespace WhoisntCitizen.Lobby
             statusBackdrop.blocksRaycasts = false; statusBackdrop.alpha = 0;
 
             BuildChat(chatLog, chatInput);
+            // 채팅창이 닫혀 있는 동안 새 채팅이 오면 [채팅] 버튼에 빨간 점을 찍는다
+            chatController = FindFirstObjectByType<GameChatController>(FindObjectsInactive.Include);
+            if (chatController != null) chatController.LiveMessageReceived += OnLiveChat;
             Settings = Root.gameObject.AddComponent<RoomSettingsPanel>(); Settings.Build(this);
             var popup = canvas.transform.Find("Popup");
             if (popup != null)
@@ -153,9 +160,21 @@ namespace WhoisntCitizen.Lobby
             }
         }
 
+        private void OnLiveChat(ChatMessage message)
+        {
+            if (chatSheet == null || !chatSheet.activeSelf) { if (chatUnreadDot != null) chatUnreadDot.Show(true); }
+        }
+
+        private void OnDestroy()
+        {
+            if (chatController != null) chatController.LiveMessageReceived -= OnLiveChat;
+        }
+
         private void LateUpdate()
         {
             Fit();
+            // 채팅창이 열려 있으면 미확인 채팅을 본 것으로 보고 점을 지운다 (버튼·닫기 등 어떤 경로로 열려도)
+            if (chatSheet != null && chatSheet.activeSelf) { if (chatUnreadDot != null) chatUnreadDot.Show(false); }
             if (statusBackdrop != null) statusBackdrop.alpha = string.IsNullOrEmpty(Status.CurrentMessage) ? 0 : 1;
         }
 
