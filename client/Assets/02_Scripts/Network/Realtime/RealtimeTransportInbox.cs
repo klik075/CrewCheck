@@ -24,11 +24,11 @@ namespace WhoisntCitizen.Network.Realtime
     /// </summary>
     public sealed class RealtimeTransportInbox
     {
-        private readonly object gate = new object();
-        private readonly Queue<RealtimeTransportEvent> queue = new Queue<RealtimeTransportEvent>();
-        private bool opened;
-        private bool hasMessage;
-        private bool closed;
+        private readonly object gate = new object(); // 자물쇠
+        private readonly Queue<RealtimeTransportEvent> queue = new Queue<RealtimeTransportEvent>(); // 사건 줄
+        private bool opened; // 지금까지 무엇이 들어왔나
+        private bool hasMessage; // 지금까지 무엇이 들어왔나
+        private bool closed; // 지금까지 무엇이 들어왔나
 
         /// <summary>Closed를 받았으면 true. (아직 꺼내지 않았어도 true)</summary>
         public bool IsClosed

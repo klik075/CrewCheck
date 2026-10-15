@@ -54,6 +54,97 @@ namespace WhoisntCitizen.Network.Realtime
             }
             return url + Path;
         }
+
+        /// <summary>
+        /// 토큰을 주소에 담을 때 쓰는 쿼리 이름. 서버 RealtimeProtocol.TOKEN_QUERY_PARAM과 같다.
+        /// 브라우저(WebGL)의 WebSocket은 Authorization 헤더를 넣을 수 없어서 이 방법을 쓴다.
+        /// </summary>
+        public const string TokenQueryParam = "token";
+
+        /// <summary>
+        /// WebSocket 주소 뒤에 ?token=토큰 을 붙인다. (WebGL 전용. 데스크톱은 Authorization 헤더를 쓴다)
+        ///   ws://host/ws/v1        → ws://host/ws/v1?token=eyJ...
+        ///   ws://host/ws/v1?a=1    → ws://host/ws/v1?a=1&amp;token=eyJ...
+        /// 토큰은 URL 인코딩한다. JWT는 인코딩해도 글자가 바뀌지 않는다(A-Z a-z 0-9 - _ . 만 씀).
+        /// 서버는 쿼리 값을 디코딩하지 않고 읽으므로, JWT가 아닌 토큰을 넣을 일이 생기면 서버도 함께 확인한다.
+        /// 토큰이 비어 있으면 주소를 그대로 돌려준다. (연결해도 서버가 401로 거절한다)
+        /// 이미 token 쿼리가 있는 주소는 넣지 않는다고 가정한다. (BuildUrl이 만든 주소에는 쿼리가 없다)
+        /// </summary>
+        public static string WithTokenQuery(string url, string accessToken)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                throw new ArgumentException("url이 비어 있습니다.", nameof(url));
+            }
+            if (string.IsNullOrWhiteSpace(accessToken))
+            {
+                return url;
+            }
+
+            // #조각(fragment)이 있으면 쿼리는 그 앞에 붙어야 한다.
+            string fragment = string.Empty;
+            int hash = url.IndexOf('#');
+            if (hash >= 0)
+            {
+                fragment = url.Substring(hash);
+                url = url.Substring(0, hash);
+            }
+
+            string separator;
+            if (url.IndexOf('?') < 0)
+            {
+                separator = "?";
+            }
+            else if (url.EndsWith("?", StringComparison.Ordinal) || url.EndsWith("&", StringComparison.Ordinal))
+            {
+                separator = string.Empty;
+            }
+            else
+            {
+                separator = "&";
+            }
+
+            return url + separator + TokenQueryParam + "=" + Uri.EscapeDataString(accessToken.Trim()) + fragment;
+        }
+
+        /// <summary>
+        /// 로그에 남기기 전에 주소 속 토큰 값을 ***로 가린다. 토큰이 없으면 그대로.
+        ///   ws://host/ws/v1?token=eyJ...  → ws://host/ws/v1?token=***
+        /// 토큰은 로그인 출입증이라 콘솔(브라우저 개발자 도구 포함)에 그대로 찍히면 안 된다.
+        /// </summary>
+        public static string RedactToken(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+            {
+                return url;
+            }
+
+            string key = TokenQueryParam + "=";
+            int searchFrom = 0;
+            while (true)
+            {
+                int at = url.IndexOf(key, searchFrom, StringComparison.Ordinal);
+                if (at < 0)
+                {
+                    return url;
+                }
+                // 쿼리 이름의 시작인지 확인한다. (예: mytoken= 는 건드리지 않는다)
+                bool isParamStart = at > 0 && (url[at - 1] == '?' || url[at - 1] == '&');
+                int valueStart = at + key.Length;
+                if (!isParamStart)
+                {
+                    searchFrom = valueStart;
+                    continue;
+                }
+                int valueEnd = url.IndexOfAny(new[] { '&', '#' }, valueStart);
+                if (valueEnd < 0)
+                {
+                    valueEnd = url.Length;
+                }
+                url = url.Substring(0, valueStart) + "***" + url.Substring(valueEnd);
+                searchFrom = valueStart + 3;
+            }
+        }
     }
 
     /// <summary>서버 → 클라이언트 메시지 type 값.</summary>
