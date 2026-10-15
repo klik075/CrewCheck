@@ -26,12 +26,12 @@ public record GameStateResponse(
         Winner winner,
         GameEndReason endReason
 ) {
-    public record PlayerView(Long playerId, String nickname, boolean alive) {
+    public record PlayerView(Long playerId, String nickname, boolean alive, int profileImageId) {
     }
 
     public static GameStateResponse from(Game game, Instant serverTime) {
         List<PlayerView> views = game.getPlayers().stream()
-                .map(p -> new PlayerView(p.getPlayerId(), p.getNickname(), p.isAlive()))
+                .map(p -> new PlayerView(p.getPlayerId(), p.getNickname(), p.isAlive(), p.getProfileImageId()))
                 .toList();
         return new GameStateResponse(game.getGameId(), game.getPhase(), game.getDay(),
                 game.getPhaseEndsAt(), serverTime, game.getPhaseVersion(), views, game.getWinner(), game.getEndReason());

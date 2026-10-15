@@ -79,7 +79,8 @@ public final class GameSnapshotMapper {
                 fakeCorpseRoles,
                 p.getContactedAt(),
                 p.getSeducedAt(),
-                p.isDeparted());
+                p.isDeparted(),
+                p.getProfileImageId());
     }
 
     // ---------- 스냅샷 → Game (조회) ----------
@@ -104,7 +105,7 @@ public final class GameSnapshotMapper {
     }
 
     private static GamePlayer toPlayer(PlayerSnapshot s) {
-        GamePlayer player = new GamePlayer(s.playerId(), s.nickname(), s.role().toRole(), s.shownRole().toRole());
+        GamePlayer player = new GamePlayer(s.playerId(), s.nickname(), s.role().toRole(), s.shownRole().toRole(), s.profileImageId());
         Map<Long, RoleDefinition> fakeCorpseRoles = new LinkedHashMap<>();
         s.fakeCorpseRoles().forEach((targetId, role) -> fakeCorpseRoles.put(targetId, role.toRole()));
         player.restoreState(s.team(), s.alive(), s.diedAt(), s.deathCause(),
