@@ -31,13 +31,14 @@ class GameApiJsonContractTest {
     void 게임_상태의_시각은_ISO_문자열이고_serverTime이_포함된다() {
         GameStateResponse state = new GameStateResponse("g-1", GamePhase.NIGHT, 1,
                 Instant.parse("2026-10-01T12:00:30Z"), Instant.parse("2026-10-01T12:00:00Z"), 3,
-                List.of(new GameStateResponse.PlayerView(7L, "p7", true)), null, null);
+                List.of(new GameStateResponse.PlayerView(7L, "p7", true, 13)), null, null);
 
         String json = jsonMapper.writeValueAsString(state);
 
         assertThat(json).contains("\"phaseEndsAt\":\"2026-10-01T12:00:30Z\"");
         assertThat(json).contains("\"serverTime\":\"2026-10-01T12:00:00Z\"");
         assertThat(json).contains("\"phase\":\"NIGHT\"");
+        assertThat(json).contains("\"profileImageId\":13");
     }
 
     @Test

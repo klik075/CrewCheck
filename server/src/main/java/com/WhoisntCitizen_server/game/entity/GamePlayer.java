@@ -19,6 +19,8 @@ import java.util.function.Supplier;
 public class GamePlayer {
     private final Long playerId;
     private final String nickname;
+    // 게임 시작 시 선택한 외형. 직업과 독립적이며 저장/재접속 후에도 유지한다.
+    private final int profileImageId;
     // 실제 직업. 승리 판정, 게임 종료 후 공개, 다른 사람의 조사·주정뱅이 결과에 쓴다.
     private final RoleDefinition role;
     // 본인에게 보이는 직업이자 밤에 쓰는 능력. 원숭이만 role과 다르다(배정 시 정한 위장 직업).
@@ -67,8 +69,13 @@ public class GamePlayer {
     }
 
     public GamePlayer(Long playerId, String nickname, RoleDefinition role, RoleDefinition shownRole) {
+        this(playerId, nickname, role, shownRole, 0);
+    }
+
+    public GamePlayer(Long playerId, String nickname, RoleDefinition role, RoleDefinition shownRole, int profileImageId) {
         this.playerId = playerId;
         this.nickname = nickname;
+        this.profileImageId = profileImageId;
         this.role = role;
         this.shownRole = shownRole;
         this.team = initialTeam(role);

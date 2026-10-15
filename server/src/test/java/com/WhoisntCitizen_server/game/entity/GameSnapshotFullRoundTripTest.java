@@ -42,7 +42,7 @@ class GameSnapshotFullRoundTripTest {
 
     /** 모든 필드가 기본값과 다른 플레이어. 원숭이(실제) / 주정뱅이(보이는 직업)로 role과 shownRole을 다르게 둔다. */
     private static GamePlayer fullPlayer() {
-        GamePlayer p = new GamePlayer(9L, "원숭이", TestRoles.MONKEY, TestRoles.DRUNK);
+        GamePlayer p = new GamePlayer(9L, "원숭이", TestRoles.MONKEY, TestRoles.DRUNK, 13);
         Map<ActionCode, Integer> usedCounts = new LinkedHashMap<>();
         usedCounts.put(ActionCode.READ_CORPSE_ROLE, 1);
         usedCounts.put(ActionCode.PROTECT, 2);
