@@ -14,7 +14,7 @@ import lombok.NoArgsConstructor;
 
 public class UserDto {
 	/** 선택 가능한 아바타 프리셋 개수. 클라이언트 AvatarCatalog.Count 와 맞춘다. */
-	public static final int PROFILE_IMAGE_COUNT = 8;
+	public static final int PROFILE_IMAGE_COUNT = 21;
 
 	// 내 프로필 조회 응답 (로비 상단 UI 및 내 정보창)
 	@Getter
