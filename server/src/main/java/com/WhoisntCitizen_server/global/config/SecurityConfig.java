@@ -4,6 +4,7 @@ import com.WhoisntCitizen_server.global.util.JwtTokenProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -49,6 +50,10 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		http
+				// CORS를 보안 필터 맨 앞에서 처리한다. 설정 내용은 WebConfig.addCorsMappings를 그대로 쓴다.
+				// 없으면 브라우저(WebGL)의 사전 요청(OPTIONS, 토큰 없음)이 아래 authenticated() 규칙에 걸려 401이 되고,
+				// 401·403 응답에 CORS 헤더가 없어 브라우저가 오류 내용도 읽지 못한다. (Unity 에디터·PC 빌드는 CORS와 상관없다)
+				.cors(Customizer.withDefaults())
 				.csrf(csrf -> csrf.disable())
 				.httpBasic(basic -> basic.disable())
 				.formLogin(form -> form.disable())
