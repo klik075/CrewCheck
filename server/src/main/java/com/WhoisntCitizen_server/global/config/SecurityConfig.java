@@ -12,6 +12,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -65,9 +67,24 @@ public class SecurityConfig {
 						// 로비(/api/v1/rooms), 게임(/api/v1/games), 직업(/api/v1/roles) API는 로그인한 유저만
 						.requestMatchers("/api/v1/**").authenticated()
 						.anyRequest().permitAll())
-				.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}))
+				.oauth2ResourceServer(oauth2 -> oauth2
+						.bearerTokenResolver(bearerTokenResolver())
+						.jwt(jwt -> {}))
 				.exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
 
 		return http.build();
+	}
+
+	/**
+	 * 요청에서 Bearer 토큰을 꺼내는 규칙. /ws/** (실시간 WebSocket 연결)에서는 꺼내지 않는다.
+	 *
+	 * 기본 규칙은 permitAll 경로라도 Authorization: Bearer 헤더가 있으면 검증하고, 틀리면 HTTP 401로 거절한다.
+	 * WebSocket 연결이 HTTP 401로 거절되면 Unity·브라우저 모두 "연결 실패"로만 알아서 토큰 문제인지 모른다.
+	 * 그래서 /ws/** 는 Security가 건드리지 않고, RealtimeHandshakeInterceptor가 직접 확인해 실패하면 연결 후 4401로 닫는다.
+	 * 나머지 경로(REST)는 지금과 같다.
+	 */
+	private static BearerTokenResolver bearerTokenResolver() {
+		DefaultBearerTokenResolver rest = new DefaultBearerTokenResolver();
+		return request -> request.getRequestURI().startsWith("/ws/") ? null : rest.resolve(request);
 	}
 }

@@ -14,7 +14,7 @@
 | 요청 (투표·밤 행동·채팅 보내기) | 그대로 **REST** |
 | 구독 단위 | 연결 하나당 방 하나 (`room.subscribe`) |
 | 살아 있음 확인 | 클라 ping 10초마다 → pong. 30초 무응답이면 서버가 close **4408** |
-| 토큰 만료 | 연결 중 만료되면 close **4401** |
+| 토큰 문제 | 연결할 때 토큰이 없거나 틀리거나 만료됐을 때, 그리고 연결 중 만료됐을 때 모두 close **4401** |
 | 신호 전송 구현 | `LocalRealtimeNotifier` (서버 메모리) → **서버 1대에서만 완전**. 여러 대는 5단계(Redis Pub/Sub) |
 
 ### 왜 "신호만" 보내나
@@ -54,8 +54,8 @@
 | `NOT_IN_ROOM` | 들어 있지 않은 방 구독 | 구독 포기, 폴링 유지 |
 | `SERVER_ERROR` | 방 확인 실패 (Redis 등) | 잠시 뒤 다시 구독 |
 | close `4408` | 30초 동안 메시지 없음 | 재연결 |
-| close `4401` | 토큰 만료 | 재연결 중단, 다시 로그인 |
-| handshake HTTP 401 | 토큰 없음/잘못됨/만료 | 재연결 중단, 다시 로그인 |
+| close `4401` | 토큰 없음/잘못됨/만료 (연결 직후 또는 연결 중) | 재연결 중단, 다시 로그인 |
+| (이전) handshake HTTP 401 | 예전 서버 동작. 지금은 쓰지 않음 (클라이언트가 구분하지 못해서 4401로 바꿈) | — |
 
 ## 3. 동작 흐름
 
@@ -74,7 +74,8 @@ sequenceDiagram
     U->>HI: GET /ws/v1 (Upgrade, Authorization: Bearer JWT)
     HI->>HI: RealtimeTokenResolver → JwtDecoder 검증
     alt 실패
-        HI-->>U: HTTP 401 (WebSocket 안 열림)
+        HI->>H: 세션 속성 authError (userId 없음)
+        H-->>U: close 4401 (아무 메시지 없이, 등록 안 함)
     else 성공
         HI->>H: 세션 속성 userId, tokenExpiresAt
         H->>Reg: register(connection)
@@ -201,7 +202,7 @@ sequenceDiagram
 | 파일 | 역할 |
 | --- | --- |
 | `RealtimeWebSocketConfig.java` | `/ws/v1` 등록과 Bean 조립. Origin 전부 허용 (쿠키가 아니라 JWT 인증이라 안전, Unity는 Origin을 안 보냄). `/ws/**`는 SecurityConfig에서 permitAll, 인증은 인터셉터가 함 |
-| `RealtimeHandshakeInterceptor.java` | JWT 검증 (REST와 같은 `JwtDecoder`). 실패 시 401. 성공 시 `userId`, `tokenExpiresAt`을 세션 속성에. **주소(URI)는 로그에 남기지 않음** (토큰이 들어 있을 수 있음) |
+| `RealtimeHandshakeInterceptor.java` | JWT 검증 (REST와 같은 `JwtDecoder`). 실패 시 HTTP 401 대신 `authError` 속성만 넣고 통과 → 핸들러가 연결 직후 4401로 닫음. 성공 시 `userId`, `tokenExpiresAt`을 세션 속성에. **주소(URI)는 로그에 남기지 않음** (토큰이 들어 있을 수 있음). Spring Security는 `/ws/**`의 Bearer 헤더를 읽지 않음(`SecurityConfig.bearerTokenResolver`) |
 | `RealtimeWebSocketHandler.java` | 연결·메시지 처리 (connected, ping/pong, subscribe/unsubscribe, error, 끊김 정리) |
 | `RealtimeConnection.java` | 연결 하나의 인터페이스 (`id`, `userId`, `send`, `close`). 연결 목록이 WebSocket을 몰라도 되게 |
 | `WebSocketRealtimeConnection.java` | 실제 구현. 보내기 직렬화, 5초/64KB 제한 |
@@ -251,7 +252,7 @@ sequenceDiagram
 | --- | --- |
 | `protocol/RealtimeMessageCodecTest` | JSON 모양, 잘못된 메시지 코드 |
 | `protocol/RealtimeTokenResolverTest` | 헤더 우선, 쿼리 대체 |
-| `RealtimeWebSocketConnectionTest` | 실제 서버·WebSocket으로 연결(헤더/`?token=`), connected, ping/pong, 잘못된 메시지 error, 토큰 문제 시 401 |
+| `RealtimeWebSocketConnectionTest` | 실제 서버·WebSocket으로 연결(헤더/`?token=`), connected, ping/pong, 잘못된 메시지 error, 토큰 문제 시 메시지 없이 4401, 인증 실패 연결은 목록에 등록 안 됨 |
 | `RealtimeSessionRegistryTest` | 등록/구독/해제/여러 연결 |
 | `RealtimeRoomSubscriptionTest` | 실제 연결로 구독 → 구독한 연결에만 신호 도착, NOT_IN_ROOM |
 | `LocalRealtimeNotifierTest` | 방·사용자 단위 전송 |

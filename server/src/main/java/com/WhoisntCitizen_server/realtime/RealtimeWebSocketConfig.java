@@ -27,11 +27,12 @@ import java.time.Clock;
  *  - RoomMembership: 구독할 때 방 참가자인지 확인 (로비 저장소)
  *  - RealtimePresenceRecorder: 연결 상태를 유저 접속 상태(온라인/대기실/게임 중)로 Redis에 기록
  *
- * Origin은 모두 허용한다. 인증을 쿠키가 아니라 JWT(헤더·쿼리)로 하므로 다른 사이트가 사용자 몰래 연결해도 토큰이 없어 열리지 않는다.
+ * Origin은 모두 허용한다. 인증을 쿠키가 아니라 JWT(헤더·쿼리)로 하므로 다른 사이트가 사용자 몰래 연결해도 토큰이 없어 곧바로 4401로 닫힌다.
  * (Unity 데스크톱·모바일은 Origin 헤더를 보내지 않고, WebGL 빌드는 게임 서버와 다른 주소에서 열릴 수 있다)
  *
- * SecurityConfig에서 /ws/**는 permitAll(anyRequest)이다. 인증은 이 연결의 RealtimeHandshakeInterceptor가 한다.
- * 단, 잘못된 Authorization 헤더를 보내면 Spring Security(리소스 서버)가 먼저 401로 거절한다. 결과는 같다.
+ * SecurityConfig에서 /ws/**는 permitAll(anyRequest)이고, Spring Security는 /ws/** 요청의 Authorization 헤더를 읽지 않는다
+ * (SecurityConfig.bearerTokenResolver). 인증은 이 연결의 RealtimeHandshakeInterceptor가 하고, 실패하면 연결 직후 4401로 닫는다.
+ * Security가 헤더를 읽으면 잘못된 토큰을 HTTP 401로 먼저 거절해 버려서, 클라이언트가 토큰 문제를 알 수 없게 된다.
  */
 @Configuration
 @EnableWebSocket
