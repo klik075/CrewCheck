@@ -307,14 +307,21 @@ namespace WhoisntCitizen.Lobby
                 readySeq++; // 요청 중에 보낸 방 조회 응답도 이전 상태일 수 있으므로 무시한다.
                 if (isTransitioning) return;
 
-                if (result.success) myReady = nextReady; // 참가자 목록의 준비 표시는 다음 polling에서 갱신된다.
+                if (result.success)
+                {
+                    myReady = nextReady;
+                    ApplyMyReadyLocally(nextReady); // 내 줄의 준비 표시를 바로 바꾼다.
+                }
                 else if (!result.IsUnauthorized)
                 {
-                    // 409: 게임이 이미 시작됨 / 방장이 됨 / 참가 중이 아님 → 다음 polling이 상태를 맞춘다.
+                    // 409: 게임이 이미 시작됨 / 방장이 됨 / 참가 중이 아님 → 아래 재조회가 상태를 맞춘다.
                     Debug.LogWarning($"[Room] 준비 상태 변경 실패 ({result.statusCode}): {result.message}");
                     statusMessage?.ShowError(result.message);
                 }
                 UpdateReadyButton();
+
+                // 요청 중에 온 room.changed 조회 응답은 위 readySeq 가드로 버려졌으므로, 서버 상태로 한 번 더 맞춘다.
+                if (!result.IsUnauthorized) RequestFetchNow();
             });
         }
 
@@ -603,6 +610,24 @@ namespace WhoisntCitizen.Lobby
             CloseStaleManagePopups(room);
             UpdateStartButton();
             UpdateReadyButton();
+        }
+
+        /// <summary>
+        /// 준비 요청이 성공했을 때 마지막으로 받은 방 정보에서 내 준비 상태만 바꿔 바로 다시 그린다.
+        /// (서버 확인은 직후 RequestFetchNow 조회로 맞춘다.)
+        /// </summary>
+        private void ApplyMyReadyLocally(bool ready)
+        {
+            if (lastRoom?.players == null) return;
+            long myUserId = AuthSession.UserId;
+            foreach (RoomPlayerResponse p in lastRoom.players)
+            {
+                if (p.userId != myUserId) continue;
+                if (p.ready == ready) return;
+                p.ready = ready;
+                Render(lastRoom);
+                return;
+            }
         }
 
         private void RebuildPlayerList(long hostUserId, List<RoomPlayerResponse> players)
