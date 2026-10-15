@@ -47,7 +47,7 @@ class GameSaveDisciplineTest {
     private static final Instant NOW = Instant.parse("2026-10-01T12:00:00Z");
 
     // 밤 30, 결과 5, 낮 60, 투표 30, 처형 5. 종료 후 60초 보관, 10초 동안 요청이 없으면 이탈, 10일 무사망 시 취소
-    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 10, 5, 10);
+    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 10, 5, 10, 10);
     private static final int UNTIL_VOTE = 95;        // 밤 30 + 결과 5 + 낮 60
     private static final int UNTIL_VOTE_ENDS = 125;  // + 투표 30
 
@@ -225,6 +225,24 @@ class GameSaveDisciplineTest {
         assertThat(game.getPhaseEndsAt()).isEqualTo(NOW.plusSeconds(35 + 30));
     }
 
+    // ---------- 낮 토론 시간 연장 (GameFlowService.extendDay) ----------
+
+    @Test
+    void 낮_토론_연장이_저장된다() {
+        flow.begin(gameId);
+        advance(35);
+        long dayVersion = stored().getPhaseVersion();
+
+        flow.extendDay(stored(), 3L);
+
+        Game game = stored();
+        assertThat(game.getPhaseEndsAt()).isEqualTo(NOW.plusSeconds(35 + 60 + PROPS.dayExtendSeconds()));
+        assertThat(game.getPhaseVersion()).isEqualTo(dayVersion);
+        assertThat(game.hasExtendedDay(3L)).isTrue();
+        // 저장된 연장 기록으로 같은 사람의 두 번째 요청을 거른다
+        assertThat(flow.extendDay(stored(), 3L)).isZero();
+    }
+
     // ---------- 투표 → 처형 → 승리 검사 (VoteService) ----------
 
     @Test
@@ -343,7 +361,7 @@ class GameSaveDisciplineTest {
 
     @Test
     void 무사망으로_취소된_상태가_저장된다() {
-        useFlow(newFlow(new VoteResolver(), new GamePhaseProperties(30, 5, 60, 30, 5, 60, 10, 5, 1)));
+        useFlow(newFlow(new VoteResolver(), new GamePhaseProperties(30, 5, 60, 30, 5, 60, 10, 5, 1, 10)));
         flow.begin(gameId);
 
         advance(UNTIL_VOTE_ENDS);                    // 1일차에 아무도 안 죽음 → 투표 결과 직후 취소

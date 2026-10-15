@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.contract;
 
+import com.WhoisntCitizen_server.game.dto.DayExtendResponse;
 import com.WhoisntCitizen_server.game.dto.GameStateResponse;
 import com.WhoisntCitizen_server.game.entity.GamePhase;
 import com.WhoisntCitizen_server.vote.dto.ExecutionResultResponse;
@@ -37,6 +38,17 @@ class GameApiJsonContractTest {
         assertThat(json).contains("\"phaseEndsAt\":\"2026-10-01T12:00:30Z\"");
         assertThat(json).contains("\"serverTime\":\"2026-10-01T12:00:00Z\"");
         assertThat(json).contains("\"phase\":\"NIGHT\"");
+    }
+
+    @Test
+    void 토론_연장_응답은_클라이언트_DTO와_같은_이름이고_마감은_ISO_문자열이다() {
+        DayExtendResponse response = new DayExtendResponse(true, GamePhase.DAY, 3,
+                Instant.parse("2026-10-01T12:01:10Z"), 10, 1);
+
+        String json = jsonMapper.writeValueAsString(response);
+
+        assertThat(json).contains("\"accepted\":true", "\"phase\":\"DAY\"", "\"phaseVersion\":3",
+                "\"phaseEndsAt\":\"2026-10-01T12:01:10Z\"", "\"addedSeconds\":10", "\"extendedCount\":1");
     }
 
     @Test

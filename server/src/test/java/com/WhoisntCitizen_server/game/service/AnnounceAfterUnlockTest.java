@@ -33,7 +33,7 @@ class AnnounceAfterUnlockTest {
 
     private static final Instant NOW = Instant.parse("2026-10-10T12:00:00Z");
     // 밤 30, 결과 5, 낮 60, 투표 30, 처형 5. 종료 후 60초 보관, 연결 끊김 검사 끔, 10일 무사망 시 취소
-    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10);
+    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10, 10);
 
     /** 발행된 이벤트와, 발행될 때 그 스레드가 게임 잠금을 쥐고 있었는지 */
     private record Published(Object event, boolean insideGameLock) {
