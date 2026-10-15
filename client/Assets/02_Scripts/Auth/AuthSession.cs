@@ -4,7 +4,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 
 // 로그인 세션(JWT + 유저 정보) 보관용 static 클래스.
-// 메모리에만 저장하므로 앱을 종료하면 사라진다. (씬이 바뀌어도 유지됨)
+// 액세스 토큰과 유저 정보는 메모리에만 저장하므로 앱을 종료하면 사라진다. (씬이 바뀌어도 유지됨)
+// 리프레시 토큰은 PlayerPrefs에도 저장한다. (로그아웃·세션 만료 때 지운다)
 public static class AuthSession
 {
     // 토큰 유효 시간(서버가 넣은 exp - iat, 초)과 로그인한 순간의 단조 시각.
@@ -12,8 +13,21 @@ public static class AuthSession
     private static double tokenLifetimeSeconds = -1;
     private static long loginTimestamp;
 
+    private const string RefreshPrefsKey = "auth_refresh_token"; // 같은 PC의 다른 클라이언트와 겹치지 않게 GuestAccountManager와 같은 접미사를 붙인다
+    private static string refreshToken;
+
     /// <summary>JWT 액세스 토큰. /api/v1/** 요청의 Authorization 헤더에 사용</summary>
     public static string AccessToken { get; private set; }
+
+    /// <summary>리프레시 토큰. 액세스 토큰이 만료됐을 때 POST /api/auth/refresh 로 새 토큰을 받는 데 쓴다. 없으면 null</summary>
+    public static string RefreshToken
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(refreshToken)) refreshToken = LoadRefreshToken();
+            return refreshToken;
+        }
+    }
 
     /// <summary>로그인 계정(Member) id</summary>
     public static long MemberId { get; private set; }
@@ -44,7 +58,7 @@ public static class AuthSession
     }
 
     /// <summary>로그인 성공 시 호출 (서버 로그인 응답의 값을 모두 저장)</summary>
-    public static void SetSession(long memberId, long userId, string username, string nickname, string accessToken)
+    public static void SetSession(long memberId, long userId, string username, string nickname, string accessToken, string refreshToken = null)
     {
         MemberId = memberId;
         UserId = userId;
@@ -53,6 +67,7 @@ public static class AuthSession
         AccessToken = accessToken;
         tokenLifetimeSeconds = ReadTokenLifetimeSeconds(accessToken);
         loginTimestamp = Stopwatch.GetTimestamp();
+        StoreRefreshToken(refreshToken);
 
         // 새 토큰으로 실시간 연결(WebSocket)을 시작한다. 모든 로그인(게스트·계정·소셜)이 여기를 지난다.
         WhoisntCitizen.Network.RealtimeSession.OnLoggedIn();
@@ -73,7 +88,19 @@ public static class AuthSession
         Nickname = nickname;
     }
 
-    /// <summary>로그아웃 / 토큰 만료 시 호출. 실시간 연결도 끊는다.</summary>
+    /// <summary>
+    /// 토큰 재발급에 성공했을 때 호출. 액세스/리프레시 토큰과 만료 시각만 바꾸고 유저 정보와 실시간 연결은 건드리지 않는다.
+    /// (실시간 연결을 새 토큰으로 다시 맺는 일은 TokenRefresher가 RealtimeSession으로 한다)
+    /// </summary>
+    public static void UpdateTokens(string accessToken, string newRefreshToken)
+    {
+        AccessToken = accessToken;
+        tokenLifetimeSeconds = ReadTokenLifetimeSeconds(accessToken);
+        loginTimestamp = Stopwatch.GetTimestamp();
+        StoreRefreshToken(newRefreshToken);
+    }
+
+    /// <summary>로그아웃 / 토큰 만료 시 호출. 실시간 연결도 끊고 리프레시 토큰도 지운다.</summary>
     public static void Clear()
     {
         WhoisntCitizen.Network.RealtimeSession.OnLoggedOut();
@@ -84,6 +111,23 @@ public static class AuthSession
         Nickname = null;
         AccessToken = null;
         tokenLifetimeSeconds = -1;
+        StoreRefreshToken(null);
+    }
+
+    private static string PrefsKey => RefreshPrefsKey + GuestAccountManager.InstanceSuffix;
+
+    private static string LoadRefreshToken()
+    {
+        return UnityEngine.PlayerPrefs.GetString(PrefsKey, string.Empty);
+    }
+
+    // null/빈 값이면 저장된 토큰을 지운다.
+    private static void StoreRefreshToken(string token)
+    {
+        refreshToken = token;
+        if (string.IsNullOrEmpty(token)) UnityEngine.PlayerPrefs.DeleteKey(PrefsKey);
+        else UnityEngine.PlayerPrefs.SetString(PrefsKey, token);
+        UnityEngine.PlayerPrefs.Save();
     }
 
     /// <summary>

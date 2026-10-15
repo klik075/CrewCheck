@@ -81,6 +81,9 @@ public class AudioSystemManager : MonoBehaviour
         instance = null;
         isQuitting = false;
         IsDirty = false;
+        saveAt = 0f;
+        OnChangeVolume = null;
+        OnChangeMute = null;
     }
 
     [Header("Singleton")]
@@ -105,7 +108,13 @@ public class AudioSystemManager : MonoBehaviour
     public AudioClipContainer DefaultButtonClickAudio;
 
     // Event
-    public Action OnChangeMuteChannels;
+    /// <summary>채널 뮤트가 바뀌면 호출 (인자: 바뀐 채널 ID)</summary>
+    public Action<string> OnChangeMuteChannels;
+    /// <summary>마스터/채널 볼륨이 바뀌면 호출 (슬라이더 동기화용)</summary>
+    public static event Action OnChangeVolume;
+    /// <summary>마스터/채널 뮤트가 바뀌면 호출 (토글 동기화용)</summary>
+    public static event Action OnChangeMute;
+    public static void NotifyMuteChanged() => OnChangeMute?.Invoke();
 
     // Runtime Value
     public AudioSaveData audioSaveData;
@@ -117,7 +126,15 @@ public class AudioSystemManager : MonoBehaviour
     private const string SaveKey = "audio_save_data";
 
     public static bool IsDirty;
-    public static void SetDirty(bool active = true) => IsDirty = active;
+    private static float saveAt; // 이 시각(unscaled) 이후에 저장
+    public static void SetDirty(bool active = true) { IsDirty = active; saveAt = 0f; }
+
+    /// <summary>delay 초 뒤에 저장 (슬라이더 드래그처럼 연속으로 바뀌는 값용)</summary>
+    public static void SetDirtyDelayed(float delay = 0.5f)
+    {
+        IsDirty = true;
+        saveAt = Time.unscaledTime + delay;
+    }
     public static bool IsMute(string channelID) => Instance != null && Instance.audioSaveData.IsMute(channelID);
     public static bool IsMute(AudioChannelType channel) => IsMute(channel.ToString());
 
@@ -156,6 +173,8 @@ public class AudioSystemManager : MonoBehaviour
 
         OnChangeMuteChannels += RefreshAudioChannel;
 
+        ApplyMasterVolume();
+
         if (BgmObject != null) BgmObject.SetActive(!audioSaveData.IsMute(AudioTag.BGM));
     }
 
@@ -176,7 +195,7 @@ public class AudioSystemManager : MonoBehaviour
 
     private void Update()
     {
-        if (IsDirty) SaveSaveData();
+        if (IsDirty && Time.unscaledTime >= saveAt) SaveSaveData();
     }
 
     // ------------------------------------------------------------------
@@ -189,7 +208,12 @@ public class AudioSystemManager : MonoBehaviour
 
         try
         {
-            return JsonUtility.FromJson<AudioSaveData>(json) ?? new AudioSaveData();
+            // 기존 저장값에 없는 필드(예: 볼륨)는 기본값(0.7)을 유지하도록 Overwrite 사용
+            var data = new AudioSaveData();
+            JsonUtility.FromJsonOverwrite(json, data);
+            data.Mutes ??= new();
+            data.Volumes ??= new();
+            return data;
         }
         catch (Exception e)
         {
@@ -216,19 +240,120 @@ public class AudioSystemManager : MonoBehaviour
     }
     public static void SetMute(AudioChannelType channel, bool muteActive) => SetMute(channel.ToString(), muteActive);
 
-    public void RefreshAudioChannel()
+    // ------------------------------------------------------------------
+    // Volume (값은 슬라이더 기준 0~1, 실제 적용은 제곱 커브)
+    // ------------------------------------------------------------------
+    public const float DefaultVolume = 0.7f;
+
+    /// <summary>슬라이더 값 -> 실제 볼륨 배율. 사람 귀에 자연스럽도록 제곱 커브.</summary>
+    public static float VolumeCurve(float sliderValue)
     {
-        // 파괴된 플레이어 정리 후 재생 상태 갱신
+        sliderValue = Mathf.Clamp01(sliderValue);
+        return sliderValue * sliderValue;
+    }
+
+    /// <summary>마스터 볼륨 (슬라이더 값 0~1)</summary>
+    public static float GetMasterVolume()
+        => Instance != null ? Instance.audioSaveData.MasterVolume : DefaultVolume;
+
+    public static void SetMasterVolume(float value)
+    {
+        if (Instance == null) return;
+        value = Mathf.Clamp01(value);
+        if (Mathf.Approximately(Instance.audioSaveData.MasterVolume, value)) return;
+
+        Instance.audioSaveData.MasterVolume = value;
+        Instance.ApplyMasterVolume();
+        SetDirtyDelayed();
+        OnChangeVolume?.Invoke();
+    }
+
+    /// <summary>채널 볼륨 (슬라이더 값 0~1). None 은 채널 볼륨이 없으므로 1.</summary>
+    public static float GetVolume(AudioChannelType channel)
+    {
+        if (channel == AudioChannelType.None) return 1f;
+        if (Instance == null) return DefaultVolume;
+        return Instance.audioSaveData.GetOrAddVolumeChannel(channel.ToString()).Volume;
+    }
+
+    public static void SetVolume(AudioChannelType channel, float value)
+    {
+        if (channel == AudioChannelType.None || Instance == null) return;
+        value = Mathf.Clamp01(value);
+        var data = Instance.audioSaveData.GetOrAddVolumeChannel(channel.ToString());
+        if (Mathf.Approximately(data.Volume, value)) return;
+
+        data.Volume = value;
+        Instance.ApplyVolumeToPlayers();
+        SetDirtyDelayed();
+        OnChangeVolume?.Invoke();
+    }
+
+    /// <summary>AudioPlayer 가 쓰는 채널 볼륨 배율 (커브 적용 후). 마스터는 AudioListener 가 따로 곱한다.</summary>
+    public static float GetChannelVolumeScale(AudioChannelType channel)
+        => channel == AudioChannelType.None ? 1f : VolumeCurve(GetVolume(channel));
+
+    private void ApplyMasterVolume()
+    {
+        AudioListener.volume = audioSaveData.MasterMute ? 0f : VolumeCurve(audioSaveData.MasterVolume);
+    }
+
+    // ------------------------------------------------------------------
+    // Master Mute (모든 소리를 끈다. 볼륨 값과 BGM/SFX 뮤트 값은 그대로 유지)
+    // ------------------------------------------------------------------
+    public static bool IsMasterMute() => Instance != null && Instance.audioSaveData.MasterMute;
+
+    public static void SetMasterMute(bool mute)
+    {
+        if (Instance == null || Instance.audioSaveData.MasterMute == mute) return;
+        Instance.audioSaveData.MasterMute = mute;
+        Instance.ApplyMasterVolume();
+        SetDirty();
+        OnChangeMute?.Invoke();
+    }
+
+    private void ApplyVolumeToPlayers()
+    {
+        ActiveAudioPlayers.RemoveAll(e => e == null);
+        foreach (var player in ActiveAudioPlayers) player.ApplyVolume();
+    }
+
+    // ------------------------------------------------------------------
+    // Mute refresh
+    // ------------------------------------------------------------------
+    /// <summary>
+    /// 채널 뮤트가 바뀌었을 때, 그 채널에 속한 상시 재생 플레이어만 갱신한다.
+    /// - 뮤트 ON : 재생 중이면 정지
+    /// - 뮤트 OFF: 멈춰 있는 플레이어만 다시 재생 (이미 재생 중이면 그대로 둔다)
+    /// 다른 채널의 플레이어(예: SFX 를 바꿨을 때 BGM)는 건드리지 않는다.
+    /// </summary>
+    public void RefreshAudioChannel(string channelID)
+    {
+        bool isMuted = audioSaveData.IsMute(channelID);
+
         ActiveAudioPlayers.RemoveAll(e => e == null);
         foreach (var player in ActiveAudioPlayers.ToArray())
         {
             if (!player.PlayOnEnable) continue; // 풀링된 단발성 효과음은 건드리지 않는다
-            player.Stop();
-            if (player.isActiveAndEnabled) player.Refresh();
+            if (GetPlayerChannel(player).ToString() != channelID) continue;
+
+            if (isMuted)
+            {
+                if (player.Source.isPlaying) player.Stop();
+            }
+            else if (!player.Source.isPlaying && player.isActiveAndEnabled)
+            {
+                player.Refresh();
+            }
         }
 
-        if (BgmObject != null) BgmObject.SetActive(!audioSaveData.IsMute(AudioTag.BGM));
+        if (channelID == AudioTag.BGM && BgmObject != null)
+            BgmObject.SetActive(!isMuted);
     }
+
+    // 재생할 컨테이너가 있으면 그 채널, 없으면 마지막으로 재생한 채널 (반복 X BGM 등)
+    private static AudioChannelType GetPlayerChannel(AudioPlayer player)
+        => player.audioClipcontainer != null ? player.audioClipcontainer.ChannelType : player.Channel;
 
     // ------------------------------------------------------------------
     // Pool
@@ -287,7 +412,7 @@ public class AudioSystemManager : MonoBehaviour
         if (clipContainer == null) return null;
         if (IsMute(clipContainer.ChannelType)) return null;
 
-        return Play(clipContainer.GetAudioClip(), clipContainer.Volmue);
+        return Play(clipContainer.GetAudioClip(), clipContainer.Volmue, clipContainer.ChannelType);
     }
 
     /// <summary>기본 버튼 클릭 효과음을 재생합니다. (DefaultButtonClickAudio 미설정 시 무시)</summary>
@@ -297,7 +422,8 @@ public class AudioSystemManager : MonoBehaviour
         return Play(Instance.DefaultButtonClickAudio);
     }
 
-    public static AudioPlayer Play(AudioResource resource, float volume = 1)
+    /// <summary>클립을 직접 재생. channel 의 볼륨이 적용된다 (뮤트 체크는 하지 않음).</summary>
+    public static AudioPlayer Play(AudioResource resource, float volume = 1, AudioChannelType channel = AudioChannelType.SFX)
     {
         if (resource == null || Instance == null) return null;
 
@@ -305,7 +431,7 @@ public class AudioSystemManager : MonoBehaviour
         if (audioPlayer == null) return null;
 
         audioPlayer.transform.localPosition = Vector3.zero;
-        audioPlayer.Play(resource, volume: volume);
+        audioPlayer.Play(resource, volume: volume, channel: channel);
         return audioPlayer;
     }
     #endregion
@@ -353,7 +479,7 @@ public class AudioSystemManager : MonoBehaviour
         player.audioClipcontainer = loop ? container : null;
 
         if (IsMute(container.ChannelType)) return player;
-        player.Play(container.GetAudioClip(), loop, container.Volmue);
+        player.Play(container.GetAudioClip(), loop, container.Volmue, container.ChannelType);
         return player;
     }
 

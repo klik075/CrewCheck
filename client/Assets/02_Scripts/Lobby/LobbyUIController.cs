@@ -240,7 +240,7 @@ namespace WhoisntCitizen.Lobby
         /// </summary>
         public static void Logout()
         {
-            AuthSession.Clear(); // RealtimeSession.OnLoggedOut → 웹소켓 Disconnect
+            AuthService.Logout(); // 서버에 리프레시 토큰 폐기 요청 + AuthSession.Clear() (RealtimeSession.OnLoggedOut → 웹소켓 Disconnect)
             ChatNotice.Post("로그아웃되었습니다.");
             RoomSession.Clear();
             SceneLoader.Load(SceneType.Title);

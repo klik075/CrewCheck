@@ -27,6 +27,9 @@ namespace WhoisntCitizen.Network.Realtime
         /// <summary>서버가 연결을 닫을 때 쓰는 코드: 토큰 만료. 다시 로그인해야 한다.</summary>
         public const int CloseTokenExpired = 4401;
 
+        /// <summary>서버가 연결을 닫을 때 쓰는 코드: 같은 계정으로 다른 곳에서 새로 로그인했다. 다시 연결하지 않고 로그아웃한다.</summary>
+        public const int CloseDuplicateLogin = 4409;
+
         /// <summary>
         /// REST 주소를 WebSocket 주소로 바꾼다.
         /// http://host:8080 → ws://host:8080/ws/v1, https://host → wss://host/ws/v1

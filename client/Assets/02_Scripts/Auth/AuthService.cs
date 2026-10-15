@@ -9,6 +9,8 @@ public static class AuthService
     public const string GuestPath = "/api/members/guest";
     public const string LoginPath = "/api/members/login";
     public const string SignupPath = "/api/members/signup";
+    public const string RefreshPath = "/api/auth/refresh";
+    public const string LogoutPath = "/api/auth/logout";
 
     private static string LoginPathOf(SocialProvider p) => p == SocialProvider.Google ? "/api/members/login/google" : "/api/members/login/kakao";
     private static string LinkPathOf(SocialProvider p) => p == SocialProvider.Google ? "/api/members/link/google" : "/api/members/link/kakao";
@@ -49,6 +51,21 @@ public static class AuthService
         ApiClient.Post<SocialLinkResponse>(LinkPathOf(provider), body, onDone, requireAuth: true);
     }
 
+    /// <summary>
+    /// 로그아웃: 서버에 리프레시 토큰 폐기를 알리고(응답은 기다리지 않는다) 세션을 비운다.
+    /// 세션 만료(401)로 비울 때는 이미 토큰이 무효이므로 이 함수가 아니라 AuthSession.Clear()를 쓴다.
+    /// </summary>
+    public static void Logout()
+    {
+        string refreshToken = AuthSession.RefreshToken;
+        if (!string.IsNullOrEmpty(refreshToken))
+        {
+            // 씬이 바뀌어도 요청이 끝까지 나가도록 ApiRunner가 돌린다. 실패해도 서버 쪽 토큰은 7일 뒤 스스로 만료된다.
+            ApiClient.Post(LogoutPath, new RefreshTokenRequest { refreshToken = refreshToken }, null, requireAuth: false);
+        }
+        AuthSession.Clear();
+    }
+
     // 로그인 응답을 세션에 저장한다. accessToken이 없으면 실패로 바꾼다.
     private static void Finish(ApiResult<AuthResponse> result, Action<ApiResult<AuthResponse>> onDone)
     {
@@ -62,7 +79,7 @@ public static class AuthService
             }
             else
             {
-                AuthSession.SetSession(res.memberId, res.userId, res.username, res.nickname, res.accessToken);
+                AuthSession.SetSession(res.memberId, res.userId, res.username, res.nickname, res.accessToken, res.refreshToken);
             }
         }
         onDone?.Invoke(result);

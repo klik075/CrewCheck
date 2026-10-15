@@ -39,7 +39,15 @@ public class AuthResponse
     public string username;    // 로그인 아이디
     public string nickname;    // 게임에서 표시되는 닉네임
     public string accessToken; // 로그인 응답에만 포함 (회원가입 응답에는 없음)
+    public string refreshToken; // 로그인/재발급 응답에 포함. 액세스 토큰이 만료되면 이걸로 새 토큰을 받는다 (7일)
     public string message;
+}
+
+// POST /api/auth/refresh | /api/auth/logout 요청 body
+[Serializable]
+public class RefreshTokenRequest
+{
+    public string refreshToken;
 }
 
 // 서버 에러 응답 (커스텀 { "message": "..." } 또는 Spring 기본 { "status", "error", "message" } 모두 대응)
