@@ -18,9 +18,13 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** 방의 직업 배정 설정: 추천 / 커스텀(인원수별 표) / 랜덤(진영 수 고정 + 후보) */
+/**
+ * 방의 직업 배정 설정: 추천 / 커스텀(인원수별 표) / 랜덤(진영 수 고정 + 후보)
+ * TestRoles에는 제3 세력이 없다. 제3 세력이 랜덤 후보·기본 설정에 들어가는 규칙은 RoleAssignerNeutralTest에서 본다.
+ */
 class RoleAssignerSetupTest {
 
+    // TestRoles의 특수 직업 전부. 실제 DB에서는 요리사와 제3 세력 4종도 여기에 들어간다.
     private static final List<String> ALL_SPECIALS = List.of(
             "PIRATE_PARROT", "CREW_CAPTAIN", "CREW_DOCTOR", "CREW_LOOKOUT", "CREW_MONKEY", "CREW_BOATSWAIN", "CREW_DRUNK");
 
