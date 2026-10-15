@@ -530,7 +530,7 @@ namespace WhoisntCitizen.Game
             RectTransform chip = Box(ctx.Canvas, "RoleChip", 16f, GameHudMetrics.HudHeight + 10f, 206f, 66f); // clear of the far seats' names
             if (notice != null) chip.SetSiblingIndex(notice.GetSiblingIndex()); // under the notice
             HudShapes.Panel(chip, Teal, GoldLine, 33f).raycastTarget = true;
-            roleChip = chip.gameObject.AddComponent<Button>(); // Wire listens to it
+            roleChip = chip.gameObject.AddClickSoundButton(); // Wire listens to it
             chipAvatar = Box(chip, "Avatar", 0f, 0f, 66f, 66f);
             chipText = NewText(chip, "Text", 26f, Cream, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
             Stretch(chipText.rectTransform, 72f, 4f, 32f, 4f);
@@ -696,7 +696,7 @@ namespace WhoisntCitizen.Game
                 RectTransform root = Box(strip, "Player" + p.playerId, left + i * spacing, 0f, spacing, stripHeight);
                 AddImage(root, null, new Color(0f, 0f, 0f, 0f)).raycastTarget = true;
                 long id = p.playerId;
-                root.gameObject.AddComponent<Button>().onClick.AddListener(() => OnSlotClicked(id));
+                root.gameObject.AddClickSoundButton().onClick.AddListener(() => OnSlotClicked(id));
                 var slot = new Slot { id = id, group = root.gameObject.AddComponent<CanvasGroup>() };
                 float mid = spacing * 0.5f;
                 Avatar(root, "Avatar", mid - face * 0.5f, centre - face * 0.5f, face, p.playerId, p.nickname, false);

@@ -207,7 +207,7 @@ namespace WhoisntCitizen.Lobby
             var state = Label("ReadyState", row.transform, 694, 27, 133, 48, "", 23, Ink);
             var manageImage = Box("ManageCrew", row.transform, null, Color.clear);
             Place(manageImage.rectTransform, 838,  20,  60, 62); manageImage.raycastTarget = true;
-            var manage = manageImage.gameObject.AddComponent<Button>(); manage.targetGraphic = manageImage;
+            var manage = manageImage.gameObject.AddClickSoundButton(); manage.targetGraphic = manageImage;
             Label("Label", manage.transform, 0, 0, 60, 62, "···", 30, new Color32(102, 74,  40, 255)).alignment = TextAlignmentOptions.Center;
             var view = row.gameObject.AddComponent<RoomPlayerView>();
             view.ConfigureCabin(name, badge.gameObject, state, manage, self.gameObject, stateIcon);
@@ -278,7 +278,7 @@ namespace WhoisntCitizen.Lobby
                 primary ? new Color32(158, 40, 30, 255) : new Color32(185, 160, 122, 255));
             Place(image.rectTransform, x, y, w, h); image.raycastTarget = true;
             var rim = Box("BrassRim", image.transform, Frame, Color.white); Fill(rim.rectTransform);
-            var button = image.gameObject.AddComponent<Button>(); button.targetGraphic = image;
+            var button = image.gameObject.AddClickSoundButton(); button.targetGraphic = image;
             var colors = button.colors; colors.highlightedColor = new Color(1.15f, 1.12f, 1.08f);
             colors.pressedColor = new Color(.8f, .8f, .8f); colors.disabledColor = new Color(.65f, .65f, .65f, .85f); button.colors = colors;
             var text = Label("Label", image.transform, 12, 5, w - 24, h - 10, label, size, Cream);

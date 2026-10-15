@@ -744,7 +744,7 @@ namespace WhoisntCitizen.Game
         {
             Image image = AddImage(rect, sprite, Color.white);
             image.raycastTarget = true;
-            Button button = rect.gameObject.AddComponent<Button>();
+            Button button = rect.gameObject.AddClickSoundButton();
             button.targetGraphic = image;
             if (onClick != null) button.onClick.AddListener(() => onClick());
             return button;

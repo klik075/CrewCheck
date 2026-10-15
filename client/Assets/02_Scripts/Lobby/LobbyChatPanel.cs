@@ -252,7 +252,7 @@ namespace WhoisntCitizen.Lobby
             sendImage.sprite = sendArt;
             sendImage.type = sendArt != null ? Image.Type.Sliced : Image.Type.Simple;
             sendImage.color = new Color32(242, 193, 78, 255);
-            var send = sendRt.gameObject.AddComponent<Button>();
+            var send = sendRt.gameObject.AddClickSoundButton();
             send.targetGraphic = sendImage;
             var sendLabel = Label("Text (TMP)", sendRt, "전송", InputFontSize, new Color32(27, 30, 38, 255));
             Anchor(sendLabel.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
@@ -361,7 +361,7 @@ namespace WhoisntCitizen.Lobby
             var image = Box(name, parent, buttonArt, new Color32(185, 160, 122, 255));
             image.raycastTarget = true;
             Fill(Box("BrassRim", image.transform, frameArt, Color.white).rectTransform);
-            var button = image.gameObject.AddComponent<Button>();
+            var button = image.gameObject.AddClickSoundButton();
             button.targetGraphic = image;
             var colors = button.colors;
             colors.highlightedColor = new Color(1.15f, 1.12f, 1.08f);

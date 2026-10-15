@@ -63,7 +63,7 @@ namespace WhoisntCitizen.GameUI
             curtain = Image("ResultFade", root, null); Stretch(curtain.rectTransform);
             var skipRect = NewRect("SkipResultIntro", root); Stretch(skipRect);
             var hit = skipRect.gameObject.AddComponent<Image>(); hit.color = Color.clear;
-            skip = skipRect.gameObject.AddComponent<Button>(); skip.targetGraphic = hit;
+            skip = skipRect.gameObject.AddClickSoundButton(); skip.targetGraphic = hit;
             skip.transition = Selectable.Transition.None; skip.onClick.AddListener(Skip);
             var hintPlate = Image("SkipHintPlate", skipRect, null);
             hintPlate.color = new Color(.015f, .035f, .06f, .8f);

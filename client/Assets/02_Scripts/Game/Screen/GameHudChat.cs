@@ -274,7 +274,7 @@ namespace WhoisntCitizen.Game
             filter.anchoredPosition = new Vector2(-inset, -top);
             filterButton = filter;
             HudShapes.Panel(filter, Teal, GoldLine, 12f).raycastTarget = true;
-            filter.gameObject.AddComponent<Button>().onClick.AddListener(ToggleFilter);
+            filter.gameObject.AddClickSoundButton().onClick.AddListener(ToggleFilter);
             filterLabel = NewText(filter, "Label", 23f, Gold, FontStyles.Bold, TextAlignmentOptions.Center);
             Stretch(filterLabel.rectTransform, 14f, 6f, 44f, 6f);
             filterLabel.text = "채팅 필터";
@@ -296,7 +296,7 @@ namespace WhoisntCitizen.Game
             tab.label = NewText(rect, "Label", 24f, Cream, FontStyles.Bold, TextAlignmentOptions.Center);
             Stretch(tab.label.rectTransform, 46f, 6f, 10f, 6f);
             tab.label.text = text;
-            rect.gameObject.AddComponent<Button>().onClick.AddListener(() => ShowTab(kind));
+            rect.gameObject.AddClickSoundButton().onClick.AddListener(() => ShowTab(kind));
             tabs[kind] = tab;
         }
 
@@ -353,7 +353,7 @@ namespace WhoisntCitizen.Game
             dropdownBlocker = NewRect("ChatFilterBlocker", canvas);
             Stretch(dropdownBlocker, 0f, 0f, 0f, 0f);
             AddImage(dropdownBlocker, null, new Color(0f, 0f, 0f, 0f)).raycastTarget = true; // a tap outside closes it
-            dropdownBlocker.gameObject.AddComponent<Button>().onClick.AddListener(CloseFilter);
+            dropdownBlocker.gameObject.AddClickSoundButton().onClick.AddListener(CloseFilter);
 
             // Hangs from the filter button, right-aligned with it (PlaceDropdown).
             dropdown = Box(canvas, "ChatFilterList", 0f, 0f, 320f, 100f);
@@ -404,7 +404,7 @@ namespace WhoisntCitizen.Game
             Stretch(label.rectTransform, 16f, 0f, 16f, 0f);
             label.text = text;
             if (!pickable) return;
-            row.gameObject.AddComponent<Button>().onClick.AddListener(() =>
+            row.gameObject.AddClickSoundButton().onClick.AddListener(() =>
             {
                 CloseFilter();
                 ChatTab target = log.Tab == ChatTab.General ? ChatTab.General : ChatTab.All;
@@ -621,7 +621,7 @@ namespace WhoisntCitizen.Game
                 disc.anchoredPosition = new Vector2(10f, 0f);
                 Image discImage = AddImage(disc, NightFxSprites.Circle, new Color(0.17f, 0.13f, 0.09f));
                 discImage.raycastTarget = true;
-                chatMarkButton = disc.gameObject.AddComponent<Button>(); // WireInputBar listens to it
+                chatMarkButton = disc.gameObject.AddClickSoundButton(); // WireInputBar listens to it
                 chatMark = AddImage(Box(disc, "Icon", 14f, 14f, 30f, 30f), Icon("chat_1"), Cream);
                 chatMark.preserveAspect = true;
                 RectTransform rule = Box(field, "Rule", 78f, 0f, 2f, 46f);
@@ -700,7 +700,7 @@ namespace WhoisntCitizen.Game
                 if (ring == null) ring = disc.gameObject.AddComponent<Image>();
                 NauticalHud.Whole(ring, "ChatDisc").raycastTarget = true;
                 chatMarkButton = disc.GetComponent<Button>();
-                if (chatMarkButton == null) chatMarkButton = disc.gameObject.AddComponent<Button>(); // WireInputBar listens to it
+                if (chatMarkButton == null) chatMarkButton = disc.gameObject.AddClickSoundButton(); // WireInputBar listens to it
                 RectTransform mark = Child(disc, "Icon");
                 mark.anchorMin = mark.anchorMax = mark.pivot = new Vector2(0.5f, 0.5f);
                 mark.anchoredPosition = Vector2.zero;

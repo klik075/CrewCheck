@@ -481,7 +481,7 @@ namespace WhoisntCitizen.Lobby
             var image = Box(name, parent, primary ? null : buttonArt, primary ? new Color32(146, 38, 29, 255) : new Color32(185, 160, 122, 255));
             Place(image.rectTransform, x, y, w, h); image.raycastTarget = true;
             var edge = Box("BrassFrame", image.transform, frame, Color.white); Fill(edge.rectTransform);
-            var button = image.gameObject.AddComponent<Button>(); button.targetGraphic = image;
+            var button = image.gameObject.AddClickSoundButton(); button.targetGraphic = image;
             var colors = button.colors; colors.disabledColor = new Color(.48f, .48f, .48f, .62f); button.colors = colors;
             Text("Label", image.transform, 6, 4, w - 12, h - 8, label, size, Cream, true).alignment = TextAlignmentOptions.Center;
             return button;
