@@ -32,6 +32,7 @@ public class FriendDto {
 		private int playCount;
 		private int winCount;
 		private double winRate;
+		private int profileImageId;
 		/** 접속 중인지 (status가 OFFLINE이 아니면 true). JSON 이름은 online */
 		private boolean online;
 		/** 접속 상태: OFFLINE, ONLINE, IN_ROOM(대기실), IN_GAME(게임 중) */
@@ -48,6 +49,7 @@ public class FriendDto {
 					.playCount(friendUser.getPlayCount())
 					.winCount(friendUser.getWinCount())
 					.winRate(rate)
+					.profileImageId(friendUser.getProfileImageId())
 					.online(presence.isOnline())
 					.status(presence.name())
 					.build();

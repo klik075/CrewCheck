@@ -90,4 +90,12 @@ public class UserService {
 		user.updateNickname(newNickname);
 		return UserDto.MyProfileResponse.from(user);
 	}
+
+	/** 프로필 이미지(아바타 프리셋 번호) 변경 */
+	@Transactional
+	public UserDto.MyProfileResponse updateProfileImage(Long currentMemberId, int profileImageId) {
+		User user = getByMemberId(currentMemberId);
+		user.updateProfileImage(profileImageId);
+		return UserDto.MyProfileResponse.from(user);
+	}
 }
