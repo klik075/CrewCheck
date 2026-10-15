@@ -46,7 +46,7 @@ public class RoomController {
     private final RoomService roomService;
     // 토큰(sub = memberId) → userId 변환. 이 컨트롤러에서 "요청한 사람"은 항상 이걸로 구한다.
     private final CurrentUserResolver currentUser;
-    // 대기실 접속 기록 (방 조회가 30초 넘게 끊기면 방에서 뺀다)
+    // 대기실 접속 기록 (방 조회가 idleTimeout(기본 45초) 넘게 끊기면 방에서 뺀다)
     private final RoomPresenceService roomPresenceService;
 
     @PostMapping
@@ -63,8 +63,8 @@ public class RoomController {
      * 방 단건 조회: 방 정보 + 상태(WAITING/IN_GAME) + gameId + 참가자 목록.
      * 대기 화면에서 주기적으로 호출해, status가 IN_GAME이 되면 gameId로 게임 화면에 들어간다.
      *
-     * 대기실은 이 API를 1초마다 부르므로 "아직 접속 중"이라는 신호(대기실 접속 기록)로도 쓴다.
-     *  - 기록이 idleTimeout(기본 30초) 넘게 끊기면 RoomPresenceService가 이 사람을 방에서 뺀다.
+     * 대기실은 이 API를 1초마다(웹소켓으로 방을 구독 중이면 15초마다) 부르므로 "아직 접속 중"이라는 신호(대기실 접속 기록)로도 쓴다.
+     *  - 기록이 idleTimeout(기본 45초) 넘게 끊기면 RoomPresenceService가 이 사람을 방에서 뺀다.
      *  - 조회보다 먼저 기록한다: 조회를 처리하는 사이 검사가 돌아도 방금 요청한 사람이 빠지지 않도록.
      *  - 참가자인지는 여기서 확인하지 않는다. (참가자가 아닌 사람의 기록은 다음 검사에서 지워진다)
      */
