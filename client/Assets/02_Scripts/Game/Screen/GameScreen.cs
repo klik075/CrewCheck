@@ -1158,7 +1158,7 @@ namespace WhoisntCitizen.Game
             if (state == null) return;
             if (dayTable != null)
             {
-                // 자리·스킨은 서버의 플레이어 순서로 정한다 (모든 화면에서 같은 사람이 같은 자리·같은 스킨)
+                // 자리는 서버의 플레이어 순서, 스킨은 각 플레이어가 로비에서 선택한 프로필 번호로 정한다.
                 dayTable.SetPlayers(state.players);
                 dayTable.SetPhase(state.phase);
             }

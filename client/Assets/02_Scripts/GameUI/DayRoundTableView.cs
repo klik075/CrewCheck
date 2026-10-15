@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using WhoisntCitizen.Game;
 using WhoisntCitizen.Chat;
+using WhoisntCitizen.Profile;
 using System.Globalization;
 
 namespace WhoisntCitizen.GameUI
@@ -533,6 +534,12 @@ namespace WhoisntCitizen.GameUI
 
                 ChibiCharacterSkin skin;
                 if (!skinOverrides.TryGetValue(players[i].playerId, out skin) || skin == null)
+                {
+                    // 프로필과 동일한 디자인을 입는다. 실제 직업/능력과는 독립적인 외형이다.
+                    if (players[i].profileImageId >= 0)
+                        skin = FindSkin(AvatarCatalog.GetDesignId(players[i].profileImageId));
+                }
+                if (skin == null)
                 {
                     int skinIndex = skinIndexFor != null ? skinIndexFor(players[i].playerId) : -1;
                     if (skinIndex < 0) skinIndex = ordinal;

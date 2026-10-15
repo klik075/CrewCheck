@@ -19,7 +19,7 @@ namespace WhoisntCitizen.Profile
             "CREW_DRUNK", "CREW_MONKEY", "CREW_MONKEY_ALT", "CREW_GHOST",
             "PIRATE_COOK", "PIRATE_COOK_FEMALE", "PIRATE_RAIDER", "PIRATE_SPY", "PIRATE_PARROT", "PIRATE_KRAKEN",
             "THIRD_MERMAID", "THIRD_MERMAID_MALE",
-            "CONCEPT_GHOST_CAPTAIN", "CONCEPT_SIREN", "CONCEPT_SIREN_ALT",
+            "CONCEPT_GHOST_CAPTAIN", "CONCEPT_SIREN",
         };
 
         private const string CatalogPath = "GameHud/Portraits";
@@ -30,13 +30,21 @@ namespace WhoisntCitizen.Profile
         private static DesignSpriteCatalog catalog;
         private static Sprite placeholder;
 
-        /// <summary>번호에 맞는 스프라이트. 범위를 벗어나면 0번. 초상화를 찾지 못하면 임시 흰 이미지.</summary>
+        /// <summary>삭제된 20번 세이렌은 19번으로 표시한다. 나머지 잘못된 번호는 기본 아바타.</summary>
+        public static int NormalizeId(int id)
+        {
+            if (id == 20) return 19;
+            return id >= 0 && id < Ids.Length ? id : 0;
+        }
+
+        /// <summary>프로필 이미지와 게임 스킨이 공유하는 캐릭터 디자인 ID.</summary>
+        public static string GetDesignId(int id) => Ids[NormalizeId(id)];
+
+        /// <summary>정리한 번호에 맞는 스프라이트. 초상화를 찾지 못하면 임시 흰 이미지.</summary>
         public static Sprite Get(int id)
         {
-            if (id < 0 || id >= Ids.Length) id = 0;
-
             if (catalog == null) catalog = Resources.Load<DesignSpriteCatalog>(CatalogPath);
-            Sprite sprite = catalog != null ? catalog.Find(Ids[id]) : null;
+            Sprite sprite = catalog != null ? catalog.Find(GetDesignId(id)) : null;
             return sprite != null ? sprite : Placeholder();
         }
 
