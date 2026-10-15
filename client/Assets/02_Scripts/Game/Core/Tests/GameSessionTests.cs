@@ -445,6 +445,69 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 낮_토론_시간은_낮마다_한_번_늘리고_늘어난_마감을_바로_반영한다()
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+
+            Assert.IsFalse(session.CanExtendDay, "밤에는 늘릴 수 없다");
+            Assert.IsFalse(session.ExtendDay());
+            Assert.AreEqual(GameSession.CannotExtendDayMessage, view.Errors.Last());
+            Assert.AreEqual(0, api.Calls("ExtendDay"), "늘릴 수 없으면 서버에 보내지 않는다");
+
+            SkipUntil(GamePhases.Day);
+            int before = session.RemainingWholeSeconds;
+            Assert.IsTrue(session.CanExtendDay);
+            Assert.IsTrue(session.ExtendDay());
+            session.Tick(); // 접수되면 다음 Tick에 기다리지 않고 상태를 가져온다
+
+            Assert.IsTrue(session.ExtendedToday);
+            Assert.IsFalse(session.CanExtendDay, "같은 낮에는 한 번만 늘린다");
+            Assert.AreEqual(1, view.DayExtendsAccepted.Count);
+            Assert.AreEqual((long)GameSession.DayExtendSeconds, view.DayExtendsAccepted[0].addedSeconds);
+            Assert.AreEqual(before + GameSession.DayExtendSeconds, session.RemainingWholeSeconds, "같은 페이즈에서 늦춰진 마감을 쓴다");
+            Assert.IsTrue(session.CanSkipDay, "늘려도 넘기기는 따로 할 수 있다");
+
+            SkipUntil(GamePhases.Vote);
+            Assert.IsFalse(session.ExtendedToday);
+            SkipUntil(GamePhases.Night);
+            SkipUntil(GamePhases.Day);
+            Assert.IsTrue(session.CanExtendDay, "다음 낮에는 다시 늘릴 수 있다");
+        }
+
+        [Test]
+        public void 연장_API가_없는_서버면_게임을_닫지_않고_연장만_막는다()
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+            SkipUntil(GamePhases.Day);
+            api.NoExtendApi = true;
+
+            Assert.IsTrue(session.ExtendDay());
+
+            Assert.IsFalse(view.Closed, "게임이 지워진 404(GAME_NOT_FOUND)와 달리 게임은 그대로다");
+            Assert.AreEqual(GameSession.DayExtendUnsupportedMessage, view.Errors.Last());
+            Assert.IsFalse(session.DayExtendSupported);
+            Assert.IsFalse(session.CanExtendDay);
+            Assert.IsTrue(session.CanSkipDay);
+            Assert.IsTrue(session.SkipDay(), "다른 행동은 막히지 않는다");
+        }
+
+        [Test]
+        public void 게임이_지워진_404면_연장_요청에서도_게임을_닫는다()
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+            SkipUntil(GamePhases.Day);
+            api.Gone = true;
+
+            Assert.IsTrue(session.ExtendDay());
+
+            Assert.IsTrue(view.Closed);
+            Assert.IsTrue(session.DayExtendSupported);
+        }
+
+        [Test]
         public void 응답을_기다리는_동안_다른_입력은_무시한다()
         {
             Start(RoleCodes.PirateRaider, false);

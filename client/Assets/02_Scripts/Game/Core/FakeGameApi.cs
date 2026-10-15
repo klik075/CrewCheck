@@ -63,6 +63,7 @@ namespace WhoisntCitizen.Game
         private readonly HashSet<long> skippedActors = new HashSet<long>();
         private readonly HashSet<long> lockedActors = new HashSet<long>();      // 이번 밤 접선해서 행동이 확정된 앵무새
         private readonly HashSet<long> daySkippers = new HashSet<long>();       // 이번 낮 토론을 넘긴 플레이어
+        private readonly HashSet<long> dayExtenders = new HashSet<long>();      // 이번 낮 토론 시간을 늘린 플레이어
         private readonly Dictionary<long, long> votes = new Dictionary<long, long>(); // 투표자 → 대상
         private readonly HashSet<long> confirmedVoters = new HashSet<long>(); // "투표 완료"한 플레이어 (표가 없으면 기권)
 
@@ -337,6 +338,44 @@ namespace WhoisntCitizen.Game
             }));
         }
 
+        /// <summary>
+        /// 낮 토론 시간 연장. 서버에는 아직 없어서 GameApiPaths.ExtendDay의 요구사항대로 흉내 낸다.
+        /// 낮에 살아 있는 사람만, 낮마다 한 번 마감을 DayExtendSeconds초 늦춘다. 이미 늘렸으면 그대로 두고 addedSeconds 0.
+        /// </summary>
+        public void ExtendDay(string gameId, Action<GameApiResult<DayExtendResultDto>> onDone)
+        {
+            if (!Begin(gameId, onDone))
+            {
+                return;
+            }
+            string error = null;
+            if (phase != GamePhases.Day)
+            {
+                error = PhaseError(GamePhases.Day);
+            }
+            else if (!Me.Alive)
+            {
+                error = "시간을 늘리는 플레이어가 이미 사망했습니다: " + MyPlayerId;
+            }
+            if (error != null)
+            {
+                Reply(onDone, RuleViolation<DayExtendResultDto>(error));
+                return;
+            }
+
+            long added = 0;
+            if (dayExtenders.Add(MyPlayerId))
+            {
+                added = GameSession.DayExtendSeconds;
+                phaseEndsAt += added;
+            }
+            Reply(onDone, GameApiResult<DayExtendResultDto>.Ok(new DayExtendResultDto
+            {
+                accepted = true, phase = phase, phaseVersion = phaseVersion, phaseEndsAt = Iso(phaseEndsAt),
+                addedSeconds = added, extendedCount = dayExtenders.Count
+            }));
+        }
+
         public void GetNightResult(string gameId, Action<GameApiResult<NightResultDto>> onDone)
         {
             if (!Begin(gameId, onDone))
@@ -514,6 +553,7 @@ namespace WhoisntCitizen.Game
         private void EnterDay(double at)
         {
             daySkippers.Clear();
+            dayExtenders.Clear();
             MoveTo(GamePhases.Day, at, options.DaySeconds);
             if (!options.BotsAct)
             {

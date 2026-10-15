@@ -34,6 +34,9 @@ namespace WhoisntCitizen.Game
         /// <summary>내 낮 토론 넘기기가 접수됨. 넘긴 인원(skippedCount/requiredCount)이 들어 있다.</summary>
         void ShowDaySkipAccepted(DaySkipResultDto result);
 
+        /// <summary>내 낮 토론 시간 연장이 접수됨. 늘어난 초(addedSeconds, 이미 늘렸으면 0)가 들어 있다.</summary>
+        void ShowDayExtendAccepted(DayExtendResultDto result);
+
         /// <summary>내 투표가 접수됨.</summary>
         void ShowVoteAccepted(VoteResultDto result);
 

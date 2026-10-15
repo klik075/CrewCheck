@@ -181,6 +181,18 @@ namespace WhoisntCitizen.Game
             return DayDiscussionHint;
         }
 
+        /// <summary>토론 시간 연장 버튼 문구. 이번 낮에 늘렸으면 완료 표시.</summary>
+        public static string DayExtendButton(bool extended)
+        {
+            return extended ? "연장 완료" : "+" + GameSession.DayExtendSeconds + "초 연장";
+        }
+
+        /// <summary>토론 시간 연장이 접수됐을 때 채팅 기록에 남길 문구. (실제 서버는 방 채팅에 닉네임과 함께 알린다)</summary>
+        public static string DayExtendAccepted(DayExtendResultDto result)
+        {
+            return "토론 시간을 " + result.addedSeconds + "초 늘렸습니다.";
+        }
+
         /// <summary>토론 넘기기가 접수됐을 때 채팅 기록에 남길 문구. (실제 서버는 방 채팅에 닉네임과 인원을 따로 알린다)</summary>
         public static string DaySkipAccepted(DaySkipResultDto result)
         {

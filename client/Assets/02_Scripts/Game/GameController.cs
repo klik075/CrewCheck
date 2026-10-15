@@ -153,6 +153,12 @@ namespace WhoisntCitizen.Game
             return Session != null && Session.SkipDay();
         }
 
+        /// <summary>낮 토론 시간 연장 (낮마다 한 번).</summary>
+        public bool ExtendDay()
+        {
+            return Session != null && Session.ExtendDay();
+        }
+
         public bool Vote(long targetId)
         {
             return Session != null && Session.Vote(targetId);

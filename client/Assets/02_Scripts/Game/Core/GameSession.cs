@@ -19,6 +19,11 @@ namespace WhoisntCitizen.Game
         public const string CannotVoteMessage = "지금은 투표할 수 없습니다.";
         public const string CannotStrikeMessage = "표식을 남긴 살아 있는 사람이 없어 발동할 수 없습니다.";
         public const string CannotSkipDayMessage = "지금은 토론을 넘길 수 없습니다.";
+        public const string CannotExtendDayMessage = "지금은 토론 시간을 늘릴 수 없습니다.";
+        public const string DayExtendUnsupportedMessage = "서버가 아직 토론 시간 연장을 지원하지 않습니다.";
+
+        /// <summary>낮 토론 시간 연장 한 번에 늘어나는 초 (버튼 문구용). 실제로 늘리는 값은 서버가 정한다.</summary>
+        public const int DayExtendSeconds = 10;
 
         private readonly IGameApi api;
         private readonly IGameView view;
@@ -51,6 +56,8 @@ namespace WhoisntCitizen.Game
         private bool voteConfirmed;         // "투표 완료"를 서버가 받았는지
         private long daySkipVersion = -1;   // 토론을 넘긴 낮의 phaseVersion
         private DaySkipResultDto daySkipResult;
+        private long dayExtendVersion = -1; // 토론 시간을 늘린 낮의 phaseVersion
+        private bool dayExtendUnsupported;  // 서버에 연장 API가 없다 (404). 이번 판에는 버튼을 거둔다
         private bool markedByKraken;        // 크라켄의 표식이 내게 남아 있음 (KRAKEN_MARKED를 받았고 그 뒤 발동이 없었다)
         private readonly HashSet<long> krakenVictims = new HashSet<long>(); // 크라켄에게 끌려가 죽은 사람 (밤 결과의 deaths, 전체 공개)
         private RoleSetupOptionsDto roleSetupOptions; // 직업 목록·추천 구성 (서버가 켜져 있는 동안 바뀌지 않아 한 번만 받는다)
@@ -216,6 +223,28 @@ namespace WhoisntCitizen.Game
             {
                 return Me != null && State != null && State.phase == GamePhases.Day
                     && GameStateQueries.IsAlive(State, Me.playerId) && !SkippedToday;
+            }
+        }
+
+        /// <summary>이번 낮 토론 시간을 늘렸는지. 다음 낮(phaseVersion이 바뀜)이 되면 저절로 false가 된다.</summary>
+        public bool ExtendedToday
+        {
+            get { return State != null && State.phase == GamePhases.Day && dayExtendVersion == State.phaseVersion; }
+        }
+
+        /// <summary>서버가 토론 시간 연장을 지원하는지. 한 번 눌러 보기 전에는 지원한다고 본다(없는 서버는 404).</summary>
+        public bool DayExtendSupported
+        {
+            get { return !dayExtendUnsupported; }
+        }
+
+        /// <summary>지금 낮 토론 시간을 늘릴 수 있는지 (낮, 내가 살아 있음, 이번 낮에 아직 안 늘림, 서버가 지원).</summary>
+        public bool CanExtendDay
+        {
+            get
+            {
+                return Me != null && State != null && State.phase == GamePhases.Day && !dayExtendUnsupported
+                    && GameStateQueries.IsAlive(State, Me.playerId) && !ExtendedToday;
             }
         }
 
@@ -487,6 +516,44 @@ namespace WhoisntCitizen.Game
                 daySkipResult = r.Data;
                 view.ShowDaySkipAccepted(r.Data);
                 PollNowIfChanged(version, r.Data.phaseVersion);
+            });
+            return true;
+        }
+
+        /// <summary>
+        /// 이번 낮 토론 시간을 늘린다 (살아 있는 사람이 낮마다 한 번, 서버가 DayExtendSeconds초씩). 보냈으면 true.
+        /// 늘어난 마감은 상태의 phaseEndsAt으로 오는데 페이즈는 그대로라서, 접수되면 기다리지 않고 상태를 다시 가져온다.
+        /// 연장 API가 없는 서버(404, 게임이 지워진 404는 GAME_NOT_FOUND)면 게임을 닫지 않고 이번 판에는 버튼만 거둔다.
+        /// </summary>
+        public bool ExtendDay()
+        {
+            if (!CanSendAction())
+            {
+                return false;
+            }
+            if (!CanExtendDay)
+            {
+                view.ShowError(dayExtendUnsupported ? DayExtendUnsupportedMessage : CannotExtendDayMessage);
+                return false;
+            }
+            long version = State.phaseVersion;
+            actionInFlight = true;
+            api.ExtendDay(GameId, r =>
+            {
+                if (!closed && r.IsNotFound && r.ErrorCode != GameErrorCodes.GameNotFound)
+                {
+                    actionInFlight = false;
+                    dayExtendUnsupported = true;
+                    view.ShowError(DayExtendUnsupportedMessage);
+                    return;
+                }
+                if (!OnActionResponse(r))
+                {
+                    return;
+                }
+                dayExtendVersion = version;
+                view.ShowDayExtendAccepted(r.Data);
+                RequestPollNow();
             });
             return true;
         }

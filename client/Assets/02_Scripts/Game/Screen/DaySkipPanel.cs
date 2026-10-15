@@ -10,7 +10,7 @@ namespace WhoisntCitizen.Game
     /// <summary>
     /// 낮 토론 넘기기. NightActionPanel과 같은 배치(VotePanel 프리팹 복제)로 하단 시트 Drawer 안에 둔다.
     /// 플레이어 카드는 보기 전용(누를 수 없음)이고, [토론 넘기기] 버튼 하나와 넘긴 인원 안내만 있다.
-    /// 서버 통신은 하지 않는다. 넘기기는 이벤트로 넘기고, GameScreen이 GameController로 보낸다.
+    /// 서버 통신은 하지 않는다. 넘기기·시간 연장은 이벤트로 넘기고, GameScreen이 GameController로 보낸다.
     /// 낮에는 GameScreen이 VotePanel 대신 이 패널을 보여 준다.
     /// </summary>
     public sealed class DaySkipPanel : MonoBehaviour
@@ -29,9 +29,13 @@ namespace WhoisntCitizen.Game
         private readonly List<long> toRemove = new List<long>();
 
         private bool canSkip;
+        private bool canExtend;
 
         /// <summary>이번 낮 토론을 넘김</summary>
         public event Action Skipped;
+
+        /// <summary>이번 낮 토론 시간을 늘림</summary>
+        public event Action Extended;
 
         /// <summary>playerId → 초상화. NightActionPanel.PortraitResolver와 같은 것을 넣는다.</summary>
         public Func<long, Sprite> PortraitResolver { get; set; }
@@ -65,6 +69,7 @@ namespace WhoisntCitizen.Game
             bool alive = GameStateQueries.IsAlive(state, myId);
             bool skipped = session.SkippedToday;
             canSkip = session.CanSkipDay;
+            canExtend = session.CanExtendDay;
 
             SyncItems(state, myId);
             foreach (PlayerProfileItem item in items.Values)
@@ -131,6 +136,15 @@ namespace WhoisntCitizen.Game
         public void Skip()
         {
             OnSkipClicked();
+        }
+
+        /// <summary>토론 시간 연장. 이 패널에는 버튼이 없고 다른 화면의 버튼(GameScene3 행동 줄의 [+10초 연장])에서 부른다.</summary>
+        public void Extend()
+        {
+            if (canExtend && Extended != null)
+            {
+                Extended();
+            }
         }
 
         private void OnSkipClicked()

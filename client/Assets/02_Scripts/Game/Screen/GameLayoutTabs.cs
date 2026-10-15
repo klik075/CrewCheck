@@ -913,6 +913,11 @@ namespace WhoisntCitizen.Game
                     {
                         s.primary = session.SkippedToday ? "넘김 완료" : "토론 넘기기";
                         s.primaryOn = session.CanSkipDay;
+                        if (session.DayExtendSupported) // 연장 API가 없는 서버면 한 번 눌러 본 뒤로는 버튼을 거둔다
+                        {
+                            s.secondary = GameScreenText.DayExtendButton(session.ExtendedToday);
+                            s.secondaryOn = session.CanExtendDay;
+                        }
                     }
                     break;
                 }
@@ -1124,6 +1129,9 @@ namespace WhoisntCitizen.Game
         {
             switch (phase)
             {
+                case GamePhases.Day:
+                    if (ctx.DayPanel != null) ctx.DayPanel.Extend();
+                    break;
                 case GamePhases.Night:
                     if (ctx.NightPanel != null) ctx.NightPanel.Skip();
                     break;

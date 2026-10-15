@@ -6,6 +6,7 @@ namespace WhoisntCitizen.Game.Tests
     /// <summary>
     /// 다른 IGameApi를 감싸서 호출 수를 세고, 실제 서버 상황을 흉내 낸다.
     /// Deferred: 응답을 Flush() 때까지 미룬다(비동기). Offline: 연결 실패(0). Gone: 게임이 지워짐(404).
+    /// NoExtendApi: 토론 시간 연장 API가 없는 서버 (오류 code 없는 404).
     /// </summary>
     public sealed class TestGameApi : IGameApi
     {
@@ -16,6 +17,7 @@ namespace WhoisntCitizen.Game.Tests
         public bool Deferred;
         public bool Offline;
         public bool Gone;
+        public bool NoExtendApi;
 
         public TestGameApi(IGameApi inner)
         {
@@ -67,6 +69,21 @@ namespace WhoisntCitizen.Game.Tests
         public void SkipDay(string gameId, Action<GameApiResult<DaySkipResultDto>> onDone)
         {
             Handle("SkipDay", onDone, cb => inner.SkipDay(gameId, cb));
+        }
+
+        public void ExtendDay(string gameId, Action<GameApiResult<DayExtendResultDto>> onDone)
+        {
+            Handle("ExtendDay", onDone, cb =>
+            {
+                if (NoExtendApi)
+                {
+                    cb(GameApiResult<DayExtendResultDto>.Fail(404, null, "Not Found"));
+                }
+                else
+                {
+                    inner.ExtendDay(gameId, cb);
+                }
+            });
         }
 
         public void GetNightResult(string gameId, Action<GameApiResult<NightResultDto>> onDone)
@@ -160,6 +177,7 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         public void SkipDay(string gameId, Action<GameApiResult<DaySkipResultDto>> onDone) { Unused(onDone); }
+        public void ExtendDay(string gameId, Action<GameApiResult<DayExtendResultDto>> onDone) { Unused(onDone); }
         public void GetNightResult(string gameId, Action<GameApiResult<NightResultDto>> onDone)
         {
             if (NightResult == null)
@@ -196,6 +214,7 @@ namespace WhoisntCitizen.Game.Tests
         public readonly List<GameResultDto> GameResults = new List<GameResultDto>();
         public readonly List<NightActionResultDto> ActionsAccepted = new List<NightActionResultDto>();
         public readonly List<DaySkipResultDto> DaySkipsAccepted = new List<DaySkipResultDto>();
+        public readonly List<DayExtendResultDto> DayExtendsAccepted = new List<DayExtendResultDto>();
         public readonly List<VoteResultDto> VotesAccepted = new List<VoteResultDto>();
         public readonly List<string> Errors = new List<string>();
         public readonly List<bool> Connections = new List<bool>();
@@ -207,7 +226,8 @@ namespace WhoisntCitizen.Game.Tests
             get
             {
                 return States + Phases.Count + Deaths.Count + MyRoles.Count + NightResults.Count + Executions.Count
-                    + GameResults.Count + ActionsAccepted.Count + DaySkipsAccepted.Count + VotesAccepted.Count + Errors.Count + Connections.Count
+                    + GameResults.Count + ActionsAccepted.Count + DaySkipsAccepted.Count + DayExtendsAccepted.Count + VotesAccepted.Count
+                    + Errors.Count + Connections.Count
                     + (Closed ? 1 : 0);
             }
         }
@@ -221,6 +241,7 @@ namespace WhoisntCitizen.Game.Tests
         public void ShowGameResult(GameResultDto result) { GameResults.Add(result); }
         public void ShowActionAccepted(NightActionResultDto result) { ActionsAccepted.Add(result); }
         public void ShowDaySkipAccepted(DaySkipResultDto result) { DaySkipsAccepted.Add(result); }
+        public void ShowDayExtendAccepted(DayExtendResultDto result) { DayExtendsAccepted.Add(result); }
         public void ShowVoteAccepted(VoteResultDto result) { VotesAccepted.Add(result); }
         public void ShowError(string message) { Errors.Add(message); }
         public void ShowConnection(bool connected) { Connections.Add(connected); }

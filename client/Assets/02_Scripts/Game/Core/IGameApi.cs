@@ -30,6 +30,9 @@ namespace WhoisntCitizen.Game
         /// <summary>POST /api/v1/games/{gameId}/day/skip — 이번 낮 토론을 넘긴다. 살아 있는 전원이 넘기면 바로 투표로 넘어간다.</summary>
         void SkipDay(string gameId, Action<GameApiResult<DaySkipResultDto>> onDone);
 
+        /// <summary>POST /api/v1/games/{gameId}/day/extend — 이번 낮 토론 시간을 늘린다(낮마다 한 번). 아직 서버에 없다(GameApiPaths.ExtendDay).</summary>
+        void ExtendDay(string gameId, Action<GameApiResult<DayExtendResultDto>> onDone);
+
         /// <summary>GET /api/v1/games/{gameId}/night-result — 가장 최근 밤 결과. 페이즈와 상관없이 조회된다.</summary>
         void GetNightResult(string gameId, Action<GameApiResult<NightResultDto>> onDone);
 

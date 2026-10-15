@@ -11,6 +11,7 @@ namespace WhoisntCitizen.Game
     {
         private long phaseVersion = -1;
         private double deadline;          // 마감 시각 (로컬 단조 시간, 초)
+        private DateTime endsAtSeen;      // 지금 마감의 서버 시각 (phaseEndsAt)
 
         /// <summary>마감이 있는 페이즈인지. ENDED이거나 아직 동기화 전이면 false.</summary>
         public bool HasDeadline { get; private set; }
@@ -25,7 +26,8 @@ namespace WhoisntCitizen.Game
         /// 상태 응답을 받을 때마다 호출한다. localSeconds = 응답을 받은 순간의 단조 시간(초).
         /// 늦게 도착한 옛 페이즈 응답은 무시하고 false를 돌려준다.
         /// 같은 페이즈에서는 마감 추정치 중 가장 이른 값을 쓴다. 응답이 늦게 올수록(지연이 클수록) 마감이 늦게 추정되기 때문이다.
-        /// 서버는 phaseEndsAt을 페이즈가 바뀔 때만 정하므로(changePhase) 같은 페이즈에서 마감이 늦춰지는 일은 없다.
+        /// 단, 같은 페이즈에서 서버가 phaseEndsAt을 늦추면(낮 토론 시간 연장) 마감을 새로 잡고,
+        /// 그보다 이른 phaseEndsAt이 담긴 응답(연장 전에 보낸 요청의 응답이 늦게 옴)은 마감에 반영하지 않는다.
         /// </summary>
         public bool Sync(GameStateDto state, double localSeconds)
         {
@@ -46,9 +48,11 @@ namespace WhoisntCitizen.Game
             }
 
             double estimate = localSeconds + Math.Max(0, (endsAt.Value - serverNow.Value).TotalSeconds);
-            if (newPhase || !HasDeadline || estimate < deadline)
+            int moved = newPhase || !HasDeadline ? 1 : endsAt.Value.CompareTo(endsAtSeen); // 양수 = 새 마감, 0 = 같은 마감, 음수 = 옛 응답
+            if (moved > 0 || (moved == 0 && estimate < deadline))
             {
                 deadline = estimate;
+                endsAtSeen = endsAt.Value;
             }
             HasDeadline = true;
             return true;

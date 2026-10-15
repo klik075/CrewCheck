@@ -101,6 +101,24 @@ namespace WhoisntCitizen.Game
         public long requiredCount;
     }
 
+    // ---------------------------------------------------------------- 낮 토론 시간 연장 POST /day/extend
+
+    /// <summary>
+    /// 낮 토론 시간 연장 접수 결과 (서버 DayExtendResponse — 아직 서버에 없다. 요구사항은 GameApiPaths.ExtendDay).
+    /// 살아 있는 사람이 낮마다 한 번 늘릴 수 있다. 이미 늘렸으면 시간은 그대로이고 addedSeconds가 0인 같은 모양으로 온다.
+    /// 페이즈는 바뀌지 않으므로 phaseVersion도 그대로다. 늘어난 마감은 상태 조회(GET /games/{id})의 phaseEndsAt에도 실린다.
+    /// </summary>
+    [Serializable]
+    public class DayExtendResultDto
+    {
+        public bool accepted;
+        public string phase;
+        public long phaseVersion;
+        public string phaseEndsAt;  // 늘어난 마감
+        public long addedSeconds;   // 이번 요청으로 늘어난 초. 이미 늘렸으면 0
+        public long extendedCount;  // 이번 낮에 시간을 늘린 생존자 수
+    }
+
     // ---------------------------------------------------------------- 밤 결과 GET /night-result
 
     [Serializable]
