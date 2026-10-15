@@ -10,7 +10,8 @@ namespace WhoisntCitizen.Lobby
     /// <summary>
     /// Lobby 씬 로비 채팅. 씬 파일을 고치지 않도록 버튼·채팅창을 실행할 때 코드로 만든다. (LobbyUIController가 붙이고 Build를 부른다)
     ///
-    ///  - [채팅] 버튼: [방 만들기] 버튼을 복제해 오른편에 둔다. (같은 그림·글꼴, 아이콘은 끈다)
+    ///  - [채팅] 버튼: [방 만들기] 오른편에 둔다. 모양은 Room 씬 [채팅] 버튼(RoomLobbyLayout "OpenChat")과 같다:
+    ///    버튼 그림 + 황동 테두리 + 크림색 채팅 아이콘 + 크림색 굵은 CabinFont 글자 (204 x 60)
     ///  - 누르면 방 목록 아래쪽 절반 정도에 채팅창이 열리고, 방 목록은 위쪽으로 줄어든다. (Room 씬 채팅창처럼)
     ///    [채팅] 버튼을 다시 누르거나 채팅창의 [닫기]를 누르면 채팅창이 닫히고 방 목록이 원래 크기로 돌아간다.
     ///  - 채팅창 모양은 Room 씬 채팅창(RoomLobbyLayout.BuildChat)과 같다: 호두나무 판 + 황동 테두리, 크림색 글자, CabinFont,
@@ -23,7 +24,8 @@ namespace WhoisntCitizen.Lobby
     {
         [Header("Button")]
         [SerializeField] private string chatButtonLabel = "채팅";
-        [SerializeField] private float buttonWidth = 200f;
+        [SerializeField] private float buttonWidth = 204f;  // Room [채팅] 버튼과 같은 크기
+        [SerializeField] private float buttonHeight = 60f;
         [SerializeField] private float buttonGap = 16f;
 
         [Header("Panel")]
@@ -38,6 +40,8 @@ namespace WhoisntCitizen.Lobby
         // Room 채팅창(RoomLobbyLayout)과 같은 색
         private static readonly Color Ink = new Color32(51, 31, 17, 255);
         private static readonly Color Cream = new Color32(255, 226, 174, 255);
+        private const float ButtonFontSize = 26f; // Room [채팅] 버튼 글자 크기
+        private const float ButtonIconSize = 42f; // Room AddActionIcon 아이콘 크기
         private const float LineFontSize = 27f;
         private const float InputFontSize = 28f;
 
@@ -58,7 +62,7 @@ namespace WhoisntCitizen.Lobby
 
         public bool IsOpen { get; private set; }
 
-        /// <param name="createRoomButton">[방 만들기] 버튼. 이 버튼을 복제해 오른편에 [채팅] 버튼을 만든다</param>
+        /// <param name="createRoomButton">[방 만들기] 버튼. 이 버튼 오른편에 [채팅] 버튼을 만든다</param>
         /// <param name="roomListArea">방 목록 영역. 채팅창이 열리면 아래쪽 절반에 채팅창을 놓고 이 영역은 위쪽으로 줄인다</param>
         public void Build(Button createRoomButton, RectTransform roomListArea)
         {
@@ -88,34 +92,42 @@ namespace WhoisntCitizen.Lobby
         }
 
         // ------------------------------------------------------------------
-        // 버튼 (디자인은 [방 만들기] 버튼 그대로)
+        // 버튼 (디자인은 Room 씬 [채팅] 버튼과 같다: RoomLobbyLayout.MakeButton + AddActionIcon)
         // ------------------------------------------------------------------
 
         private void BuildButton(Button source, RectTransform parent)
         {
-            var go = Instantiate(source.gameObject, parent, false);
-            go.name = "Button_Chat";
-            chatButton = go.GetComponent<Button>();
-            chatButton.onClick = new Button.ButtonClickedEvent(); // 복제된 클릭 연결을 비운다
+            float width = buttonWidth, height = buttonHeight;
+            chatButton = MakeButton("Button_Chat", parent, chatButtonLabel, ButtonFontSize);
             chatButton.onClick.AddListener(Toggle);
+            chatButtonText = chatButton.GetComponentInChildren<TMP_Text>(true);
 
-            // 아이콘은 끄고 글자만 남긴다
-            foreach (Transform child in go.transform)
-                if (child.GetComponent<TMP_Text>() == null) child.gameObject.SetActive(false);
-            var layout = go.GetComponent<HorizontalLayoutGroup>();
-            if (layout != null) layout.padding = new RectOffset(0, 0, layout.padding.top, layout.padding.bottom);
-            chatButtonText = go.GetComponentInChildren<TMP_Text>(true);
+            // 아이콘 + 글자 배치 (RoomLobbyLayout.AddActionIcon과 같다): 왼쪽 20에 아이콘, 70부터 글자
+            var iconRt = Rect("ActionIcon", chatButton.transform);
+            iconRt.anchorMin = iconRt.anchorMax = new Vector2(0f, 0.5f);
+            iconRt.pivot = new Vector2(0f, 0.5f);
+            iconRt.anchoredPosition = new Vector2(20f, 0f);
+            iconRt.sizeDelta = new Vector2(ButtonIconSize, ButtonIconSize);
+            var icon = iconRt.gameObject.AddComponent<RoomHelmGraphic>();
+            icon.Shape = RoomHelmGraphic.Symbol.Chat;
+            icon.color = Cream;
+            icon.raycastTarget = false;
+            Anchor(chatButtonText.rectTransform, Vector2.zero, Vector2.one, new Vector2(70f, 5f), new Vector2(-10f, -5f));
 
-            // [방 만들기] 오른편에 붙인다. 부모 밖으로 나가면 폭을 줄인다
+            // [방 만들기] 오른편, 세로 가운데에 붙인다. 부모 밖으로 나가면 폭을 줄인다
             var src = (RectTransform)source.transform;
-            var rt = (RectTransform)go.transform;
+            var rt = (RectTransform)chatButton.transform;
+            rt.anchorMin = src.anchorMin;
+            rt.anchorMax = src.anchorMax;
+            rt.pivot = new Vector2(0.5f, 0.5f);
             float srcRight = src.anchoredPosition.x + src.rect.width * (1f - src.pivot.x);
-            float width = buttonWidth;
+            float srcCenterY = src.anchoredPosition.y + src.rect.height * (0.5f - src.pivot.y);
             float parentRight = parent.rect.width * (1f - src.anchorMin.x); // 앵커 기준 부모 오른쪽 끝
             if (parent.rect.width > 0f && srcRight + buttonGap + width > parentRight - 4f)
                 width = Mathf.Max(120f, parentRight - 4f - srcRight - buttonGap);
-            rt.sizeDelta = new Vector2(width, src.rect.height);
-            rt.anchoredPosition = new Vector2(srcRight + buttonGap + width * rt.pivot.x, src.anchoredPosition.y);
+            rt.sizeDelta = new Vector2(width, height);
+            rt.anchoredPosition = new Vector2(srcRight + buttonGap + width * 0.5f, srcCenterY);
+            rt.localScale = Vector3.one;
             UpdateButtonLabel();
         }
 
