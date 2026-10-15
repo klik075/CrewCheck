@@ -17,7 +17,7 @@ namespace WhoisntCitizen.Lobby
     ///  - 채팅창 모양은 Room 씬 채팅창(RoomLobbyLayout.BuildChat)과 같다: 호두나무 판 + 황동 테두리, 크림색 글자, CabinFont,
     ///    입력 바(어두운 바 + 크림색 입력칸 + 금색 [전송] 버튼)
     ///  - 서버 통신은 GameChatController(lobbyChat)가 한다. 채팅창이 닫혀 있어도 로비에 들어온 순간부터 계속 받고,
-    ///    닫혀 있는 동안 새 메시지가 오면(미확인 채팅이 있으면) 버튼 오른쪽 위에 빨간 점 하나를 찍는다. (ChatUnreadDot)
+    ///    닫혀 있는 동안 새 메시지가 오면(미확인 채팅이 있으면) 버튼 오른쪽 위에 빨간 점 하나를 찍는다. (NotificationDot)
     ///    몇 개가 와도 점은 하나뿐이고, 채팅창을 열면 사라진다.
     ///  - 로비에 들어온 뒤의 대화만 보인다. 방으로 이동하면 씬과 함께 사라져 더 받지 않는다.
     /// </summary>
@@ -51,7 +51,7 @@ namespace WhoisntCitizen.Lobby
 
         private Button chatButton;
         private TMP_Text chatButtonText;
-        private ChatUnreadDot unreadDot;          // 미확인 채팅 표시 (빨간 점)
+        private NotificationDot unreadDot;          // 미확인 채팅 표시 (빨간 점)
         private RectTransform roomList;          // 채팅창이 열리면 위쪽으로 줄이는 방 목록 영역
         private Vector2 roomListOffsetMin;       // 방 목록의 원래 아래쪽 여백
         private RectTransform panel;
@@ -114,7 +114,7 @@ namespace WhoisntCitizen.Lobby
             icon.color = Cream;
             icon.raycastTarget = false;
             Anchor(chatButtonText.rectTransform, Vector2.zero, Vector2.one, new Vector2(70f, 5f), new Vector2(-10f, -5f));
-            unreadDot = ChatUnreadDot.Attach(chatButton);
+            unreadDot = NotificationDot.AttachTo((RectTransform)chatButton.transform);
 
             // [방 만들기] 오른편, 세로 가운데에 붙인다. 부모 밖으로 나가면 폭을 줄인다
             var src = (RectTransform)source.transform;
