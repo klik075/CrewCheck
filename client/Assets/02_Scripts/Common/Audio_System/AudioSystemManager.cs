@@ -310,6 +310,75 @@ public class AudioSystemManager : MonoBehaviour
     }
     #endregion
 
+    // ------------------------------------------------------------------
+    // BGM (코드에서 곡을 바꿔 가며 트는 전용 플레이어. 한 번에 한 곡)
+    // ------------------------------------------------------------------
+    #region BGM
+    private AudioPlayer bgmPlayer;
+    private AudioClipContainer currentBgm;
+
+    /// <summary>지금 PlayBGM 으로 틀고 있는 컨테이너 (없으면 null).</summary>
+    public static AudioClipContainer CurrentBGM => HasInstance ? instance.currentBgm : null;
+
+    /// <summary>
+    /// BGM 을 바꾼다. 이전 곡은 바로 멈춘다. 같은 곡(loop)이 이미 재생 중이면 처음부터 다시 틀지 않는다.
+    /// - loop = true : 반복 재생. 뮤트를 풀면 다시 재생된다.
+    /// - loop = false: 한 번만 재생 (승리/패배 등). 뮤트를 바꾸면 멈추고 다시 틀지 않는다.
+    /// 뮤트는 컨테이너의 ChannelType 기준.
+    /// </summary>
+    public static AudioPlayer PlayBGM(string audioID, bool loop = true)
+    {
+        if (Instance == null) return null;
+        var container = Instance.GetAudioClipContainer(audioID);
+        if (container == null)
+        {
+            Debug.LogWarning($"[AudioSystemManager] AudioClipContainer '{audioID}' 를 찾을 수 없습니다.");
+            return null;
+        }
+        return PlayBGM(container, loop);
+    }
+
+    public static AudioPlayer PlayBGM(AudioClipContainer container, bool loop = true)
+    {
+        if (container == null || Instance == null) return null;
+        var player = Instance.GetBgmPlayer();
+
+        if (loop && Instance.currentBgm == container && player.loop && player.Source.isPlaying)
+            return player; // 같은 곡이 이미 흐르는 중
+
+        Instance.currentBgm = container;
+        player.Stop();
+        player.loop = loop;
+        // 반복 곡만 컨테이너를 기억시켜 뮤트 해제 시 Refresh 로 다시 재생되게 한다
+        player.audioClipcontainer = loop ? container : null;
+
+        if (IsMute(container.ChannelType)) return player;
+        player.Play(container.GetAudioClip(), loop, container.Volmue);
+        return player;
+    }
+
+    /// <summary>PlayBGM 으로 튼 곡을 멈춘다. fadeOut > 0 이면 서서히 줄인다.</summary>
+    public static void StopBGM(float fadeOut = 0f)
+    {
+        if (!HasInstance || instance.bgmPlayer == null) return;
+        var player = instance.bgmPlayer;
+        instance.currentBgm = null;
+        player.audioClipcontainer = null;
+        if (fadeOut > 0f && player.Source.isPlaying) player.FadeOut(fadeOut);
+        else player.Stop();
+    }
+
+    private AudioPlayer GetBgmPlayer()
+    {
+        if (bgmPlayer != null) return bgmPlayer;
+        var go = new GameObject("BGM Player (Code)");
+        go.transform.SetParent(transform, false);
+        bgmPlayer = go.AddComponent<AudioPlayer>();
+        bgmPlayer.PlayOnEnable = true; // 풀에 반환되지 않고, 뮤트 변경 시 Refresh 대상이 된다
+        return bgmPlayer;
+    }
+    #endregion
+
 #if UNITY_EDITOR
     [ContextMenu("Setup AudioClip Containers")]
     private void _Editor_SetupAudioClipContainers()

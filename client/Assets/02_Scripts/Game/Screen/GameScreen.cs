@@ -295,6 +295,7 @@ namespace WhoisntCitizen.Game
 
         private void OnDestroy()
         {
+            GameAudioCues.Stop(); // 게임 BGM 끄기 (오디오 매니저는 씬이 바뀌어도 남는다)
             // [카드패 투표로 교체 - 주석 처리]
             // if (votePanel != null)
             // {
@@ -453,6 +454,7 @@ namespace WhoisntCitizen.Game
             RefreshPanels();
             UpdateNightRoom();
             if (body != null) body.OnPhase(currentPhase);
+            GameAudioCues.OnPhase(phaseChanged);
         }
 
         public void ShowPlayerDied(GameEvent died)
@@ -506,6 +508,7 @@ namespace WhoisntCitizen.Game
                 HideVoteHand();
                 TryShowVoteHand();
             }
+            GameAudioCues.OnNightResult(result, IsLiveResult(GamePhases.NightResult));
             PlayNightTransition(result);
             QueueSirenSong(result);
             QueueInvestigation(result);
@@ -802,6 +805,7 @@ namespace WhoisntCitizen.Game
             {
                 voteCards.ShowTally(result.votes); // 공개된 득표 수만큼 각 대상 자리에 카드 더미 (누가 냈는지는 없다)
             }
+            GameAudioCues.OnExecutionResult(result, IsLiveResult(GamePhases.Execution));
             PlayExecutionTransition(result); // 첫 0.8초는 테이블의 카드 더미를 그대로 보여 준다
         }
 
@@ -826,6 +830,7 @@ namespace WhoisntCitizen.Game
                 pendingGameResult = result; // 마지막 죽음의 컷신이 끝나면 띄운다
                 return;
             }
+            GameAudioCues.OnGameResult(result, Session != null ? Session.Me : null);
             if (resultPanel != null)
             {
                 resultPanel.Show(result, Session != null ? Session.Me : null, !IsFakeGame); // 가짜 서버면 자동 복귀(=새 판) 안 함
@@ -1344,6 +1349,7 @@ namespace WhoisntCitizen.Game
             }
             GameResultDto result = pendingGameResult;
             pendingGameResult = null;
+            GameAudioCues.OnGameResult(result, Session != null ? Session.Me : null);
             if (resultPanel != null)
             {
                 resultPanel.Show(result, Session != null ? Session.Me : null, !IsFakeGame); // 가짜 서버면 자동 복귀(=새 판) 안 함
