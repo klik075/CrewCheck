@@ -1,8 +1,9 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace WhoisntCitizen.Game
 {
-    /// <summary>직업 구성의 한 줄: 직업과 그 직업의 인원.</summary>
+    /// <summary>직업 구성의 한 줄: 직업과 그 직업의 인원. 랜덤 구성처럼 인원이 아직 정해지지 않았으면 0.</summary>
     public sealed class RoleCount
     {
         public RoleDto Role;
@@ -79,31 +80,65 @@ namespace WhoisntCitizen.Game
             }
         }
 
-        /// <summary>
-        /// 이 인원의 직업 구성 (추천 구성): 서버가 보내 준 직업 순서(해적 진영 → 선원 진영 …)대로, 인원 수와 함께.
-        /// 구성에 있지만 직업 목록에 없는 코드는 이름 대신 코드로 넣는다. 구성이 없으면 빈 목록.
-        /// </summary>
+        /// <summary>이 인원의 추천 구성. Lineup(options, null, playerCount)와 같다.</summary>
         public static List<RoleCount> Lineup(RoleSetupOptionsDto options, int playerCount)
         {
+            return Lineup(options, null, playerCount);
+        }
+
+        /// <summary>
+        /// 이번 판의 직업 구성 (지도 버튼): 방의 직업 배정 설정(setup)대로. 추천은 추천 구성, 커스텀은 편집한 구성(넣어 둔 중립 직업 포함),
+        /// 랜덤은 인원이 게임 시작 때 정해지므로 나올 수 있는 직업을 인원 0으로 넣는다. setup이 null(방 설정을 모름)이면 추천 구성.
+        /// 서버가 보내 준 직업 순서(해적 진영 → 선원 진영 …)대로 넣고, 직업 목록에 없는 코드는 이름 대신 코드로 넣는다. 구성이 없으면 빈 목록.
+        /// </summary>
+        public static List<RoleCount> Lineup(RoleSetupOptionsDto options, RoleSetupDto setup, int playerCount)
+        {
             var lineup = new List<RoleCount>();
-            List<string> roles = RoleSetupRules.Recommended(options, playerCount);
+            List<string> roles = RoleSetupRules.FixedComposition(setup, options, playerCount);
+            bool random = roles == null;
+            if (random) roles = RandomPool(setup, options, playerCount);
             var counted = new HashSet<string>();
             if (options != null && options.roles != null)
             {
                 foreach (RoleDto role in options.roles)
                 {
-                    int count = role != null ? RoleSetupRules.Count(roles, role.code) : 0;
-                    if (count > 0 && counted.Add(role.code)) lineup.Add(new RoleCount { Role = role, Count = count });
+                    if (role != null && roles.Contains(role.code) && counted.Add(role.code))
+                    {
+                        lineup.Add(new RoleCount { Role = role, Count = random ? 0 : RoleSetupRules.Count(roles, role.code) });
+                    }
                 }
             }
             foreach (string code in roles)
             {
                 if (counted.Add(code))
                 {
-                    lineup.Add(new RoleCount { Role = new RoleDto { code = code, name = code }, Count = RoleSetupRules.Count(roles, code) });
+                    lineup.Add(new RoleCount { Role = new RoleDto { code = code, name = code }, Count = random ? 0 : RoleSetupRules.Count(roles, code) });
                 }
             }
             return lineup;
+        }
+
+        /// <summary>지도 버튼의 부제. 예: "7명 게임 · 커스텀 구성". 커스텀이어도 이 인원수를 편집하지 않았으면 추천 구성이다.</summary>
+        public static string LineupSubtitle(RoleSetupDto setup, int playerCount)
+        {
+            string mode = RoleSetupModes.Normalize(setup?.mode);
+            if (mode == RoleSetupModes.Custom && RoleSetupRules.FindCustom(setup, playerCount) == null) mode = RoleSetupModes.Recommended;
+            string subtitle = playerCount + "명 게임 · " + RoleSetupModes.Label(mode);
+            return mode == RoleSetupModes.Random ? subtitle + " (아래 직업 중에서 무작위)" : subtitle;
+        }
+
+        /// <summary>
+        /// 랜덤 구성에서 나올 수 있는 직업 (서버 RoleAssigner.randomComposition과 같은 규칙). 해적은 항상, 고른 후보 중 해적 진영은
+        /// 해적 진영 자리가 2개 이상일 때만, 나머지 후보는 항상, 선원은 나머지 후보가 남은 자리보다 적어 빈자리를 채울 때만.
+        /// </summary>
+        private static List<string> RandomPool(RoleSetupDto setup, RoleSetupOptionsDto options, int playerCount)
+        {
+            int pirateSlots = RoleSetupRules.PirateSlots(options, playerCount);
+            List<string> candidates = (setup?.randomCandidates ?? new List<string>()).Where(c => !RoleSetupRules.IsBaseRole(c)).ToList();
+            var pool = new List<string> { RoleCodes.PirateRaider };
+            pool.AddRange(candidates.Where(c => pirateSlots > 1 || !RoleSetupRules.IsPirate(options, c)));
+            if (candidates.Count(c => !RoleSetupRules.IsPirate(options, c)) < playerCount - pirateSlots) pool.Add(RoleCodes.CrewSailor);
+            return pool;
         }
     }
 }

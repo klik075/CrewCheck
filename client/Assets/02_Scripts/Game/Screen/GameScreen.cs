@@ -105,6 +105,7 @@ namespace WhoisntCitizen.Game
         private bool shownWaiting;
         private bool deadVoteNoticeShown;
         private int voteBanNoticeDay;      // 요리사의 투표 금지를 투표 시간에 다시 알린 일차 (하루에 한 번)
+        private RoleSetupDto roomRoleSetup; // 지도 버튼: 방의 직업 배정 설정 (이번 판 구성). 받기 전이나 방이 없으면 null
         private readonly List<PlayerView> voteTargets = new List<PlayerView>();
 
         // 투표 전송 대기: 앞 요청(밤 행동·투표)이 처리 중이면 보낼 수 없으므로, 마지막으로 원한 상태만 남겨 두었다가 보낸다
@@ -1555,37 +1556,66 @@ namespace WhoisntCitizen.Game
             ApplyDrawerContent(BottomTabMode.Vote);
         }
 
-        /// <summary>지도 버튼: 이번 판의 직업 구성(인원수별 추천 구성 — 실제 서버도 이 구성으로 배정한다)과 직업 설명.</summary>
+        /// <summary>
+        /// 지도 버튼: 이번 판의 직업 구성과 직업 설명. 구성은 방의 직업 배정 설정(서버도 이 설정으로 배정한다)을 따른다.
+        /// 추천·커스텀은 그 구성(커스텀에 넣은 중립 직업도 나온다), 랜덤은 나올 수 있는 직업. 방 설정을 받지 못하면 추천 구성.
+        /// </summary>
         private void OnMapClicked()
         {
             GameSession session = Session;
             HudPopup popup = hud.Popup;
             int count = session != null && session.State != null ? session.State.players.Count : 0;
-            popup.Show("이번 판 직업", count > 0 ? count + "명 게임 · 기본(추천) 구성" : string.Empty);
+            popup.Show("이번 판 직업", count > 0 ? count + "명 게임" : string.Empty);
             if (session == null || count == 0)
             {
                 popup.ShowMessage("게임이 시작되면 볼 수 있습니다.");
                 return;
             }
             popup.ShowMessage("불러오는 중…");
-            session.LoadRoleSetupOptions(options =>
+            LoadRoomRoleSetup(setup => session.LoadRoleSetupOptions(options =>
             {
                 if (this == null || !popup.gameObject.activeSelf)
                 {
                     return; // 닫았거나 씬이 바뀌었다
                 }
-                List<RoleCount> lineup = RoleInfoText.Lineup(options, count);
+                List<RoleCount> lineup = RoleInfoText.Lineup(options, setup, count);
+                popup.Show("이번 판 직업", RoleInfoText.LineupSubtitle(setup, count)); // 응답이 두 번 와도(다시 누름) 줄이 겹치지 않는다
                 if (options == null || lineup.Count == 0)
                 {
                     popup.ShowMessage(options == null ? "직업 정보를 불러오지 못했습니다." : count + "명 구성 정보가 없습니다.");
                     return;
                 }
-                popup.ShowMessage(string.Empty);
                 foreach (RoleCount line in lineup)
                 {
-                    popup.AddRow(line.Role.name + " " + line.Count + "명", RoleInfoText.FactionName(line.Role.faction),
+                    string heading = line.Count > 0 ? line.Role.name + " " + line.Count + "명" : line.Role.name; // 랜덤은 인원이 아직 없다
+                    popup.AddRow(heading, RoleInfoText.FactionName(line.Role.faction),
                         FactionColor(line.Role.faction), RoleInfoText.Description(line.Role.code));
                 }
+            }));
+        }
+
+        /// <summary>
+        /// 방의 직업 배정 설정을 넘긴다 (지도 버튼). 게임 중에는 바뀌지 않으므로 한 번 받으면 다시 묻지 않는다.
+        /// 방이 없거나(테스트 씬) 받지 못했으면 null.
+        /// </summary>
+        private void LoadRoomRoleSetup(System.Action<RoleSetupDto> onLoaded)
+        {
+            if (roomRoleSetup != null || !RoomSession.HasRoom)
+            {
+                onLoaded(roomRoleSetup);
+                return;
+            }
+            RoomApi.GetRoom(RoomSession.RoomId, r =>
+            {
+                if (this == null)
+                {
+                    return;
+                }
+                if (r.success && r.data != null)
+                {
+                    roomRoleSetup = r.data.roleSetup;
+                }
+                onLoaded(roomRoleSetup);
             });
         }
 
