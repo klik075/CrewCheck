@@ -46,6 +46,13 @@ namespace WhoisntCitizen.Game
             return code != null && code.StartsWith("PIRATE_");
         }
 
+        public static bool IsNeutral(RoleSetupOptionsDto options, string code)
+        {
+            RoleDto role = FindRole(options, code);
+            if (role != null) return role.faction == Factions.Neutral;
+            return code != null && code.StartsWith("NEUTRAL_");
+        }
+
         // ---------------------------------------------------------------- 구성 조회
 
         /// <summary>인원수별 추천 구성 (복사본). 없는 인원수면 빈 목록.</summary>

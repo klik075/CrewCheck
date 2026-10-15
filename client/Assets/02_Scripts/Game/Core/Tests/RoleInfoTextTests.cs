@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 
 namespace WhoisntCitizen.Game.Tests
@@ -48,6 +49,80 @@ namespace WhoisntCitizen.Game.Tests
 
             Assert.AreEqual("PIRATE_COOK", lineup[lineup.Count - 1].Role.code);
             Assert.AreEqual(1, lineup[lineup.Count - 1].Count);
+        }
+
+        [Test]
+        public void 커스텀_구성이면_넣어_둔_중립_직업도_나온다()
+        {
+            RoleSetupOptionsDto options = Options();
+            options.roles.Add(new RoleDto { code = "NEUTRAL_KRAKEN", name = "크라켄", faction = Factions.Neutral });
+            var setup = new RoleSetupDto { mode = RoleSetupModes.Custom };
+            setup.customCompositions.Add(new RoleCompositionDto
+            {
+                playerCount = 6,
+                roles = new List<string> { RoleCodes.PirateRaider, RoleCodes.CrewCaptain, RoleCodes.CrewDoctor, "NEUTRAL_KRAKEN", RoleCodes.CrewSailor, RoleCodes.CrewSailor }
+            });
+
+            List<RoleCount> lineup = RoleInfoText.Lineup(options, setup, 6);
+
+            CollectionAssert.AreEqual(new[] { "해적", "선장", "선의", "선원", "크라켄" }, lineup.Select(l => l.Role.name).ToArray());
+            RoleCount kraken = lineup.Single(l => l.Role.code == "NEUTRAL_KRAKEN");
+            Assert.AreEqual(1, kraken.Count);
+            Assert.AreEqual(Factions.Neutral, kraken.Role.faction);
+            Assert.AreEqual(0, RoleInfoText.Lineup(options, setup, 7).Count, "편집하지 않은 인원수는 추천 구성 (7인 추천이 없어 빈 목록)");
+        }
+
+        [Test]
+        public void 랜덤_구성이면_나올_수_있는_직업을_인원_없이_넣는다()
+        {
+            RoleSetupOptionsDto options = Options();
+            var four = new RoleCompositionDto { playerCount = 4 };
+            four.roles.AddRange(new[] { RoleCodes.PirateRaider, RoleCodes.CrewCaptain, RoleCodes.CrewDoctor, RoleCodes.CrewSailor });
+            options.recommended.Add(four);
+            var setup = new RoleSetupDto { mode = RoleSetupModes.Random };
+            setup.randomCandidates.AddRange(new[] { RoleCodes.PirateParrot, RoleCodes.CrewCaptain });
+
+            // 6인: 해적 진영 2자리라 앵무새도 나올 수 있고, 선원 진영 4자리에 후보가 선장 하나뿐이라 남는 자리는 선원
+            List<RoleCount> six = RoleInfoText.Lineup(options, setup, 6);
+            CollectionAssert.AreEqual(new[] { "해적", "앵무새", "선장", "선원" }, six.Select(l => l.Role.name).ToArray());
+            Assert.IsTrue(six.All(l => l.Count == 0));
+
+            // 4인: 해적 진영이 1자리(해적)뿐이라 앵무새는 나오지 않는다
+            List<RoleCount> fourLineup = RoleInfoText.Lineup(options, setup, 4);
+            CollectionAssert.AreEqual(new[] { "해적", "선장", "선원" }, fourLineup.Select(l => l.Role.name).ToArray());
+        }
+
+        [Test]
+        public void 랜덤_구성의_중립은_6인_이상에서만_나올_수_있다()
+        {
+            RoleSetupOptionsDto options = Options();
+            options.roles.Add(new RoleDto { code = "NEUTRAL_KRAKEN", name = "크라켄", faction = Factions.Neutral });
+            options.roles.Add(new RoleDto { code = "NEUTRAL_SIREN", name = "세이렌", faction = Factions.Neutral });
+            var five = new RoleCompositionDto { playerCount = 5 };
+            five.roles.AddRange(new[] { RoleCodes.PirateRaider, RoleCodes.CrewCaptain, RoleCodes.CrewDoctor, RoleCodes.CrewSailor, RoleCodes.CrewSailor });
+            options.recommended.Add(five);
+            var setup = new RoleSetupDto { mode = RoleSetupModes.Random };
+            setup.randomCandidates.AddRange(new[] { RoleCodes.CrewCaptain, "NEUTRAL_KRAKEN", "NEUTRAL_SIREN" });
+
+            // 6인: 선원 진영 4자리. 중립은 둘 다 후보지만 한 판에 1명까지라 선장 + 중립 1 = 2자리, 남는 자리는 선원
+            CollectionAssert.AreEqual(new[] { "해적", "선장", "선원", "크라켄", "세이렌" },
+                RoleInfoText.Lineup(options, setup, 6).Select(l => l.Role.name).ToArray());
+
+            // 5인: 중립은 나오지 않는다
+            CollectionAssert.AreEqual(new[] { "해적", "선장", "선원" },
+                RoleInfoText.Lineup(options, setup, 5).Select(l => l.Role.name).ToArray());
+        }
+
+        [Test]
+        public void 부제는_이번_판의_배정_방식()
+        {
+            var custom = new RoleSetupDto { mode = RoleSetupModes.Custom };
+            custom.customCompositions.Add(new RoleCompositionDto { playerCount = 6 });
+
+            Assert.AreEqual("6명 게임 · 커스텀 구성", RoleInfoText.LineupSubtitle(custom, 6));
+            Assert.AreEqual("7명 게임 · 추천 구성", RoleInfoText.LineupSubtitle(custom, 7)); // 편집하지 않은 인원수
+            Assert.AreEqual("6명 게임 · 추천 구성", RoleInfoText.LineupSubtitle(null, 6));  // 방 설정을 모름
+            StringAssert.StartsWith("6명 게임 · 랜덤 구성", RoleInfoText.LineupSubtitle(new RoleSetupDto { mode = RoleSetupModes.Random }, 6));
         }
 
         [Test]
