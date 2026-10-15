@@ -9,7 +9,7 @@ import java.util.Optional;
  *
  * @param mode               배정 방식
  * @param customCompositions CUSTOM에서 쓰는 인원수별 구성. 없는 인원수는 추천 구성을 쓴다.
- * @param randomCandidates   RANDOM에서 뽑을 특수 직업 후보. 해적(PIRATE_RAIDER)과 선원(CREW_SAILOR)은 항상 후보라 넣지 않는다.
+ * @param randomCandidates   RANDOM에서 뽑을 특수 직업 후보(제3 세력 포함). 해적(PIRATE_RAIDER)과 선원(CREW_SAILOR)은 항상 후보라 넣지 않는다.
  *                           요청에서 null이면 모든 특수 직업으로 본다.
  */
 public record RoleSetup(RoleSetupMode mode, List<RoleComposition> customCompositions, List<String> randomCandidates) {

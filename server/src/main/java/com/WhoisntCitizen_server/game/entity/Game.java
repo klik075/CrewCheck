@@ -32,7 +32,7 @@ public class Game {
     private Instant phaseEndsAt;
 
     private final Map<Long, NightAction> nightActions = new LinkedHashMap<>(); // actorId -> 최종 제출 행동
-    // 아래 PACKAGE getter 4개는 저장(GameSnapshotMapper)용이다. 같은 패키지 밖(서비스 등)에서는 보이지 않는다.
+    // 아래 PACKAGE getter들은 저장(GameSnapshotMapper)용이다. 같은 패키지 밖(서비스 등)에서는 보이지 않는다.
     @Getter(AccessLevel.PACKAGE)
     private final Set<Long> lockedActors = new HashSet<>(); // 이번 밤 행동이 확정되어 바꿀 수 없는 플레이어 (접선한 앵무새)
     @Getter(AccessLevel.PACKAGE)
@@ -42,6 +42,8 @@ public class Game {
     private final Set<Long> confirmedVoters = new HashSet<>(); // 이번 투표에서 "투표 완료"를 누른 플레이어 (표가 없으면 기권)
     @Getter(AccessLevel.PACKAGE)
     private final Set<Long> daySkippers = new HashSet<>(); // 이번 낮 토론을 넘긴 플레이어. 살아 있는 전원이 넘기면 바로 투표로 넘어간다
+    @Getter(AccessLevel.PACKAGE)
+    private final Set<Long> dayExtenders = new HashSet<>(); // 이번 낮 토론 시간을 늘린 플레이어. 낮마다 한 사람 한 번 (넘기기와 따로 센다)
     @Getter(AccessLevel.PACKAGE)
     private final Set<Long> voteBanned = new HashSet<>(); // 요리사 때문에 오늘 투표를 못 하는 플레이어. 밤 판정 때 정하고 다음 밤에 지운다
 
@@ -87,7 +89,7 @@ public class Game {
     void restoreState(GamePhase phase, int day, long phaseVersion, Instant phaseEndsAt,
                       List<NightAction> nightActions, Collection<Long> lockedActors, Collection<Long> skippedActors,
                       Map<Long, Long> votes, Collection<Long> confirmedVoters, Collection<Long> daySkippers,
-                      Collection<Long> voteBanned,
+                      Collection<Long> dayExtenders, Collection<Long> voteBanned,
                       int lastDeathDay, NightResult lastNightResult, ExecutionResult lastExecutionResult,
                       Winner winner, List<Long> winnerIds, GameEndReason endReason) {
         this.phase = phase;
@@ -106,6 +108,8 @@ public class Game {
         this.confirmedVoters.addAll(confirmedVoters);
         this.daySkippers.clear();
         this.daySkippers.addAll(daySkippers);
+        this.dayExtenders.clear();
+        this.dayExtenders.addAll(dayExtenders);
         this.voteBanned.clear();
         this.voteBanned.addAll(voteBanned);
         this.lastDeathDay = lastDeathDay;
@@ -131,6 +135,7 @@ public class Game {
         }
         if (next == GamePhase.DAY) {
             daySkippers.clear();
+            dayExtenders.clear();
         }
         if (next == GamePhase.VOTE) {
             votes.clear();
@@ -516,6 +521,38 @@ public class Game {
     /** 살아 있는 플레이어가 모두 이번 낮 토론을 넘겼는지 */
     public boolean allDaySkipped() {
         return phase == GamePhase.DAY && aliveCount() > 0 && daySkipCount() >= aliveCount();
+    }
+
+    // ---------- 낮 토론 시간 연장 ----------
+
+    /**
+     * 이번 낮 토론의 마감을 seconds초 늦춘다. 살아 있는 사람마다 낮에 한 번이고, 이미 늘렸으면 아무것도 하지 않는다.
+     * 넘기기와는 따로 센다(넘긴 사람도 늘릴 수 있다).
+     * 페이즈가 바뀐 것이 아니므로 phaseVersion은 올리지 않는다. 클라이언트는 phaseVersion이 바뀌면 화면을 전환하고,
+     * 같은 버전의 타이머를 늘어난 시각으로 다시 잡는 일은 GameFlowService가 한다.
+     *
+     * @return 이번에 새로 늘렸으면 true
+     */
+    public boolean extendDay(Long playerId, int seconds) {
+        requirePhase(GamePhase.DAY);
+        getAlivePlayer(playerId, "연장하는 플레이어");
+        if (!dayExtenders.add(playerId)) {
+            return false;
+        }
+        phaseEndsAt = phaseEndsAt.plusSeconds(seconds);
+        return true;
+    }
+
+    /** 이 플레이어가 이번 낮 토론 시간을 늘렸는지 */
+    public boolean hasExtendedDay(Long playerId) {
+        return phase == GamePhase.DAY && dayExtenders.contains(playerId);
+    }
+
+    /** 이번 낮 토론 시간을 늘린 생존자 수 */
+    public long dayExtendCount() {
+        return players.values().stream()
+                .filter(p -> p.isAlive() && dayExtenders.contains(p.getPlayerId()))
+                .count();
     }
 
     // ---------- 조회/헬퍼 ----------

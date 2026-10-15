@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.game.controller;
 
+import com.WhoisntCitizen_server.game.dto.DayExtendResponse;
 import com.WhoisntCitizen_server.game.dto.DaySkipResponse;
 import com.WhoisntCitizen_server.game.dto.GameResultResponse;
 import com.WhoisntCitizen_server.game.dto.GameStateResponse;
@@ -55,6 +56,17 @@ public class GameController {
     public DaySkipResponse skipDay(@PathVariable String gameId,
                                    @AuthenticationPrincipal Jwt jwt) {
         return gameService.skipDay(gameId, currentUser.userId(jwt));
+    }
+
+    /**
+     * 5. 낮 토론 시간 연장 (DAY 페이즈에서만, 살아 있는 사람만). 요청 본문 없음.
+     * 낮마다 한 사람 한 번 마감을 mafia.phase.day-extend-seconds초 늦춘다. 다시 보내면 시간은 그대로(addedSeconds=0).
+     * phaseVersion은 바뀌지 않는다
+     */
+    @PostMapping("/{gameId}/day/extend")
+    public DayExtendResponse extendDay(@PathVariable String gameId,
+                                       @AuthenticationPrincipal Jwt jwt) {
+        return gameService.extendDay(gameId, currentUser.userId(jwt));
     }
 
     /** 8·9. 승리 결과 (종료 전이면 ended=false) */

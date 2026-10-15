@@ -18,6 +18,8 @@ public record GamePhaseProperties(
         // 연결 끊김 검사 주기
         @DefaultValue("5") int inactiveCheckSeconds,
         // 이 일수 동안 연속으로 아무도 죽지 않으면 그날 투표 결과 직후 게임을 취소한다. 0 이하면 검사하지 않음
-        @DefaultValue("10") int maxDaysWithoutDeath
+        @DefaultValue("10") int maxDaysWithoutDeath,
+        // 낮 토론 시간 연장 한 번에 늘어나는 시간. 살아 있는 사람마다 낮에 한 번 늘릴 수 있다
+        @DefaultValue("10") int dayExtendSeconds
 ) {
 }
