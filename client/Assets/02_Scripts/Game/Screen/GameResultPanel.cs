@@ -134,13 +134,14 @@ namespace WhoisntCitizen.Game
             if (backLabel != null && backLabelText != null) backLabel.text = backLabelText;
         }
 
-        /// <summary>버튼 라벨에 남은 초를 붙인다. 예) "대기실로 (7)". 초가 바뀔 때만 갱신.</summary>
+        /// <summary>버튼 라벨 아래 줄에 남은 초를 작게 붙인다. 예) "대기실로" + "(7초 뒤 자동 복귀)". 초가 바뀔 때만 갱신.</summary>
         private void RefreshCountdownLabel()
         {
             int seconds = Mathf.CeilToInt(Mathf.Max(0f, remaining));
             if (seconds == shownSeconds || backLabel == null) return;
             shownSeconds = seconds;
-            backLabel.text = backLabelText + "\n(" + seconds + "초뒤 자동 복귀)";
+            backLabel.richText = true;
+            backLabel.text = backLabelText + "\n<size=70%>(" + seconds + "초 뒤 자동 복귀)</size>"; // 버튼 이름보다 작게
         }
 
         /// <summary>

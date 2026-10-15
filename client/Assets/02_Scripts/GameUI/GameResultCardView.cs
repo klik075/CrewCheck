@@ -81,7 +81,8 @@ namespace WhoisntCitizen.GameUI
                 if (label != null)
                 {
                     label.color = new Color(1f, .88f, .62f);
-                    label.fontSizeMax = 28f; label.margin = new Vector4(14f, 8f, 14f, 8f);
+                    // Inside the art's bevel (about 27 high at top and bottom), so the two lines sit on the flat face
+                    label.fontSizeMin = 14f; label.fontSizeMax = 24f; label.margin = new Vector4(28f, 18f, 28f, 18f);
                 }
             }
             header.gameObject.SetActive(false); details.gameObject.SetActive(false);
