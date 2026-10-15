@@ -33,6 +33,14 @@ public class User {
 	private int playCount;
 	private int winCount;
 
+	// 아바타 프리셋 번호 (0 ~ UserDto.PROFILE_IMAGE_COUNT-1). 이미지 파일이 아니라 클라이언트 프리셋의 번호만 저장한다.
+	@Builder.Default
+	private int profileImageId = 0;
+
+	public void updateProfileImage(int profileImageId) {
+		this.profileImageId = profileImageId;
+	}
+
 	public void updateScore(int level, int gold) {
 		this.level = level;
 		this.gold = gold;
