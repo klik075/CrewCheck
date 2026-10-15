@@ -1,10 +1,4 @@
 using System;
-using System.Collections.Concurrent;
-using System.IO;
-using System.Net.WebSockets;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using UnityEngine;
 using WhoisntCitizen.Network.Realtime;
 
@@ -14,8 +8,9 @@ namespace WhoisntCitizen.Network
     /// 서버 WebSocket(/ws/v1)과의 연결 하나를 맡는다. 게임 전체에서 하나만 있고 씬이 바뀌어도 유지된다.
     ///
     /// 하는 일
-    ///  - 연결: ClientWebSocket + Authorization: Bearer 헤더. 끊기면 ReconnectBackoff(1→2→4…30초)로 다시 연결.
-    ///  - 수신: 백그라운드 스레드에서 받은 텍스트를 큐에 넣고, Update(메인 스레드)에서 꺼내 해석·처리한다.
+    ///  - 연결: 실제 소켓은 IRealtimeTransport(연결 한 번에 객체 하나)가 맡는다. 끊기면 ReconnectBackoff(1→2→4…30초)로 다시 연결.
+    ///          데스크톱·모바일·에디터는 ClientWebSocketTransport(Authorization 헤더). CreateTransport() 한곳에서 고른다.
+    ///  - 수신: transport가 쌓아 둔 사건(Opened/Message/Closed)을 Update(메인 스레드)에서 꺼내 해석·처리한다.
     ///          → 이벤트를 받는 화면 코드는 Unity API를 마음껏 써도 된다.
     ///  - ping: 서버가 connected를 보낸 뒤 10초마다. 서버는 30초 동안 조용하면 끊는다.
     ///  - 상태: RealtimeConnectionTracker에 사건을 알리고, 돌려받은 Subscribe/Unsubscribe를 보낸다.
@@ -37,9 +32,6 @@ namespace WhoisntCitizen.Network
 
         /// <summary>ping·pong까지 Console에 찍는다. 평소엔 10초마다 찍혀 시끄러우니 끈다.</summary>
         public static bool LogHeartbeat = false;
-
-        /// <summary>서버 메시지 하나의 최대 크기. 서버 메시지는 수십 바이트라 넉넉하다. 넘으면 이상한 연결로 보고 끊는다.</summary>
-        private const int MaxIncomingBytes = 64 * 1024;
 
         /// <summary>
         /// 이 시간(초) 동안 서버에서 아무것도 안 오면 연결이 조용히 죽은 것으로 보고 끊는다.
@@ -142,30 +134,16 @@ namespace WhoisntCitizen.Network
         // ================================================================ 내부 상태 (메인 스레드 전용)
 
         private bool wantConnected;
-        private int connectionSeq;          // 연결 시도마다 1씩. 이전 소켓에서 늦게 온 사건을 걸러 낸다.
-        private ClientWebSocket socket;     // 현재 소켓. 없으면 null.
-        private CancellationTokenSource socketCts;
-        private SemaphoreSlim sendLock;     // ClientWebSocket은 동시에 SendAsync를 하나만 허용한다.
-        private bool socketOpen;            // 핸드셰이크 성공 후 true
+        /// <summary>
+        /// 지금 연결을 맡은 transport. 없으면 null. 연결을 시도할 때마다 새로 만들고, 끝나면(Closed·Close·Abort) 버린다.
+        /// 버린 transport의 늦은 사건은 그 객체 안에 남아 아무도 꺼내지 않으므로 새 연결에 섞이지 않는다.
+        /// </summary>
+        private IRealtimeTransport transport;
+        private bool socketOpen;            // Opened를 받은 뒤 true
         private double nextConnectAt;       // 이 시각(realtime) 이후 다음 연결 시도
         private double nextPingAt;
         private double lastReceivedAt;
         private double nextResubscribeAt;   // SERVER_ERROR 뒤 구독 재시도 시각. 0이면 예약 없음.
-
-        // 백그라운드 스레드 → 메인 스레드
-        private readonly ConcurrentQueue<SocketEvent> inbox = new ConcurrentQueue<SocketEvent>();
-
-        private enum SocketEventKind { Opened, Message, Closed }
-
-        private sealed class SocketEvent
-        {
-            public SocketEventKind Kind;
-            public int Seq;
-            public string Text;          // Message
-            public int? CloseCode;       // Closed: 서버가 보낸 종료 코드(4401, 4408 등). 네트워크 오류면 null.
-            public string Reason;        // Closed: 종료 이유 또는 예외 메시지
-            public bool Unauthorized;    // Closed: 핸드셰이크에서 HTTP 401을 받았다
-        }
 
         private static double Now => Time.realtimeSinceStartupAsDouble;
 
@@ -189,7 +167,7 @@ namespace WhoisntCitizen.Network
 
             double now = Now;
 
-            if (wantConnected && socket == null && tracker.State == RealtimeState.Disconnected && now >= nextConnectAt)
+            if (wantConnected && transport == null && tracker.State == RealtimeState.Disconnected && now >= nextConnectAt)
             {
                 StartConnect();
             }
@@ -209,7 +187,7 @@ namespace WhoisntCitizen.Network
                 if (now - lastReceivedAt > ReceiveTimeoutSeconds)
                 {
                     Log($"서버 응답이 {ReceiveTimeoutSeconds:0}초 동안 없어 연결을 다시 맺습니다.");
-                    AbortSocket();
+                    AbortTransport();
                     HandleClosed(null, "receive timeout");
                 }
                 else if (now >= nextPingAt)
@@ -228,7 +206,7 @@ namespace WhoisntCitizen.Network
             }
             tracker.StateChanged -= OnTrackerStateChanged;
             wantConnected = false;
-            AbortSocket();
+            AbortTransport();
         }
 
         // ================================================================ 공개 API
@@ -253,7 +231,7 @@ namespace WhoisntCitizen.Network
         public void Disconnect()
         {
             wantConnected = false;
-            CloseSocketGracefully();
+            CloseTransportGracefully();
             signalFilter.Clear();
             if (tracker.State != RealtimeState.Disconnected)
             {
@@ -306,10 +284,14 @@ namespace WhoisntCitizen.Network
                 return;
             }
 
-            Uri uri;
+            string url;
             try
             {
-                uri = new Uri(RealtimeProtocol.BuildUrl(ApiConfig.BaseUrl));
+                url = RealtimeProtocol.BuildUrl(ApiConfig.BaseUrl);
+                if (!Uri.TryCreate(url, UriKind.Absolute, out _))
+                {
+                    throw new ArgumentException("주소 형식이 아닙니다: " + url);
+                }
             }
             catch (Exception e)
             {
@@ -318,123 +300,46 @@ namespace WhoisntCitizen.Network
                 return;
             }
 
-            int seq = ++connectionSeq;
-            var ws = new ClientWebSocket();
-            ws.Options.SetRequestHeader("Authorization", "Bearer " + token);
-            // 연결 유지는 앱 수준 ping(10초)으로 한다. 서버는 텍스트 메시지만 "살아 있음"으로 센다.
-            ws.Options.KeepAliveInterval = TimeSpan.Zero;
-
-            socket = ws;
-            socketCts = new CancellationTokenSource();
-            sendLock = new SemaphoreSlim(1, 1);
+            transport = CreateTransport();
             socketOpen = false;
 
             tracker.OnConnecting();
-            Log($"연결 시도: {uri} (재시도 {backoff.Attempt}회째)");
+            Log($"연결 시도: {RealtimeProtocol.RedactToken(url)} (재시도 {backoff.Attempt}회째)");
 
-            CancellationToken ct = socketCts.Token;
             int connectTimeoutMs = Mathf.Max(1, ApiConfig.TimeoutSeconds) * 1000;
-            Task.Run(() => RunSocketAsync(ws, uri, seq, connectTimeoutMs, ct));
+            transport.Connect(url, token, connectTimeoutMs); // 바로 돌아온다. 결과는 Opened 또는 Closed 사건으로 온다
         }
 
-        /// <summary>백그라운드 스레드. 연결 → 수신 반복 → 끝나면 Closed 한 번. Unity API를 쓰지 않는다.</summary>
-        private async Task RunSocketAsync(ClientWebSocket ws, Uri uri, int seq, int connectTimeoutMs, CancellationToken ct)
+        /// <summary>
+        /// 이번 연결에 쓸 transport를 만든다. 플랫폼별 구현을 고르는 곳은 여기 한곳이다.
+        /// (W-3에서 WebGL 빌드는 BrowserWebSocketTransport를 고르게 된다)
+        /// </summary>
+        private static IRealtimeTransport CreateTransport()
         {
-            int? closeCode = null;
-            string reason = null;
-            bool opened = false;
-            bool unauthorized = false;
-            try
-            {
-                using (var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
-                {
-                    connectCts.CancelAfter(connectTimeoutMs);
-                    await ws.ConnectAsync(uri, connectCts.Token).ConfigureAwait(false);
-                }
-                opened = true;
-                inbox.Enqueue(new SocketEvent { Kind = SocketEventKind.Opened, Seq = seq });
-
-                var buffer = new byte[4096];
-                using (var message = new MemoryStream())
-                {
-                    while (!ct.IsCancellationRequested && ws.State == WebSocketState.Open)
-                    {
-                        WebSocketReceiveResult result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct).ConfigureAwait(false);
-
-                        if (result.MessageType == WebSocketMessageType.Close)
-                        {
-                            closeCode = (int?)result.CloseStatus;
-                            reason = result.CloseStatusDescription;
-                            break;
-                        }
-
-                        message.Write(buffer, 0, result.Count);
-                        if (message.Length > MaxIncomingBytes)
-                        {
-                            reason = "message too large";
-                            break;
-                        }
-                        if (!result.EndOfMessage)
-                        {
-                            continue;
-                        }
-
-                        if (result.MessageType == WebSocketMessageType.Text)
-                        {
-                            string text = Encoding.UTF8.GetString(message.GetBuffer(), 0, (int)message.Length);
-                            inbox.Enqueue(new SocketEvent { Kind = SocketEventKind.Message, Seq = seq, Text = text });
-                        }
-                        message.SetLength(0);
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                reason = ct.IsCancellationRequested ? "cancelled" : "connect timeout";
-            }
-            catch (Exception e)
-            {
-                reason = e.GetBaseException().Message;
-                // 핸드셰이크 거절(401)은 상태 코드가 든 예외 메시지로만 알 수 있다.
-                unauthorized = !opened
-                    && (RealtimeFailurePolicy.IsUnauthorizedHandshake(e.Message)
-                        || RealtimeFailurePolicy.IsUnauthorizedHandshake(reason));
-            }
-            finally
-            {
-                if (closeCode == null && ws.CloseStatus.HasValue)
-                {
-                    closeCode = (int)ws.CloseStatus.Value;
-                    reason = reason ?? ws.CloseStatusDescription;
-                }
-                inbox.Enqueue(new SocketEvent
-                {
-                    Kind = SocketEventKind.Closed, Seq = seq, CloseCode = closeCode, Reason = reason, Unauthorized = unauthorized
-                });
-                ws.Dispose();
-            }
+            return new ClientWebSocketTransport();
         }
 
         // ================================================================ 메인 스레드 처리
 
+        /// <summary>
+        /// 지금 transport에 쌓인 사건을 모두 꺼내 처리한다.
+        /// 처리 도중(이벤트를 받은 화면이 Disconnect 등을 불러) transport가 바뀌거나 버려지면 그 자리에서 멈춘다.
+        /// </summary>
         private void DrainInbox()
         {
-            while (inbox.TryDequeue(out SocketEvent e))
+            IRealtimeTransport current = transport;
+            while (current != null && transport == current && current.TryDequeue(out RealtimeTransportEvent e))
             {
-                if (e.Seq != connectionSeq)
-                {
-                    continue; // 이미 버린 소켓에서 늦게 온 사건
-                }
                 switch (e.Kind)
                 {
-                    case SocketEventKind.Opened:
+                    case RealtimeTransportEventKind.Opened:
                         HandleOpened();
                         break;
-                    case SocketEventKind.Message:
+                    case RealtimeTransportEventKind.Message:
                         HandleMessage(e.Text);
                         break;
-                    case SocketEventKind.Closed:
-                        ReleaseSocket();
+                    case RealtimeTransportEventKind.Closed:
+                        ReleaseTransport();
                         HandleClosed(e.CloseCode, e.Reason, e.Unauthorized);
                         break;
                 }
@@ -683,10 +588,13 @@ namespace WhoisntCitizen.Network
 
         // ================================================================ 보내기
 
-        /// <summary>열린 소켓으로 텍스트 하나를 보낸다. 실패하면 수신 루프가 끊김을 알려 주므로 여기선 기록만 한다.</summary>
+        /// <summary>
+        /// 열린 연결로 텍스트 하나를 보낸다. 기다리지 않는다. 보내는 순서는 부른 순서와 같다(transport 약속).
+        /// 실패하면 transport가 Closed 사건으로 알려 주므로 여기선 따로 처리하지 않는다.
+        /// </summary>
         private void Send(string text, bool heartbeat = false)
         {
-            if (!socketOpen || socket == null)
+            if (!socketOpen || transport == null)
             {
                 return;
             }
@@ -694,101 +602,31 @@ namespace WhoisntCitizen.Network
             {
                 Log("ping");
             }
-
-            ClientWebSocket ws = socket;
-            SemaphoreSlim gate = sendLock;
-            CancellationToken ct = socketCts.Token;
-            byte[] bytes = Encoding.UTF8.GetBytes(text);
-
-            Task.Run(async () =>
-            {
-                bool entered = false;
-                try
-                {
-                    await gate.WaitAsync(ct).ConfigureAwait(false);
-                    entered = true;
-                    if (ws.State == WebSocketState.Open)
-                    {
-                        await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct).ConfigureAwait(false);
-                    }
-                }
-                catch (Exception)
-                {
-                    // 소켓이 닫히는 중이면 SendAsync가 실패한다. 끊김은 수신 루프의 Closed로 처리된다.
-                }
-                finally
-                {
-                    if (entered)
-                    {
-                        try { gate.Release(); } catch (ObjectDisposedException) { }
-                    }
-                }
-            });
+            transport.Send(text);
         }
 
         // ================================================================ 정리
 
-        /// <summary>정상 종료(1000)를 보내고 소켓을 놓는다. 이후 그 소켓의 사건은 무시된다.</summary>
-        private void CloseSocketGracefully()
+        /// <summary>정상 종료(1000)를 보내고 transport를 놓는다. 이후 그 transport의 사건은 꺼내지 않는다.</summary>
+        private void CloseTransportGracefully()
         {
-            ClientWebSocket ws = socket;
-            CancellationTokenSource cts = socketCts;
-            bool wasOpen = socketOpen;
-            ReleaseSocket();
-            connectionSeq++; // 남은 사건 무시
-
-            if (ws == null)
-            {
-                return;
-            }
-            if (!wasOpen)
-            {
-                SafeCancel(cts);
-                return;
-            }
-            Task.Run(async () =>
-            {
-                try
-                {
-                    using (var timeout = new CancellationTokenSource(2000))
-                    {
-                        await ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "client disconnect", timeout.Token).ConfigureAwait(false);
-                    }
-                }
-                catch (Exception)
-                {
-                    // 이미 끊겼으면 상관없다.
-                }
-                finally
-                {
-                    SafeCancel(cts); // 수신 루프를 끝낸다 → finally에서 Dispose
-                }
-            });
+            IRealtimeTransport t = transport;
+            ReleaseTransport();
+            t?.Close();
         }
 
         /// <summary>인사 없이 바로 끊는다(앱 종료, 응답 없음).</summary>
-        private void AbortSocket()
+        private void AbortTransport()
         {
-            ClientWebSocket ws = socket;
-            CancellationTokenSource cts = socketCts;
-            ReleaseSocket();
-            connectionSeq++;
-            SafeCancel(cts);
-            try { ws?.Abort(); } catch (Exception) { }
+            IRealtimeTransport t = transport;
+            ReleaseTransport();
+            t?.Abort();
         }
 
-        private void ReleaseSocket()
+        private void ReleaseTransport()
         {
-            socket = null;
-            socketCts = null;
-            sendLock = null;
+            transport = null;
             socketOpen = false;
-        }
-
-        private static void SafeCancel(CancellationTokenSource cts)
-        {
-            if (cts == null) return;
-            try { cts.Cancel(); } catch (ObjectDisposedException) { }
         }
 
         private static void Log(string message)
