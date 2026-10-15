@@ -9,6 +9,11 @@ public class AudioSaveData
 {
     public List<AudioMuteChannelData> Mutes = new();
 
+    // 볼륨 (슬라이더 값 0~1. 실제 적용은 AudioSystemManager.VolumeCurve 로 제곱해서 쓴다)
+    public float MasterVolume = AudioSystemManager.DefaultVolume;
+    public bool MasterMute = false;
+    public List<AudioVolumeChannelData> Volumes = new();
+
 
     // Mute 체크
     public bool IsMute(string channelID)
@@ -26,6 +31,24 @@ public class AudioSaveData
 
     public AudioMuteChannelData GetOrAddMuteChannel(string channelID)
         => GetMuteChannel(channelID) ?? AddMuteChannel(channelID);
+
+
+    // Volume
+    public AudioVolumeChannelData GetOrAddVolumeChannel(string channelID)
+    {
+        var data = Volumes.FirstOrDefault(e => e.ChannelID == channelID);
+        if (data != null) return data;
+        data = new AudioVolumeChannelData() { ChannelID = channelID, Volume = AudioSystemManager.DefaultVolume };
+        Volumes.Add(data);
+        return data;
+    }
+}
+
+[Serializable]
+public class AudioVolumeChannelData
+{
+    public string ChannelID;
+    [Range(0, 1)] public float Volume = AudioSystemManager.DefaultVolume;
 }
 
 [Serializable]
@@ -43,6 +66,7 @@ public class AudioMuteChannelData
         OnChangeMute?.Invoke();
         AudioSystemManager.SetDirty();
         if (AudioSystemManager.HasInstance)
-            AudioSystemManager.Instance.OnChangeMuteChannels?.Invoke();
+            AudioSystemManager.Instance.OnChangeMuteChannels?.Invoke(ChannelID);
+        AudioSystemManager.NotifyMuteChanged();
     }
 }

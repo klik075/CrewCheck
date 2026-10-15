@@ -24,8 +24,14 @@ public class AudioPlayer : MonoBehaviour
     private AudioSource audioSource;
     private Coroutine releaseRoutine;
     private Coroutine fadeRoutine;
+    private float baseVolume = 1f;      // 컨테이너/호출자가 지정한 볼륨
+    private float fadeMultiplier = 1f;  // FadeOut 진행도 (1 -> 0)
+    private AudioChannelType channel = AudioChannelType.None;
 
     public AudioSource Source { get { Init(); return audioSource; } }
+
+    /// <summary>현재 재생 중인 소리의 채널 (채널 볼륨 적용 기준)</summary>
+    public AudioChannelType Channel => channel;
 
     private void Awake()
     {
@@ -81,22 +87,27 @@ public class AudioPlayer : MonoBehaviour
         if (!PlayOnEnable || audioClipcontainer == null) return;
         if (AudioSystemManager.IsMute(audioClipcontainer.ChannelType)) return;
 
-        Play(audioClipcontainer.GetAudioClip(), loop, audioClipcontainer.Volmue);
+        Play(audioClipcontainer.GetAudioClip(), loop, audioClipcontainer.Volmue, audioClipcontainer.ChannelType);
     }
 
     /// <summary>
     /// 지정된 오디오 리소스를 재생합니다.
+    /// 최종 볼륨 = volume × 채널 볼륨(BGM/SFX) × 페이드. 마스터 볼륨은 AudioListener 에서 일괄 적용된다.
     /// </summary>
-    public void Play(AudioResource audioResource, bool loop = false, float volume = 1)
+    public void Play(AudioResource audioResource, bool loop = false, float volume = 1, AudioChannelType channel = AudioChannelType.SFX)
     {
         Init();
         if (audioResource == null) return;
 
         StopRoutines();
 
+        baseVolume = volume;
+        fadeMultiplier = 1f;
+        this.channel = channel;
+
         audioSource.loop = loop;
         audioSource.resource = audioResource;
-        audioSource.volume = volume;
+        ApplyVolume();
         audioSource.Play();
 
         if (PlayOnEnable) return;
@@ -105,6 +116,15 @@ public class AudioPlayer : MonoBehaviour
         {
             releaseRoutine = StartCoroutine(ReleaseWhenFinished());
         }
+    }
+
+    /// <summary>
+    /// 채널 볼륨이 바뀌었을 때 등, 현재 설정으로 AudioSource 볼륨을 다시 계산합니다.
+    /// </summary>
+    public void ApplyVolume()
+    {
+        if (audioSource == null) return;
+        audioSource.volume = baseVolume * AudioSystemManager.GetChannelVolumeScale(channel) * fadeMultiplier;
     }
 
     /// <summary>
@@ -147,18 +167,20 @@ public class AudioPlayer : MonoBehaviour
 
     private IEnumerator FadeOutRoutine(float duration)
     {
-        float startVolume = audioSource.volume;
+        float startMultiplier = fadeMultiplier;
         float elapsedTime = 0f;
 
         while (elapsedTime < duration)
         {
             elapsedTime += UseScaledTime ? Time.deltaTime : Time.unscaledDeltaTime;
-            audioSource.volume = Mathf.Lerp(startVolume, 0f, elapsedTime / duration);
+            fadeMultiplier = Mathf.Lerp(startMultiplier, 0f, elapsedTime / duration);
+            ApplyVolume(); // 페이드 중 슬라이더를 움직여도 반영된다
             yield return null;
         }
 
         fadeRoutine = null;
-        audioSource.volume = 0f;
+        fadeMultiplier = 0f;
+        ApplyVolume();
         Stop();
         if (!PlayOnEnable) Release();
     }
