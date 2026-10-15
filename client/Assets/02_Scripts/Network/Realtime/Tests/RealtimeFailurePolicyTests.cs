@@ -13,6 +13,12 @@ namespace WhoisntCitizen.Network.Realtime.Tests
         }
 
         [Test]
+        public void 종료코드_4409이면_재연결하지_않고_중복_로그인으로_처리한다()
+        {
+            Assert.AreEqual(CloseAction.StopDuplicateLogin, RealtimeFailurePolicy.ForClose(4409, false));
+        }
+
+        [Test]
         public void 핸드셰이크에서_401을_받으면_재연결을_멈춘다()
         {
             Assert.AreEqual(CloseAction.StopAuthExpired, RealtimeFailurePolicy.ForClose(null, true));
