@@ -98,6 +98,7 @@ namespace WhoisntCitizen.Game
         private NightReportRevealView nightReport;                       // 망루지기·주정뱅이·앵무새의 밤 보고, 차단당했을 때의 띠
         private System.Action pendingNightReport;                        // 밤 결과 컷신이 끝나(낮이 열리면) 틀 밤 보고
         private string announcedRole;
+        private bool roleVoicePending; // 새 게임의 첫 밤: 처음 받은 직업의 대사를 튼다 (재접속이면 false)
         private string announcedTeammates;
         private bool nightDrawerOpened;
         private bool dayDrawerOpened;
@@ -380,6 +381,8 @@ namespace WhoisntCitizen.Game
             {
                 ResetScreen(); // 새 게임 (또는 재접속)
                 joinedPhaseVersion = Session != null && Session.State != null ? Session.State.phaseVersion : -1;
+                // GameAudioCues.OnPhase 의 GameStart 와 같은 조건. 이어서 오는 /me(ShowMyRole)에서 대사를 튼다
+                roleVoicePending = phaseChanged.Phase == GamePhases.Night && phaseChanged.Day <= 1;
             }
             if (transition != null)
             {
@@ -474,6 +477,11 @@ namespace WhoisntCitizen.Game
             {
                 announcedRole = me.role;
                 AddSystem(GameScreenText.RoleAnnouncement(me));
+                if (roleVoicePending)
+                {
+                    roleVoicePending = false;
+                    GameAudioCues.OnRoleAssigned(me); // 처음 직업을 받음 (원숭이는 위장 직업의 대사)
+                }
             }
             GameStateDto state = Session != null ? Session.State : null;
             string teammates = ReportFormatter.TeammatesLine(state, me);
@@ -1216,7 +1224,7 @@ namespace WhoisntCitizen.Game
         private void PlayNightAbility()
         {
             GameSession session = Session;
-            if (nightRoom == null || session == null || session.Me == null || session.State == null || currentPhase != GamePhases.Night)
+            if (session == null || session.Me == null || session.State == null || currentPhase != GamePhases.Night)
             {
                 return;
             }
@@ -1229,6 +1237,14 @@ namespace WhoisntCitizen.Game
             bool firstTonight = cutInVersion != session.State.phaseVersion;
             cutInVersion = session.State.phaseVersion;
             MyRoleDto me = session.Me;
+            if (firstTonight && me.alive)
+            {
+                GameAudioCues.OnAbilityUsed(me); // 컷인처럼 그 밤 처음 고를 때만 (대상을 바꿔도 다시 안 나온다)
+            }
+            if (nightRoom == null)
+            {
+                return; // 밤 방이 없는 배치: 대사만 튼다
+            }
             string action = struck ? ActionCodes.KrakenStrike : me.actionCode;
             nightRoom.PlayAbility(NightRoomRules.DesignIdFor(me.role), action, me.roleName,
                 GameScreenText.AbilityCutInLine(action, target, session.State), firstTonight);

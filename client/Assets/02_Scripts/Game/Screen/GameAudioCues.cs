@@ -17,6 +17,11 @@ namespace WhoisntCitizen.Game
         public const string Victory = "Victory";           // BGM: 승리 (반복 X)
         public const string Defeat = "Defeat";             // BGM: 패배 (반복 X)
 
+        // 직업 대사: 06_Data/Audio/_Container/UniqueDialogue 의 컨테이너. 이름 = 직업 코드 (예: CREW_DOCTOR)
+        private const float VoiceCutSeconds = 0.15f; // 새 대사가 나오면 이전 대사를 짧게 줄이고 끊는다
+        private static AudioPlayer voice;            // 지금 나오는 직업 대사 (풀링 플레이어라 끝나면 다른 소리에 재사용될 수 있다)
+        private static UnityEngine.Audio.AudioResource voiceClip;
+
         /// <summary>페이즈가 바뀜. PreviousPhase == null 이면 처음 받은 상태(새 게임 또는 재접속).</summary>
         public static void OnPhase(GameEvent phaseChanged)
         {
@@ -72,6 +77,54 @@ namespace WhoisntCitizen.Game
                 return;
             }
             AudioSystemManager.PlayBGM(background == "Defeat" ? Defeat : Victory, loop: false);
+
+            // 원숭이는 게임 중에 위장 직업만 받으므로, 결과에서 실제 직업이 원숭이로 밝혀질 때 대사를 튼다
+            if (me != null && result != null && result.players != null)
+            {
+                foreach (PlayerResultDto p in result.players)
+                {
+                    if (p.playerId == me.playerId && p.role == RoleCodes.CrewMonkey)
+                    {
+                        PlayRoleVoice(RoleCodes.CrewMonkey);
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>새 게임에서 처음 직업을 받았을 때 (재접속 제외). 원숭이는 위장 직업의 대사가 나온다.</summary>
+        public static void OnRoleAssigned(MyRoleDto me)
+        {
+            if (me != null) PlayRoleVoice(me.role);
+        }
+
+        /// <summary>내 밤 능력이 접수됨 (그 밤 처음 고를 때만). 원숭이는 위장 직업의 대사가 나온다.</summary>
+        public static void OnAbilityUsed(MyRoleDto me)
+        {
+            if (me != null) PlayRoleVoice(me.role);
+        }
+
+        /// <summary>직업 대사를 튼다. 이전 대사가 아직 나오고 있으면 끊는다.</summary>
+        private static void PlayRoleVoice(string roleCode)
+        {
+            if (string.IsNullOrEmpty(roleCode) || !AudioSystemManager.HasInstance) return;
+            StopVoice();
+            voice = AudioSystemManager.Play(roleCode);
+            voiceClip = voice != null ? voice.Source.resource : null;
+        }
+
+        /// <summary>직업 대사를 끊는다. 플레이어가 이미 풀로 돌아가 다른 소리를 내고 있으면 건드리지 않는다.</summary>
+        public static void StopVoice()
+        {
+            AudioPlayer player = voice;
+            UnityEngine.Audio.AudioResource clip = voiceClip;
+            voice = null;
+            voiceClip = null;
+            if (player == null || clip == null || !player.isActiveAndEnabled) return;
+            if (player.Source.resource == clip && player.Source.isPlaying)
+            {
+                player.FadeOut(VoiceCutSeconds); // FadeOut 은 끝나면 풀에 반환한다 (Stop 은 반환하지 않는다)
+            }
         }
 
         /// <summary>
@@ -81,6 +134,7 @@ namespace WhoisntCitizen.Game
         public static void Stop()
         {
             if (!AudioSystemManager.HasInstance) return;
+            StopVoice();
             var current = AudioSystemManager.CurrentBGM;
             if (current != null && IsGameBgm(current.name)) AudioSystemManager.StopBGM();
         }
