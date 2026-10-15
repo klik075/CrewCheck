@@ -7,7 +7,7 @@ using WhoisntCitizen.Game;
 
 namespace WhoisntCitizen.GameUI
 {
-    /// <summary>A two-second, skippable result reveal. Reuses the players' worn skins and unscaled time.</summary>
+    /// <summary>A two-second result reveal that always plays to the end (a tap does not skip it). Reuses the players' worn skins and unscaled time.</summary>
     public sealed class GameResultSequence : MonoBehaviour
     {
         public const float Duration = 2f;
@@ -23,10 +23,10 @@ namespace WhoisntCitizen.GameUI
         private readonly List<Figure> figures = new List<Figure>();
         private readonly List<Image> particles = new List<Image>();
         private RectTransform root, stage, fx;
-        private Image curtain, surface, glow;
-        private Button skip, back;
+        private Image curtain, blocker, surface, glow;
+        private Button back;
         private CanvasGroup titleGroup, outcomeGroup, rosterGroup, backGroup;
-        private TextMeshProUGUI title, hint;
+        private TextMeshProUGUI title;
         private TMP_FontAsset font;
         private GameResultCardView cardView;
         private Color surfaceColor, accent;
@@ -61,18 +61,8 @@ namespace WhoisntCitizen.GameUI
             for (int i = 0; i < 28; i++) particles.Add(Image("Mote_" + i, fx, NightFxSprites.Dot));
 
             curtain = Image("ResultFade", root, null); Stretch(curtain.rectTransform);
-            var skipRect = NewRect("SkipResultIntro", root); Stretch(skipRect);
-            var hit = skipRect.gameObject.AddComponent<Image>(); hit.color = Color.clear;
-            skip = skipRect.gameObject.AddClickSoundButton(); skip.targetGraphic = hit;
-            skip.transition = Selectable.Transition.None; skip.onClick.AddListener(Skip);
-            var hintPlate = Image("SkipHintPlate", skipRect, null);
-            hintPlate.color = new Color(.015f, .035f, .06f, .8f);
-            hintPlate.rectTransform.anchorMin = hintPlate.rectTransform.anchorMax = new Vector2(.5f, .965f);
-            hintPlate.rectTransform.sizeDelta = new Vector2(640f, 48f);
-            hint = Label("SkipHint", skipRect, "화면을 누르면 결과 보기");
-            hint.rectTransform.anchorMin = hint.rectTransform.anchorMax = new Vector2(.5f, .965f);
-            hint.rectTransform.sizeDelta = new Vector2(600f, 40f);
-            hint.fontSize = 26f;
+            blocker = Image("ResultIntroBlocker", root, null); Stretch(blocker.rectTransform);
+            blocker.color = Color.clear; blocker.raycastTarget = true; // Blocks the result screen until the reveal ends.
             Stop();
         }
 
@@ -96,9 +86,8 @@ namespace WhoisntCitizen.GameUI
             }
             active = IsPlaying = true; elapsed = 0f;
             fx.gameObject.SetActive(true); stage.gameObject.SetActive(true);
-            curtain.gameObject.SetActive(true); skip.gameObject.SetActive(true);
-            hint.outlineWidth = .2f; hint.outlineColor = new Color32(8, 15, 25, 255);
-            skip.transform.SetAsLastSibling();
+            curtain.gameObject.SetActive(true); blocker.gameObject.SetActive(true);
+            blocker.transform.SetAsLastSibling();
             LayoutFigures(); Apply(0f);
         }
 
@@ -214,16 +203,10 @@ namespace WhoisntCitizen.GameUI
             }
         }
 
-        public void Skip()
-        {
-            if (!IsPlaying) return;
-            elapsed = Duration; Apply(elapsed); Complete();
-        }
-
         private void Complete()
         {
             IsPlaying = false;
-            curtain.gameObject.SetActive(false); skip.gameObject.SetActive(false);
+            curtain.gameObject.SetActive(false); blocker.gameObject.SetActive(false);
             if (back != null) back.interactable = true;
             Action done = completed; completed = null; done?.Invoke();
         }
@@ -241,7 +224,7 @@ namespace WhoisntCitizen.GameUI
             }
             figures.Clear();
             fx.gameObject.SetActive(false); stage.gameObject.SetActive(false);
-            curtain.gameObject.SetActive(false); skip.gameObject.SetActive(false);
+            curtain.gameObject.SetActive(false); blocker.gameObject.SetActive(false);
             Alpha(titleGroup, 1f); Alpha(outcomeGroup, 1f); Alpha(rosterGroup, 1f); Alpha(backGroup, 1f);
             if (title != null) title.rectTransform.localScale = Vector3.one;
             if (surface != null) surface.color = surfaceColor;

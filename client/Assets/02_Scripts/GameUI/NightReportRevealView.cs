@@ -3,7 +3,6 @@ using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using WhoisntCitizen.Game;
 
@@ -34,11 +33,11 @@ namespace WhoisntCitizen.GameUI
     ///   picture (its ability cut-in art) and name, in the colour of the role's side.
     /// - Parrot (ACTIONS): the watched player's bust and a line per thing they did (an icon, the bust of whom, the sentence).
     /// - Blocked (BLOCKED): a short grey band, like the siren's failed band.
-    /// About 3.5 s (the parrot's longer with more lines); the first tap shows everything, the next one closes it. After a
+    /// About 3.5 s (the parrot's longer with more lines), always to the end (a tap does not skip or close it). After a
     /// reconnect it opens with everything shown. Shows only what the server told this player (a monkey's fake result looks
     /// the same). Unscaled time.
     /// </summary>
-    public sealed class NightReportRevealView : MonoBehaviour, IPointerClickHandler
+    public sealed class NightReportRevealView : MonoBehaviour
     {
         private enum Kind { Visitors, Corpse, Actions, Band }
 
@@ -75,7 +74,6 @@ namespace WhoisntCitizen.GameUI
         private float faceScale = 1f, slotScale = 1f;
         private float rowTop;                    // the parrot's first line
         private float doneAt, holdEnd, outTime;  // everything shown; away; how long away takes
-        private int taps;
 
         private sealed class Face
         {
@@ -249,11 +247,6 @@ namespace WhoisntCitizen.GameUI
             if (gameObject.activeSelf) gameObject.SetActive(false);
         }
 
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            taps++;
-        }
-
         private void Open(Kind what, string heading, int dayNumber, string whose)
         {
             kind = what;
@@ -282,21 +275,12 @@ namespace WhoisntCitizen.GameUI
             while (waitWhile != null && waitWhile()) yield return null;
             group.blocksRaycasts = true;
             root.SetAsLastSibling(); // over the drawer, the chat and the day's cut-scene
-            taps = 0;
             float start = Time.unscaledTime - from;
-            float outAt = holdEnd;
             while (true)
             {
                 float t = Time.unscaledTime - start;
-                if (taps > 0)
-                {
-                    if (t < doneAt) start -= doneAt - t; // first tap: everything shown
-                    else if (outAt > t) outAt = t;       // after it: close
-                    taps = 0;
-                    t = Time.unscaledTime - start;
-                }
-                if (t >= outAt + outTime) break;
-                Apply(t, from, Seg(t, outAt, outAt + outTime));
+                if (t >= holdEnd + outTime) break;
+                Apply(t, from, Seg(t, holdEnd, holdEnd + outTime));
                 yield return null;
             }
             routine = null;
@@ -431,7 +415,7 @@ namespace WhoisntCitizen.GameUI
             Stretch(root);
             Image blocker = GetComponent<Image>();
             blocker.color = Color.clear;
-            blocker.raycastTarget = true; // blocks the screen while it shows; taps skip and close
+            blocker.raycastTarget = true; // blocks the screen while it shows
             group = GetComponent<CanvasGroup>();
             dim = Img("Dim", root, null, Color.clear);
             Stretch(dim.rectTransform);

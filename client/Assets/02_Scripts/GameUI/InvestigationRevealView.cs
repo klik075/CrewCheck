@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using TMPro;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using WhoisntCitizen.Game;
 
@@ -13,10 +12,10 @@ namespace WhoisntCitizen.GameUI
     /// a gold-framed parchment rises, the target's bust appears in a gold ring while a compass needle spins behind it and
     /// settles, then a stamp slams on it, red "해적" with a skull or blue "선원" with an anchor, and the line under it says
     /// it in words. The report then flies into that player's place in the roster (where the mark stays), or fades.
-    /// About 3.5 s; the first tap jumps to the stamp, the next one closes it. After a reconnect it opens stamped.
+    /// About 3.5 s, always to the end (a tap does not skip or close it). After a reconnect it opens stamped.
     /// Shows only what the server told this player (a monkey's fake result looks the same). Unscaled time.
     /// </summary>
-    public sealed class InvestigationRevealView : MonoBehaviour, IPointerClickHandler
+    public sealed class InvestigationRevealView : MonoBehaviour
     {
         private const float RiseEnd = 0.4f, StampAt = 1.3f, StampEnd = 1.45f, HoldEnd = 3.4f, OutTime = 0.45f;
 
@@ -32,7 +31,6 @@ namespace WhoisntCitizen.GameUI
         private TMP_FontAsset font;
         private Coroutine routine;
         private RectTransform flyTo;
-        private int taps;
 
         public bool IsPlaying => routine != null;
 
@@ -91,31 +89,17 @@ namespace WhoisntCitizen.GameUI
             if (gameObject.activeSelf) gameObject.SetActive(false);
         }
 
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            taps++;
-        }
-
         private IEnumerator Run(float from, Func<bool> waitWhile)
         {
             while (waitWhile != null && waitWhile()) yield return null;
             group.blocksRaycasts = true;
             root.SetAsLastSibling(); // over the drawer, the chat and the day's cut-scene
-            taps = 0;
             float start = Time.unscaledTime - from;
-            float outAt = HoldEnd;
             while (true)
             {
                 float t = Time.unscaledTime - start;
-                if (taps > 0)
-                {
-                    if (t < StampEnd) start -= StampEnd - t; // first tap: straight to the stamp
-                    else if (outAt > t) outAt = t;           // after it: close
-                    taps = 0;
-                    t = Time.unscaledTime - start;
-                }
-                if (t >= outAt + OutTime) break;
-                Apply(t, from, Seg(t, outAt, outAt + OutTime));
+                if (t >= HoldEnd + OutTime) break;
+                Apply(t, from, Seg(t, HoldEnd, HoldEnd + OutTime));
                 yield return null;
             }
             routine = null;
@@ -178,7 +162,7 @@ namespace WhoisntCitizen.GameUI
             Stretch(root);
             Image blocker = GetComponent<Image>();
             blocker.color = Color.clear;
-            blocker.raycastTarget = true; // blocks the screen while it shows; taps skip and close
+            blocker.raycastTarget = true; // blocks the screen while it shows
             group = GetComponent<CanvasGroup>();
             dim = Img("Dim", root, null, Color.clear);
             Stretch(dim.rectTransform);

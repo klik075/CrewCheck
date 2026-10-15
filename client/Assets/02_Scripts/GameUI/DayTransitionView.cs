@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using TMPro;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace WhoisntCitizen.GameUI
@@ -56,9 +55,10 @@ namespace WhoisntCitizen.GameUI
     /// - Not executed: the verdict scroll with a void seal that cracks, night.
     /// - Dragged: the night lifts, the sea parts (teal rings, two amber eyes), the kraken's picture lunges in, an ink-soaked
     ///   poster for each of the dead is pulled down into the sea, ink and bubbles at dawn (Docs: 시안 E).
-    /// Built at run time over the canvas; tapping skips to the last card. <see cref="Evaluate"/> draws any moment.
+    /// Built at run time over the canvas; it always plays to the end (a tap does not skip it). <see cref="Evaluate"/> draws
+    /// any moment.
     /// </summary>
-    public sealed class DayTransitionView : MonoBehaviour, IPointerClickHandler
+    public sealed class DayTransitionView : MonoBehaviour
     {
         private const float DesignOut = 0.5f, MinBar = 120f; // the bars opening, as drawn
         private const float ArtAspect = 576f / 812f; // DayTransition/ExecutionPlank and ExecutionSplash
@@ -130,7 +130,7 @@ namespace WhoisntCitizen.GameUI
         private bool anyVictimMine;
 
         private DayTransitionInfo info;
-        private bool released, skip;
+        private bool released;
         private Coroutine routine;
 
         // This play's timing (from the settings when it starts): the beats' real lengths, and the timing they are drawn at.
@@ -211,11 +211,6 @@ namespace WhoisntCitizen.GameUI
             if (gameObject.activeSelf) gameObject.SetActive(false);
         }
 
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            skip = true;
-        }
-
         /// <summary>Stops and draws the scene as it is t seconds after it began (a preview: drag through a scene).</summary>
         public void Show(DayTransitionInfo content, float t)
         {
@@ -288,19 +283,12 @@ namespace WhoisntCitizen.GameUI
         {
             float t = 0f, held = 0f, last = Time.unscaledTime;
             float hold = HoldAt, end = Duration;
-            skip = false;
             Evaluate(0f);
             while (t < end)
             {
                 yield return null;
                 float now = Time.unscaledTime, dt = Mathf.Min(now - last, 0.1f); // a hitch must not skip a beat
                 last = now;
-                if (skip)
-                {
-                    skip = false;
-                    if (t < hold) t = hold;
-                    released = true;
-                }
                 bool waiting = !released && held < maxHold;
                 if (t >= hold && waiting) held += dt;
                 else t += dt;
@@ -913,7 +901,7 @@ namespace WhoisntCitizen.GameUI
             Stretch(root);
             Image blocker = GetComponent<Image>();
             blocker.color = Color.clear;
-            blocker.raycastTarget = true; // blocks the screen while playing; a tap skips to the last card
+            blocker.raycastTarget = true; // blocks the screen while playing
             group = GetComponent<CanvasGroup>();
 
             stage = NewRect("Stage", root);
