@@ -64,10 +64,13 @@ public class SecurityConfig {
 						// 회원가입 / 로그인은 토큰 없이
 						.requestMatchers("/api/members/signup", "/api/members/login",
 									"/api/members/login/google", "/api/members/login/kakao").permitAll()
+						// 토큰 재발급 / 로그아웃은 body의 리프레시 토큰으로 인증한다
+						.requestMatchers("/api/auth/**").permitAll()
 						// 로비(/api/v1/rooms), 게임(/api/v1/games), 직업(/api/v1/roles) API는 로그인한 유저만
 						.requestMatchers("/api/v1/**").authenticated()
 						.anyRequest().permitAll())
 				.oauth2ResourceServer(oauth2 -> oauth2
+						// /ws/ 와 /api/auth/ 는 Authorization 헤더를 읽지 않는다 (아래 bearerTokenResolver 참고)
 						.bearerTokenResolver(bearerTokenResolver())
 						.jwt(jwt -> {}))
 				.exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
@@ -76,15 +79,24 @@ public class SecurityConfig {
 	}
 
 	/**
-	 * 요청에서 Bearer 토큰을 꺼내는 규칙. /ws/** (실시간 WebSocket 연결)에서는 꺼내지 않는다.
+	 * 요청에서 Bearer 토큰을 꺼내는 규칙. null을 돌려주면 "토큰 없음"으로 보고 검사하지 않는다.
 	 *
 	 * 기본 규칙은 permitAll 경로라도 Authorization: Bearer 헤더가 있으면 검증하고, 틀리면 HTTP 401로 거절한다.
-	 * WebSocket 연결이 HTTP 401로 거절되면 Unity·브라우저 모두 "연결 실패"로만 알아서 토큰 문제인지 모른다.
-	 * 그래서 /ws/** 는 Security가 건드리지 않고, RealtimeHandshakeInterceptor가 직접 확인해 실패하면 연결 후 4401로 닫는다.
-	 * 나머지 경로(REST)는 지금과 같다.
+	 * 아래 두 경로는 그 규칙을 빼고, 나머지 경로(REST)는 지금과 같다.
+	 *
+	 *  - /ws/      : WebSocket 연결이 HTTP 401로 거절되면 Unity·브라우저 모두 "연결 실패"로만 알아서 토큰 문제인지 모른다.
+	 *                그래서 Security가 건드리지 않고, RealtimeHandshakeInterceptor가 직접 확인해 실패하면 연결 후 4401로 닫는다.
+	 *  - /api/auth/: 토큰 재발급·로그아웃은 body의 리프레시 토큰으로 인증한다.
+	 *                만료된 액세스 토큰이 헤더에 남아 있어도 401로 막히지 않게 헤더를 읽지 않는다.
 	 */
 	private static BearerTokenResolver bearerTokenResolver() {
-		DefaultBearerTokenResolver rest = new DefaultBearerTokenResolver();
-		return request -> request.getRequestURI().startsWith("/ws/") ? null : rest.resolve(request);
+		DefaultBearerTokenResolver header = new DefaultBearerTokenResolver();
+		return request -> {
+			String uri = request.getRequestURI();
+			if (uri.startsWith("/ws/") || uri.startsWith("/api/auth/")) {
+				return null;
+			}
+			return header.resolve(request);
+		};
 	}
 }

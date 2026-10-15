@@ -36,6 +36,12 @@ public interface RealtimeNotifier {
      */
     void removeUserFromRoom(long roomId, long userId);
 
+    /**
+     * 사용자의 모든 연결을 서버 쪽에서 닫는다. 같은 계정으로 다른 곳에서 새로 로그인했을 때(closeCode 4409)처럼
+     * 이전 연결을 끊어야 할 때 쓴다. 서버가 여러 대면 그 사용자의 연결이 다른 서버에 있을 수 있어, 5단계에서 모든 서버에 전달해야 한다.
+     */
+    void disconnectUser(long userId, int closeCode, String reason);
+
     /** 그 방의 구독을 모두 푼다. 방이 삭제됐을 때. (모든 서버에 전달되는 이유는 위와 같다) */
     void removeRoom(long roomId);
 }

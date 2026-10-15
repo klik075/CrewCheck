@@ -2,6 +2,8 @@ package com.WhoisntCitizen_server.member.service;
 
 import com.WhoisntCitizen_server.global.util.JwtTokenProvider;
 import com.WhoisntCitizen_server.member.dto.MemberDto;
+import com.WhoisntCitizen_server.realtime.RealtimeNotifier;
+import com.WhoisntCitizen_server.realtime.protocol.RealtimeProtocol;
 import com.WhoisntCitizen_server.member.entity.AuthProvider;
 import com.WhoisntCitizen_server.member.entity.Member;
 import com.WhoisntCitizen_server.user.entity.User;
@@ -26,6 +28,19 @@ public class MemberService {
 	private final PasswordEncoder passwordEncoder;
 	private final JwtTokenProvider jwtTokenProvider;
 	private final UserRepository userRepository;
+	private final RefreshTokenStore refreshTokenStore;
+	private final RealtimeNotifier realtimeNotifier;
+
+	/**
+	 * 로그인할 때 리프레시 토큰을 새로 발급한다. 같은 계정의 이전 리프레시 토큰은 이 발급으로 덮어써져 무효가 되고,
+	 * 이전 기기의 실시간 연결(WebSocket)은 여기서 닫는다(4409). 클라이언트는 이 코드를 받으면 로그아웃 처리한다.
+	 * (아직 새 기기의 연결은 맺기 전이므로 새 로그인의 연결이 끊기지는 않는다)
+	 */
+	private String issueRefreshToken(Member member, User user) {
+		String refreshToken = refreshTokenStore.issue(member.getId());
+		realtimeNotifier.disconnectUser(user.getId(), RealtimeProtocol.CLOSE_DUPLICATE_LOGIN, "다른 곳에서 로그인했습니다.");
+		return refreshToken;
+	}
 
 	@Transactional
 	public MemberDto.Response signup(MemberDto.SignupRequest req) {
@@ -74,6 +89,7 @@ public class MemberService {
 				.username(member.getUsername())
 				.nickname(user.getNickname())
 				.accessToken(accessToken)
+				.refreshToken(issueRefreshToken(member, user))
 				.message("로그인에 성공했습니다.")
 				.build();
 	}
@@ -94,6 +110,7 @@ public class MemberService {
 				.username(member.getUsername())
 				.nickname(user.getNickname())
 				.accessToken(accessToken)
+				.refreshToken(issueRefreshToken(member, user))
 				.message(provider + " 로그인에 성공했습니다.")
 				.build();
 	}
@@ -133,6 +150,7 @@ public class MemberService {
 				.username(member.getUsername())
 				.nickname(user.getNickname())
 				.accessToken(accessToken)
+				.refreshToken(issueRefreshToken(member, user))
 				.message("게스트 로그인에 성공했습니다.")
 				.build();
 	}
