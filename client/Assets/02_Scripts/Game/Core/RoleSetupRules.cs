@@ -15,6 +15,12 @@ namespace WhoisntCitizen.Game
     {
         // ---------------------------------------------------------------- 직업 정보
 
+        /// <summary>랜덤 구성에 중립 직업이 나오는 최소 인원 (서버 RoleAssigner.MIN_PLAYERS_FOR_RANDOM_NEUTRAL과 같다).</summary>
+        public const int MinPlayersForRandomNeutral = 6;
+
+        /// <summary>랜덤 구성 한 판에 나오는 중립 직업의 최대 수 (서버 RoleAssigner.MAX_RANDOM_NEUTRALS와 같다).</summary>
+        public const int MaxRandomNeutrals = 1;
+
         /// <summary>해적·선원: 진영 자리를 채우는 기본 직업. 랜덤에서 항상 후보이고 중복될 수 있다.</summary>
         public static bool IsBaseRole(string code)
         {
@@ -184,6 +190,15 @@ namespace WhoisntCitizen.Game
         public static bool IsCandidate(RoleSetupDto setup, string code)
         {
             return IsBaseRole(code) || (setup?.randomCandidates != null && setup.randomCandidates.Contains(code));
+        }
+
+        /// <summary>
+        /// 랜덤 후보로 넣고 뺄 수 있는 직업인지: 서버가 선택지(options.randomCandidates)로 준 특수 직업. 해적·선원은 항상 후보라 고를 수 없다.
+        /// 중립 직업도 서버가 선택지에 넣어 주면 고를 수 있다. (중립을 선택지에서 빼는 서버면 직접 설정 전용으로 남는다)
+        /// </summary>
+        public static bool IsRandomOption(RoleSetupOptionsDto options, string code)
+        {
+            return !IsBaseRole(code) && options?.randomCandidates != null && options.randomCandidates.Contains(code);
         }
 
         /// <summary>랜덤 후보에 넣거나 뺀다. 후보 목록은 선택지(options.randomCandidates) 순서로 유지한다.</summary>

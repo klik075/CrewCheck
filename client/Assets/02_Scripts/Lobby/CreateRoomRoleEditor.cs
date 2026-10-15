@@ -144,8 +144,7 @@ namespace WhoisntCitizen.Lobby
 
         private void ChangeCandidate(string code, bool included)
         {
-            if (draft == null || saving || options.randomCandidates == null || !options.randomCandidates.Contains(code)
-                || RoleSetupRules.FindRole(options, code)?.faction == Factions.Neutral) return;
+            if (draft == null || saving || !RoleSetupRules.IsRandomOption(options, code)) return;
             RoleSetupRules.SetCandidate(draft, options, code, included);
             Render();
         }
