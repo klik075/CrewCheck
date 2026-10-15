@@ -25,6 +25,7 @@ namespace WhoisntCitizen.Lobby
 
         private readonly List<RoleRow> rows = new List<RoleRow>();
         private readonly Dictionary<string, TMP_Text> factionCounts = new Dictionary<string, TMP_Text>();
+        private bool neutralRandom; // 서버가 중립 직업도 랜덤 후보 선택지로 주는지 (주지 않으면 중립은 직접 설정 전용)
         private TMP_FontAsset font;
         private Sprite paper, frame, buttonArt, cabin;
         private DesignSpriteCatalog portraits;
@@ -320,6 +321,7 @@ namespace WhoisntCitizen.Lobby
             rows.Clear(); factionCounts.Clear();
             var seen = new HashSet<string>();
             var roles = (options.roles ?? new List<RoleDto>()).Where(r => r != null && !string.IsNullOrEmpty(r.code) && seen.Add(r.code)).ToList();
+            neutralRandom = roles.Any(r => Faction(r) == Factions.Neutral && RoleSetupRules.IsRandomOption(options, r.code));
             foreach (string faction in new[] { Factions.Crew, Factions.Pirate, Factions.Neutral })
             {
                 var group = roles.Where(r => Faction(r) == faction).ToList();
@@ -341,7 +343,7 @@ namespace WhoisntCitizen.Lobby
                 : faction == Factions.Pirate ? RoomHelmGraphic.Symbol.Crown : RoomHelmGraphic.Symbol.Waiting;
             Icon("Emblem", header.transform, 14, 11, 40, symbol, Ink);
             Text("Name", header.transform, 70, 9, 290, 46, label, 32, Ink, true);
-            if (faction == Factions.Neutral) Text("ManualOnly", header.transform, 352, 15, 268, 36, "직접 설정 전용", 22, muted);
+            if (faction == Factions.Neutral && !neutralRandom) Text("ManualOnly", header.transform, 352, 15, 268, 36, "직접 설정 전용", 22, muted);
             var count = Text("Count", header.transform, 686, 11, 148, 44, "", 29, Ink, true);
             count.alignment = TextAlignmentOptions.Right;
             factionCounts[faction] = count;
@@ -364,8 +366,9 @@ namespace WhoisntCitizen.Lobby
             Icon("Medallion", row.transform, 10, 5, 90, RoomHelmGraphic.Symbol.Medallion, Gold);
             model.Name = Text("Name", row.transform, 112, 18, 344, 48, role.name ?? role.code, 31, Ink, true);
             model.Name.richText = false;
+            bool canChoose = RoleSetupRules.IsRandomOption(options, role.code);
             string hint = role.code == RoleCodes.CrewSailor ? "남는 자리에 자동 배정"
-                : Faction(role) == Factions.Neutral ? "직접 설정 전용" : RoleSetupRules.IsBaseRole(role.code) ? "공격 가능한 기본 직업" : "";
+                : Faction(role) == Factions.Neutral && !canChoose ? "직접 설정 전용" : RoleSetupRules.IsBaseRole(role.code) ? "공격 가능한 기본 직업" : "";
             Text("Hint", row.transform, 114, 64, 338, 26, hint, 20, muted);
             // 초상화·이름 쪽(수량 버튼 왼쪽)을 누르면 직업 설명을 띄우고, 다시 누르거나 포인터가 벗어나면 닫는다.
             // 버튼을 누를 때는 뜨지 않는다. 초상화 그래픽도 클릭을 받으므로 그 위에 투명하게 덮는다. 드래그는 그대로 목록 스크롤로 간다.
@@ -384,8 +387,6 @@ namespace WhoisntCitizen.Lobby
             model.Count.alignment = TextAlignmentOptions.Center;
             var candidate = Panel("CandidateArea", row.transform, 738, 10, 100, 80, null, Color.clear);
             model.CandidateArea = candidate.gameObject.AddComponent<CanvasGroup>();
-            bool canChoose = Faction(role) != Factions.Neutral && !RoleSetupRules.IsBaseRole(role.code)
-                && options.randomCandidates != null && options.randomCandidates.Contains(role.code);
             if (canChoose)
             {
                 candidate.GetComponent<Image>().raycastTarget = true;
@@ -425,22 +426,27 @@ namespace WhoisntCitizen.Lobby
                 row.Minus.interactable = !random && RoleSetupRules.CanRemove(composition, row.Role.code);
                 row.Plus.interactable = !random && RoleSetupRules.CanAdd(composition, row.Role.code);
                 row.Amount.alpha = random || row.Role.code == RoleCodes.CrewSailor ? .48f : 1;
-                row.Whole.alpha = random && Faction(row.Role) == Factions.Neutral ? .55f : 1;
+                row.Whole.alpha = random && row.Candidate == null && Faction(row.Role) == Factions.Neutral ? .55f : 1;
                 row.CandidateArea.alpha = random ? 1 : .72f;
                 if (row.Candidate != null) row.Candidate.SetIsOnWithoutNotify(RoleSetupRules.IsCandidate(setup, row.Role.code));
             }
             int pirates = random ? RoleSetupRules.PirateSlots(options, players) : RoleSetupRules.CountPirates(options, composition);
             int neutrals = random ? 0 : composition.Count(c => RoleSetupRules.FindRole(options, c)?.faction == Factions.Neutral);
             int crew = composition.Count - pirates - neutrals;
+            // 랜덤에서 중립 후보를 체크했으면 중립은 선원 진영 자리에 섞여 나오므로 몇 명인지 게임 시작 때 정해진다
+            bool neutralDrawn = random && rows.Any(r => r.Candidate != null && Faction(r.Role) == Factions.Neutral
+                && RoleSetupRules.IsCandidate(setup, r.Role.code));
             foreach (var pair in factionCounts)
-                pair.Value.text = $"{(pair.Key == Factions.Crew ? crew : pair.Key == Factions.Pirate ? pirates : neutrals)}명";
-            summary.text = $"선원 {crew}  ·  해적 {pirates}  ·  중립 {neutrals}";
+                pair.Value.text = pair.Key == Factions.Neutral && neutralDrawn ? "무작위"
+                    : $"{(pair.Key == Factions.Crew ? crew : pair.Key == Factions.Pirate ? pirates : neutrals)}명";
+            summary.text = neutralDrawn ? $"선원·중립 {crew}  ·  해적 {pirates}" : $"선원 {crew}  ·  해적 {pirates}  ·  중립 {neutrals}";
             total.text = $"총 {composition.Count} / {players}명";
             total.color = problem == null ? Good : Bad;
             validity.Shape = problem == null ? RoomHelmGraphic.Symbol.Ready : RoomHelmGraphic.Symbol.Waiting;
             validity.color = total.color;
             notice.color = problem == null ? muted : Bad;
-            notice.text = problem ?? (random ? "직업별 수량은 게임 시작 시 결정됩니다.\n선원과 해적은 항상 후보이며, 중립은 직접 설정에서만 배정돼요."
+            notice.text = problem ?? (random ? "직업별 수량은 게임 시작 시 결정됩니다.\n선원과 해적은 항상 후보이며, "
+                    + (neutralRandom ? "체크한 중립은 선원 진영 자리에 섞여 나와요." : "중립은 직접 설정에서만 배정돼요.")
                 : "선택한 인원수의 구성입니다. 다른 인원수도 위에서 편집할 수 있어요.\n선원과 해적은 항상 랜덤 후보에 포함돼요.");
             apply.interactable = problem == null;
             applyGroup.alpha = problem == null ? 1 : .45f;

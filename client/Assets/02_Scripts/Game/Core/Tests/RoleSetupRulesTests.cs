@@ -210,6 +210,26 @@ namespace WhoisntCitizen.Game.Tests
             Assert.IsFalse(RoleSetupRules.IsCandidate(setup, P));
         }
 
+        [Test]
+        public void 서버가_선택지로_준_특수_직업만_랜덤_후보로_고를_수_있다()
+        {
+            RoleSetupOptionsDto options = Options();
+            const string kraken = "NEUTRAL_KRAKEN";
+            options.roles.Add(Role(kraken, "크라켄", Factions.Neutral));
+
+            Assert.IsTrue(RoleSetupRules.IsRandomOption(options, P));
+            Assert.IsFalse(RoleSetupRules.IsRandomOption(options, R), "해적·선원은 항상 후보라 고르지 않는다");
+            Assert.IsFalse(RoleSetupRules.IsRandomOption(options, S));
+            Assert.IsFalse(RoleSetupRules.IsRandomOption(options, kraken), "중립을 선택지에서 빼는 서버면 직접 설정 전용");
+
+            options.randomCandidates.Add(kraken);
+            Assert.IsTrue(RoleSetupRules.IsRandomOption(options, kraken), "서버가 중립도 선택지로 주면 고를 수 있다");
+            RoleSetupDto setup = Setup(RoleSetupModes.Random);
+            setup.randomCandidates = new List<string>();
+            RoleSetupRules.SetCandidate(setup, options, kraken, true);
+            CollectionAssert.AreEqual(new[] { kraken }, setup.randomCandidates);
+        }
+
         // ---------------------------------------------------------------- 비교
 
         [Test]
