@@ -3,7 +3,6 @@ package com.WhoisntCitizen_server.realtime;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeTokenResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -23,7 +22,11 @@ import java.util.Optional;
  *
  *  - 토큰 위치: Authorization: Bearer 헤더 → 없으면 ?token= (RealtimeTokenResolver)
  *  - 검증: REST와 같은 JwtDecoder(SecurityConfig, HS256, 만료 확인)
- *  - 실패: HTTP 401로 거절. WebSocket이 열리지 않으므로 클라이언트는 연결 실패로 받는다
+ *  - 실패(토큰 없음·검증 실패·sub 없음): HTTP 401로 거절하지 않고 연결은 열어 준다. 대신 세션 속성에 실패 이유(ATTR_AUTH_ERROR)를
+ *    넣어 두고, RealtimeWebSocketHandler가 연결 직후 close 4401(CLOSE_TOKEN_EXPIRED)로 바로 닫는다.
+ *    왜: HTTP 401은 Unity(Mono ClientWebSocket)와 브라우저(WebGL) 모두 "연결 실패"로만 알려 줘서 클라이언트가 토큰 문제인지 모르고
+ *    재연결을 반복한다. close code 4401은 두 플랫폼 모두 그대로 전달되므로 "다시 로그인"으로 처리할 수 있다.
+ *    인증 실패 연결은 연결 목록·접속 상태에 등록되지 않고, 메시지를 하나도 받지 못한 채 닫힌다.
  *  - 성공: 사용자 id(토큰 sub)와 만료 시각을 세션 속성에 넣어 둔다. 이후 핸들러는 토큰을 다시 보지 않는다
  *
  * 연결 주소에 토큰이 들어 있을 수 있으므로 주소(URI)는 로그에 남기지 않는다.
@@ -34,6 +37,8 @@ public class RealtimeHandshakeInterceptor implements HandshakeInterceptor {
     public static final String ATTR_USER_ID = "realtime.userId";
     /** 세션 속성: 토큰 만료 시각 (Instant, 없을 수 있음). 연결 중 만료 처리(CLOSE_TOKEN_EXPIRED)에 쓴다 */
     public static final String ATTR_TOKEN_EXPIRES_AT = "realtime.tokenExpiresAt";
+    /** 세션 속성: 인증 실패 이유 (String). 있으면 핸들러가 연결 직후 4401로 닫는다. 성공한 연결에는 없다 */
+    public static final String ATTR_AUTH_ERROR = "realtime.authError";
 
     private static final Logger log = LoggerFactory.getLogger(RealtimeHandshakeInterceptor.class);
 
@@ -48,17 +53,17 @@ public class RealtimeHandshakeInterceptor implements HandshakeInterceptor {
                                    WebSocketHandler wsHandler, Map<String, Object> attributes) {
         Optional<String> token = RealtimeTokenResolver.resolve(request.getHeaders(), request.getURI());
         if (token.isEmpty()) {
-            return reject(request, response, "토큰 없음");
+            return markUnauthorized(request, attributes, "토큰 없음");
         }
         Jwt jwt;
         try {
             jwt = jwtDecoder.decode(token.get());
         } catch (JwtException e) {
-            return reject(request, response, "토큰 검증 실패: " + e.getClass().getSimpleName());
+            return markUnauthorized(request, attributes, "토큰 검증 실패: " + e.getClass().getSimpleName());
         }
         Long userId = parseUserId(jwt.getSubject());
         if (userId == null) {
-            return reject(request, response, "토큰에 사용자 id(sub)가 없음");
+            return markUnauthorized(request, attributes, "토큰에 사용자 id(sub)가 없음");
         }
         attributes.put(ATTR_USER_ID, userId);
         Instant expiresAt = jwt.getExpiresAt();
@@ -94,9 +99,13 @@ public class RealtimeHandshakeInterceptor implements HandshakeInterceptor {
         }
     }
 
-    private static boolean reject(ServerHttpRequest request, ServerHttpResponse response, String reason) {
-        response.setStatusCode(HttpStatus.UNAUTHORIZED);
-        log.info("[ws] 연결 거부: {} (remote={})", reason, request.getRemoteAddress());
-        return false;
+    /**
+     * 인증 실패를 표시하고 handshake는 통과시킨다. (연결 직후 핸들러가 4401로 닫는다)
+     * 사용자 id는 넣지 않는다. 그래서 핸들러가 이 연결을 연결 목록·접속 상태에 등록할 수 없다.
+     */
+    private static boolean markUnauthorized(ServerHttpRequest request, Map<String, Object> attributes, String reason) {
+        attributes.put(ATTR_AUTH_ERROR, reason);
+        log.info("[ws] 인증 실패 → 연결 후 4401로 닫음: {} (remote={})", reason, request.getRemoteAddress());
+        return true;
     }
 }

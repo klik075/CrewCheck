@@ -4,6 +4,7 @@ import com.WhoisntCitizen_server.realtime.protocol.ClientMessage;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeErrorCode;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeMessageCodec;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeMessageException;
+import com.WhoisntCitizen_server.realtime.protocol.RealtimeProtocol;
 import com.WhoisntCitizen_server.realtime.protocol.ServerMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +13,7 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
@@ -22,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * /ws/v1 연결 하나하나를 처리한다.
  *
  *  - 연결되면: 연결 목록(RealtimeSessionRegistry)에 넣고 connected를 보낸다. 유저 접속 상태를 ONLINE으로 기록
+ *    단, handshake에서 토큰 확인에 실패한 연결(RealtimeHandshakeInterceptor.ATTR_AUTH_ERROR)은 아무것도 등록하지 않고 바로 4401로 닫는다
  *  - ping → pong(서버 시각) + 구독 중인 방에 진행 중인 게임이 있으면 접속 기록(touch) + 유저 접속 상태 갱신
  *  - 어떤 메시지든 받으면 "살아 있음"으로 표시 (30초 동안 없으면 RealtimeConnectionMonitor가 닫는다)
  *  - room.subscribe → 그 방 참가자인지 확인(RoomMembership) → 맞으면 구독하고 subscribed, 아니면 error(NOT_IN_ROOM)
@@ -62,6 +65,11 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
+        Object authError = session.getAttributes().get(RealtimeHandshakeInterceptor.ATTR_AUTH_ERROR);
+        if (authError != null) {
+            closeUnauthorized(session, authError.toString());
+            return; // 연결 목록·감시·접속 상태 어디에도 등록하지 않는다 (connected도 보내지 않는다)
+        }
         long userId = RealtimeHandshakeInterceptor.userId(session);
         RealtimeConnection connection = new WebSocketRealtimeConnection(session, userId);
         connections.put(session.getId(), connection);
@@ -166,6 +174,19 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         }
         log.info("[ws] 연결 끊김: userId={}, session={}, code={}, 현재 연결 수={}",
                 userId, session.getId(), status.getCode(), registry.connectionCount());
+    }
+
+    /**
+     * 토큰 확인에 실패한 연결을 4401로 닫는다. 클라이언트는 4401을 받으면 재연결을 멈추고 다시 로그인한다.
+     * (연결 중 토큰이 만료됐을 때 RealtimeConnectionMonitor가 쓰는 코드와 같다)
+     */
+    private void closeUnauthorized(WebSocketSession session, String reason) {
+        log.info("[ws] 인증 실패 연결 닫음: session={}, {}", session.getId(), reason);
+        try {
+            session.close(new CloseStatus(RealtimeProtocol.CLOSE_TOKEN_EXPIRED, "unauthorized"));
+        } catch (IOException e) {
+            log.debug("[ws] 인증 실패 연결 닫기 실패: session={}, {}", session.getId(), e.toString());
+        }
     }
 
     private void reply(RealtimeConnection connection, ServerMessage message) {
