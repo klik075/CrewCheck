@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.game.service;
 
 import com.WhoisntCitizen_server.common.exception.GameNotFoundException;
 import com.WhoisntCitizen_server.common.exception.GameRuleException;
+import com.WhoisntCitizen_server.game.dto.DayExtendResponse;
 import com.WhoisntCitizen_server.game.dto.DaySkipResponse;
 import com.WhoisntCitizen_server.game.dto.DevRoleView;
 import com.WhoisntCitizen_server.game.dto.GameParticipant;
@@ -212,6 +213,20 @@ public class GameService {
             gameFlowService.skipDay(game, playerId);
             return new DaySkipResponse(true, game.getPhase(), game.getPhaseVersion(),
                     game.daySkipCount(), game.aliveCount());
+        });
+    }
+
+    /**
+     * 5. 낮 토론 시간 연장. 살아 있는 사람마다 낮에 한 번 마감을 늦춘다. 이미 늘린 사람이 다시 보내면 시간은 그대로 두고 addedSeconds=0.
+     * 페이즈가 바뀌지 않으므로 phaseVersion은 그대로이고, 늘어난 마감은 응답과 이후 상태 조회의 phaseEndsAt에 보인다.
+     * skipDay와 같은 GameLock으로 잠근다.
+     */
+    public DayExtendResponse extendDay(String gameId, Long playerId) {
+        return gameLock.withLock(gameId, () -> {
+            Game game = findGame(gameId); // 잠금 안에서 불러온다 (GameLock 사용 규칙)
+            long addedSeconds = gameFlowService.extendDay(game, playerId);
+            return new DayExtendResponse(true, game.getPhase(), game.getPhaseVersion(), game.getPhaseEndsAt(),
+                    addedSeconds, game.dayExtendCount());
         });
     }
 

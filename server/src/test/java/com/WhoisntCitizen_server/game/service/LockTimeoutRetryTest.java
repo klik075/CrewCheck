@@ -39,7 +39,7 @@ class LockTimeoutRetryTest {
 
     private static final Instant NOW = Instant.parse("2026-10-01T12:00:00Z");
     // 밤 30, 결과 5, 낮 60, 투표 30, 처형 5. 종료 후 60초 보관, 연결 끊김 검사 끔, 10일 무사망 시 취소
-    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10);
+    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10, 10);
 
     /** 남은 실패 횟수만큼 LockTimeoutException을 던지고, 그다음부터는 정상 잠금 */
     private static final class FailingGameLock implements GameLock {

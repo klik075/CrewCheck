@@ -189,6 +189,30 @@ public class GameFlowService implements GameTimeoutHandler {
         });
     }
 
+    /**
+     * 5. 낮 토론 시간 연장. 살아 있는 사람마다 낮에 한 번, 마감을 dayExtendSeconds초 늦추고 방 채팅으로 알린다.
+     * 페이즈가 바뀌지 않으므로 phaseVersion은 그대로 두고, 같은 버전의 타이머를 늘어난 마감으로 다시 예약한다.
+     * (같은 대상은 마지막 예약만 실행된다. 옛 예약이 이미 실행에 들어갔어도 onPhaseTimeout이 마감 전이면 다시 예약한다)
+     * 규칙 위반(낮이 아님, 사망자)은 GameRuleException으로 그대로 던진다. GameService가 호출한다.
+     *
+     * @return 이번 요청으로 늘어난 초. 이번 낮에 이미 늘린 사람이면 0 (시간은 그대로)
+     */
+    public long extendDay(Game game, Long playerId) {
+        // skipDay와 같이 잠금을 재진입한다
+        return gameLock.withLock(game.getGameId(), () -> {
+            int seconds = phaseProps.dayExtendSeconds();
+            if (!game.extendDay(playerId, seconds)) {
+                return 0L; // 이미 늘렸다
+            }
+            gameRepository.save(game); // 다른 클라이언트가 늘어난 마감을 바로 받도록 변경 신호(game.changed)가 나간다
+            scheduleTimeout(game.getGameId(), game.getPhaseVersion(), game.getPhaseEndsAt());
+            log.info("[{}] 낮 토론 연장: player={} +{}s → {} (v{})", game.getGameId(), playerId, seconds,
+                    game.getPhaseEndsAt(), game.getPhaseVersion());
+            announce(game, game.getPlayer(playerId).getNickname() + "님이 토론 시간을 " + seconds + "초 늘렸습니다.");
+            return (long) seconds;
+        });
+    }
+
     // ---------- 7. 처형 → 8. 승리 조건 검사 → 9. 반복/종료 ----------
 
     /**
@@ -450,7 +474,10 @@ public class GameFlowService implements GameTimeoutHandler {
     }
 
     //페이즈 시간 초과 시 호출
-    /** 페이즈 제한 시간이 끝났을 때 호출된다. 이미 다음 페이즈로 넘어갔으면(버전 불일치) 무시. */
+    /**
+     * 페이즈 제한 시간이 끝났을 때 호출된다. 이미 다음 페이즈로 넘어갔으면(버전 불일치) 무시.
+     * 아직 마감(phaseEndsAt) 전이면(낮 토론 연장으로 늦춰짐) 넘기지 않고 마감 시각으로 다시 예약한다.
+     */
     @Override
     public void onPhaseTimeout(String gameId, long expectedVersion) {
         try {
@@ -461,6 +488,16 @@ public class GameFlowService implements GameTimeoutHandler {
                 }
                 Game game = found.get();
                 if (game.getPhaseVersion() != expectedVersion || game.isEnded()) {
+                    return;
+                }
+                // 마감이 늦춰졌다(낮 토론 연장). 같은 버전을 다시 예약하면 보통 옛 예약은 실행되지 않지만,
+                // Redis 확인 작업이 옛 예약을 이미 가져갔으면 여기로 온다. 넘기지 않고 늦춰진 마감으로 다시 예약한다.
+                // 타이머 예약 시각(Redis 점수)이 밀리초 단위라 밀리초로 비교한다. (같은 밀리초 안의 차이로 다시 예약하지 않도록)
+                Instant endsAt = game.getPhaseEndsAt();
+                if (endsAt != null && clock.millis() < endsAt.toEpochMilli()) {
+                    log.info("[{}] {} 마감이 {}로 늦춰져 타이머(v{})를 다시 예약", gameId, game.getPhase(), endsAt,
+                            expectedVersion);
+                    scheduleTimeout(gameId, expectedVersion, endsAt);
                     return;
                 }
                 try {

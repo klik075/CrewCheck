@@ -87,6 +87,7 @@ class GameSnapshotFullRoundTripTest {
                 votes,
                 List.of(5L),                                       // confirmedVoters
                 List.of(9L),                                       // daySkippers
+                List.of(5L, 2L),                                   // dayExtenders
                 List.of(2L, 5L),                                   // voteBanned
                 2, nightResult, executionResult,
                 Winner.PIRATE, List.of(5L), GameEndReason.WIN);

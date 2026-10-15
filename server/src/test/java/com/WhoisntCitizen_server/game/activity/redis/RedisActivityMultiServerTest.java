@@ -55,7 +55,7 @@ class RedisActivityMultiServerTest {
 
     private static final Instant NOW = Instant.parse("2026-10-11T12:00:00Z");
     // 밤 30, 결과 5, 낮 60, 투표 30, 처형 5. 종료 후 60초 보관, 60초 동안 요청이 없으면 연결 끊김, 5초마다 검사, 10일 무사망 시 취소
-    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 60, 5, 10);
+    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 60, 5, 10, 10);
     private static final List<Long> EVERYONE = List.of(1L, 2L, 3L, 4L, 5L);
 
     private static GenericContainer<?> redisContainer;
