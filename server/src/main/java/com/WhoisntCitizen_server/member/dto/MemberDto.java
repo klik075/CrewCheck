@@ -94,7 +94,17 @@ public class MemberDto {
 		private String username;
 		private String nickname;
 		private String accessToken;
+		private String refreshToken;
 		private String message;
+	}
+
+	// 토큰 재발급 / 로그아웃 요청
+	@Getter
+	@NoArgsConstructor
+	@AllArgsConstructor
+	public static class RefreshRequest {
+		@NotBlank(message = "리프레시 토큰은 필수입니다.")
+		private String refreshToken;
 	}
 
 }
