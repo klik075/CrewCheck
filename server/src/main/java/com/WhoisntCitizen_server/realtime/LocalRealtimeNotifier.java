@@ -48,6 +48,13 @@ public class LocalRealtimeNotifier implements RealtimeNotifier {
     }
 
     @Override
+    public void disconnectUser(long userId, int closeCode, String reason) {
+        for (RealtimeConnection connection : registry.connectionsOfUser(userId)) {
+            connection.close(closeCode, reason);
+        }
+    }
+
+    @Override
     public void removeUserFromRoom(long roomId, long userId) {
         registry.removeUserFromRoom(roomId, userId);
     }

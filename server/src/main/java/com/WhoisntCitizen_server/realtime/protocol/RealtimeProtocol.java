@@ -34,6 +34,8 @@ public final class RealtimeProtocol {
     public static final int CLOSE_IDLE_TIMEOUT = 4408;
     /** 연결 중 토큰이 만료됨. 클라이언트는 다시 로그인(토큰 갱신)한 뒤 연결한다 */
     public static final int CLOSE_TOKEN_EXPIRED = 4401;
+    /** 같은 계정으로 다른 곳에서 새로 로그인함. 클라이언트는 다시 연결하지 않고 로그아웃 처리한다 */
+    public static final int CLOSE_DUPLICATE_LOGIN = 4409;
 
     private RealtimeProtocol() {
     }
