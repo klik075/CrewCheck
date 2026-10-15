@@ -15,6 +15,7 @@ namespace WhoisntCitizen.Friend
         public int playCount;
         public int winCount;
         public double winRate;      // 서버 계산값 (단위 모호) → 화면에는 WinRatePercent를 쓴다.
+        public int profileImageId;  // 아바타 프리셋 번호 (AvatarCatalog)
         public bool online;         // 접속 중인지 (status가 OFFLINE이 아니면 true)
         public string status;       // OFFLINE / ONLINE / IN_ROOM(대기실) / IN_GAME(게임 중). 옛 서버 응답에는 없을 수 있다.
 

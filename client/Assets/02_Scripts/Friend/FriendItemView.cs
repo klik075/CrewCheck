@@ -2,6 +2,7 @@ using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using WhoisntCitizen.Profile;
 
 namespace WhoisntCitizen.Friend
 {
@@ -18,6 +19,8 @@ namespace WhoisntCitizen.Friend
         [SerializeField] private TMP_Text recordText;
         [Tooltip("(선택) 접속 상태 표시. 예) ● 온라인 / ● 게임 중. 비워 두면 닉네임 옆에 붙여 보여 준다.")]
         [SerializeField] private TMP_Text statusText;
+        [Tooltip("(선택) 친구 아바타 이미지")]
+        [SerializeField] private Image avatarImage;
         [SerializeField] private Button removeButton;
 
         // 접속 상태 색 (오프라인은 회색, 온라인은 초록, 대기실·게임 중은 주황)
@@ -50,6 +53,7 @@ namespace WhoisntCitizen.Friend
 
             if (nicknameText != null)
                 nicknameText.text = statusText != null ? data.nickname : $"{data.nickname}  {statusRichText}";
+            AvatarCatalog.Apply(avatarImage, data.profileImageId);
             if (statusText != null) statusText.text = statusRichText;
             if (recordText != null)
                 recordText.text = $"Lv.{data.level} · {data.playCount}전 {data.winCount}승 · {data.WinRatePercent:0.#}%";

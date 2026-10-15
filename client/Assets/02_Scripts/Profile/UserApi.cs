@@ -53,6 +53,12 @@ namespace WhoisntCitizen.Profile
             ApiClient.Patch($"{UsersPath}/me/nickname", new ChangeNicknameRequest { nickname = nickname }, onDone);
         }
 
+        /// <summary>프로필 이미지(아바타 번호) 변경. PATCH /api/users/me/profile-image  body {"profileImageId": n}</summary>
+        public static void ChangeProfileImage(int profileImageId, Action<ApiResult> onDone)
+        {
+            ApiClient.Patch($"{UsersPath}/me/profile-image", new ChangeProfileImageRequest { profileImageId = profileImageId }, onDone);
+        }
+
         // 검색 응답 본문이 "[...]"면 배열로, "{...}"면 한 명짜리 리스트로 파싱한다.
         private static List<UserProfileResponse> ParseSearchBody(string body)
         {

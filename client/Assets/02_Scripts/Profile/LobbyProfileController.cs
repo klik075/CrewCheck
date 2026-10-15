@@ -17,8 +17,8 @@ namespace WhoisntCitizen.Profile
     ///   4) 닉네임 변경 성공 → 프로필 재조회 → 버튼/팝업/AuthSession 닉네임 갱신
     ///
     /// 인스펙터 연결
-    ///   Profile Button      ← Profile_Button 오브젝트를 그대로 드래그 (Button 컴포넌트가 이미 있음)
-    ///   Profile Button Text ← Profile_Button 자식의 TMP 텍스트 (비워 두면 자식에서 자동으로 찾는다)
+    ///   Profile Button      ← 로비 상단 정보 패널(UserInfoArea)에 붙인 Button
+    ///   Profile Button Text ← (선택) 닉네임/레벨을 표시할 TMP 텍스트
     /// </summary>
     public class LobbyProfileController : MonoBehaviour
     {
@@ -28,10 +28,10 @@ namespace WhoisntCitizen.Profile
         /// <summary>Current가 갱신될 때마다 호출된다.</summary>
         public static event Action<UserProfileResponse> ProfileChanged;
 
-        [Header("Profile Button (TopBar/Profile_Button)")]
-        [Tooltip("Canvas/SafeArea/TopBar/Profile_Button 을 그대로 드래그한다.")]
+        [Header("Profile Button (상단 정보 패널 UserInfoArea)")]
+        [Tooltip("누르면 프로필 팝업을 여는 버튼. 로비 상단 정보 패널(UserInfoArea)에 붙인 Button 을 연결한다.")]
         [SerializeField] private Button profileButton;
-        [Tooltip("버튼에 닉네임/레벨을 표시할 TMP 텍스트. 비워 두면 profileButton 자식에서 첫 번째 TMP_Text를 찾는다.")]
+        [Tooltip("(선택) 버튼에 닉네임/레벨을 표시할 TMP 텍스트. 비워 두면 표시하지 않는다.")]
         [SerializeField] private TMP_Text profileButtonText;
         [Tooltip("버튼 표시 형식. {nickname} {level} 을 쓸 수 있다.")]
         [SerializeField] private string buttonFormat = "{nickname}\nLv.{level}";
@@ -41,6 +41,19 @@ namespace WhoisntCitizen.Profile
         [SerializeField] private GameObject profilePopup;
         [SerializeField] private Button closeButton;
         [SerializeField] private TMP_Text nicknameText;
+
+        [Header("Avatar (프로필 이미지)")]
+        [Tooltip("(선택) 로비 상단 정보 패널(UserInfoArea)의 아바타 이미지")]
+        [SerializeField] private Image profileButtonAvatar;
+        [Tooltip("(선택) 프로필 팝업 안의 내 아바타 이미지")]
+        [SerializeField] private Image avatarImage;
+        [Tooltip("(선택) 내 아바타를 누르면 아바타 선택 창을 여는 버튼")]
+        [SerializeField] private Button avatarEditButton;
+        [Tooltip("(선택) 아바타 선택 창 루트. 시작할 때 닫힌다.")]
+        [SerializeField] private GameObject avatarPopup;
+        [SerializeField] private Button avatarCloseButton;
+        [Tooltip("(선택) 아바타 선택 버튼들. 순서가 곧 아바타 번호(0부터). AvatarCatalog.Count개까지 사용")]
+        [SerializeField] private Button[] avatarButtons;
         [SerializeField] private TMP_Text levelText;
         [SerializeField] private TMP_Text goldText;
         [Tooltip("전적. 예) 12전 7승 5패")]
@@ -71,9 +84,18 @@ namespace WhoisntCitizen.Profile
             BindIfEmpty(profileButton, OnProfileButtonClicked);
             BindIfEmpty(closeButton, ClosePopup);
             BindIfEmpty(changeNicknameButton, OnChangeNicknameClicked);
-
-            if (profileButtonText == null && profileButton != null)
-                profileButtonText = profileButton.GetComponentInChildren<TMP_Text>(true);
+            BindIfEmpty(avatarEditButton, OpenAvatarPopup);
+            BindIfEmpty(avatarCloseButton, CloseAvatarPopup);
+            if (avatarButtons != null)
+            {
+                for (int i = 0; i < avatarButtons.Length; i++)
+                {
+                    int id = i; // 클로저용 복사
+                    if (avatarButtons[i] == null) continue;
+                    AvatarCatalog.Apply(avatarButtons[i].targetGraphic as Image, id);
+                    avatarButtons[i].onClick.AddListener(() => OnAvatarClicked(id));
+                }
+            }
 
             if (nicknameInput != null)
             {
@@ -86,6 +108,7 @@ namespace WhoisntCitizen.Profile
         private void Start()
         {
             if (profilePopup != null) profilePopup.SetActive(false); // 씬에 켜 둔 채 저장했어도 닫고 시작
+            if (avatarPopup != null) avatarPopup.SetActive(false);
 
             // 로그인하지 않았으면 LobbyUIController가 타이틀로 보내므로 요청하지 않는다.
             if (!AuthSession.IsAuthenticated) return;
@@ -102,6 +125,8 @@ namespace WhoisntCitizen.Profile
             if (profileButton != null) profileButton.onClick.RemoveListener(OnProfileButtonClicked);
             if (closeButton != null) closeButton.onClick.RemoveListener(ClosePopup);
             if (changeNicknameButton != null) changeNicknameButton.onClick.RemoveListener(OnChangeNicknameClicked);
+            if (avatarEditButton != null) avatarEditButton.onClick.RemoveListener(OpenAvatarPopup);
+            if (avatarCloseButton != null) avatarCloseButton.onClick.RemoveListener(CloseAvatarPopup);
         }
 
         // ------------------------------------------------------------------
@@ -157,6 +182,7 @@ namespace WhoisntCitizen.Profile
 
         private void RenderButton(UserProfileResponse profile)
         {
+            if (profile != null) AvatarCatalog.Apply(profileButtonAvatar, profile.profileImageId);
             if (profileButtonText == null) return;
 
             profileButtonText.text = profile == null
@@ -167,6 +193,8 @@ namespace WhoisntCitizen.Profile
         private void RenderPopup(UserProfileResponse p)
         {
             if (nicknameText != null) nicknameText.text = p.nickname;
+            AvatarCatalog.Apply(avatarImage, p.profileImageId);
+            HighlightAvatar(p.profileImageId);
             if (levelText != null) levelText.text = $"Lv.{p.level}";
             if (goldText != null) goldText.text = p.gold.ToString("N0");
             if (recordText != null) recordText.text = $"{p.playCount}전 {p.winCount}승 {p.lossCount}패";
@@ -203,6 +231,7 @@ namespace WhoisntCitizen.Profile
         {
             if (isChanging) return;
             statusMessage?.Clear();
+            if (avatarPopup != null) avatarPopup.SetActive(false);
             if (profilePopup != null) profilePopup.SetActive(false);
         }
 
@@ -254,13 +283,78 @@ namespace WhoisntCitizen.Profile
             });
         }
 
+        // ------------------------------------------------------------------
+        // 프로필 이미지(아바타) 선택
+        // ------------------------------------------------------------------
+
+        private void OnAvatarClicked(int id)
+        {
+            if (isChanging || SceneLoader.IsLoading) return;
+            if (Current != null && Current.profileImageId == id) return;
+
+            SetChanging(true);
+            statusMessage?.ShowInfo("프로필 이미지를 변경하는 중...", keep: true);
+
+            UserApi.ChangeProfileImage(id, result =>
+            {
+                if (this == null) return;
+
+                if (!result.success)
+                {
+                    SetChanging(false);
+                    statusMessage?.ShowError(result.message);
+                    return;
+                }
+
+                // 서버에 저장됐으니 바로 화면에 반영하고, 최신 프로필도 다시 받아 둔다.
+                if (Current != null) Current.profileImageId = id;
+                RenderButton(Current);
+                if (Current != null) RenderPopup(Current);
+                LoadProfile(ok =>
+                {
+                    SetChanging(false);
+                    statusMessage?.ShowSuccess("프로필 이미지가 변경되었습니다.");
+                });
+            });
+        }
+
+        // 선택된 아바타는 밝게, 나머지는 어둡게 표시한다.
+        private void HighlightAvatar(int selectedId)
+        {
+            if (avatarButtons == null) return;
+            for (int i = 0; i < avatarButtons.Length; i++)
+            {
+                if (avatarButtons[i] == null || !(avatarButtons[i].targetGraphic is Image img)) continue;
+                Color c = img.color;
+                c.a = i == selectedId ? 1f : 0.45f;
+                img.color = c;
+            }
+        }
+
+        // 현재 아바타를 누르면 선택 창을 연다.
+        public void OpenAvatarPopup()
+        {
+            if (isChanging || SceneLoader.IsLoading || avatarPopup == null) return;
+            avatarPopup.SetActive(true);
+            if (Current != null) HighlightAvatar(Current.profileImageId);
+        }
+
+        public void CloseAvatarPopup()
+        {
+            if (isChanging) return;
+            if (avatarPopup != null) avatarPopup.SetActive(false);
+        }
+
         // 변경 요청 중에는 버튼/입력칸을 잠가 중복 요청을 막는다.
         private void SetChanging(bool value)
         {
             isChanging = value;
             if (changeNicknameButton != null) changeNicknameButton.interactable = !value;
             if (nicknameInput != null) nicknameInput.interactable = !value;
+            if (avatarButtons != null)
+                foreach (Button b in avatarButtons) if (b != null) b.interactable = !value;
             if (closeButton != null) closeButton.interactable = !value;
+            if (avatarCloseButton != null) avatarCloseButton.interactable = !value;
         }
 
         // ------------------------------------------------------------------

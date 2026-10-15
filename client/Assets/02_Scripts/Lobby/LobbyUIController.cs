@@ -231,8 +231,16 @@ namespace WhoisntCitizen.Lobby
         public void OnLogoutClicked()
         {
             if (isJoining || SceneLoader.IsLoading) return;
+            Logout();
+        }
 
-            AuthSession.Clear();
+        /// <summary>
+        /// 세션(토큰·유저 정보)을 비우고 실시간 연결을 정상 종료(Close 1000)한 뒤 타이틀 씬으로 이동한다.
+        /// 설정 팝업의 로그아웃 버튼도 이걸 쓴다.
+        /// </summary>
+        public static void Logout()
+        {
+            AuthSession.Clear(); // RealtimeSession.OnLoggedOut → 웹소켓 Disconnect
             ChatNotice.Post("로그아웃되었습니다.");
             RoomSession.Clear();
             SceneLoader.Load(SceneType.Title);
