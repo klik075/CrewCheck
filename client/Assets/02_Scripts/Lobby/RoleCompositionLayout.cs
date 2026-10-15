@@ -426,18 +426,19 @@ namespace WhoisntCitizen.Lobby
                 row.Minus.interactable = !random && RoleSetupRules.CanRemove(composition, row.Role.code);
                 row.Plus.interactable = !random && RoleSetupRules.CanAdd(composition, row.Role.code);
                 row.Amount.alpha = random || row.Role.code == RoleCodes.CrewSailor ? .48f : 1;
-                row.Whole.alpha = random && row.Candidate == null && Faction(row.Role) == Factions.Neutral ? .55f : 1;
+                row.Whole.alpha = random && Faction(row.Role) == Factions.Neutral
+                    && (row.Candidate == null || players < RoleSetupRules.MinPlayersForRandomNeutral) ? .55f : 1;
                 row.CandidateArea.alpha = random ? 1 : .72f;
                 if (row.Candidate != null) row.Candidate.SetIsOnWithoutNotify(RoleSetupRules.IsCandidate(setup, row.Role.code));
             }
             int pirates = random ? RoleSetupRules.PirateSlots(options, players) : RoleSetupRules.CountPirates(options, composition);
             int neutrals = random ? 0 : composition.Count(c => RoleSetupRules.FindRole(options, c)?.faction == Factions.Neutral);
             int crew = composition.Count - pirates - neutrals;
-            // 랜덤에서 중립 후보를 체크했으면 중립은 선원 진영 자리에 섞여 나오므로 몇 명인지 게임 시작 때 정해진다
-            bool neutralDrawn = random && rows.Any(r => r.Candidate != null && Faction(r.Role) == Factions.Neutral
-                && RoleSetupRules.IsCandidate(setup, r.Role.code));
+            // 랜덤에서 중립 후보를 체크했으면 (서버 규칙) 6인 이상일 때 선원 진영 자리에 1명까지 섞여 나와 몇 명인지 게임 시작 때 정해진다
+            bool neutralDrawn = random && players >= RoleSetupRules.MinPlayersForRandomNeutral
+                && rows.Any(r => r.Candidate != null && Faction(r.Role) == Factions.Neutral && RoleSetupRules.IsCandidate(setup, r.Role.code));
             foreach (var pair in factionCounts)
-                pair.Value.text = pair.Key == Factions.Neutral && neutralDrawn ? "무작위"
+                pair.Value.text = pair.Key == Factions.Neutral && neutralDrawn ? $"0~{RoleSetupRules.MaxRandomNeutrals}명"
                     : $"{(pair.Key == Factions.Crew ? crew : pair.Key == Factions.Pirate ? pirates : neutrals)}명";
             summary.text = neutralDrawn ? $"선원·중립 {crew}  ·  해적 {pirates}" : $"선원 {crew}  ·  해적 {pirates}  ·  중립 {neutrals}";
             total.text = $"총 {composition.Count} / {players}명";
@@ -445,8 +446,10 @@ namespace WhoisntCitizen.Lobby
             validity.Shape = problem == null ? RoomHelmGraphic.Symbol.Ready : RoomHelmGraphic.Symbol.Waiting;
             validity.color = total.color;
             notice.color = problem == null ? muted : Bad;
-            notice.text = problem ?? (random ? "직업별 수량은 게임 시작 시 결정됩니다.\n선원과 해적은 항상 후보이며, "
-                    + (neutralRandom ? "체크한 중립은 선원 진영 자리에 섞여 나와요." : "중립은 직접 설정에서만 배정돼요.")
+            notice.text = problem ?? (random ? (neutralRandom
+                    ? "수량은 게임 시작 시 정해져요. 선원·해적은 항상 후보예요.\n"
+                      + $"체크한 중립은 {RoleSetupRules.MinPlayersForRandomNeutral}인 이상에서 한 판에 {RoleSetupRules.MaxRandomNeutrals}명까지 나와요."
+                    : "직업별 수량은 게임 시작 시 결정됩니다.\n선원과 해적은 항상 후보이며, 중립은 직접 설정에서만 배정돼요.")
                 : "선택한 인원수의 구성입니다. 다른 인원수도 위에서 편집할 수 있어요.\n선원과 해적은 항상 랜덤 후보에 포함돼요.");
             apply.interactable = problem == null;
             applyGroup.alpha = problem == null ? 1 : .45f;
