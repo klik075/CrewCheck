@@ -48,6 +48,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse("CONFLICT", e.getMessage()));
     }
 
+    /** 리프레시 토큰이 없거나 만료·폐기·불일치: 401 */
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthorized(UnauthorizedException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("UNAUTHORIZED", e.getMessage()));
+    }
+
     // ---------- 로비 ----------
 
     /** 비밀방 비밀번호 없음/불일치: 403. Unity는 code로 비밀번호 재입력 여부를 판단한다 */

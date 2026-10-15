@@ -11,6 +11,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -57,10 +58,16 @@ public class SecurityConfig {
 						// 회원가입 / 로그인은 토큰 없이
 						.requestMatchers("/api/members/signup", "/api/members/login",
 									"/api/members/login/google", "/api/members/login/kakao").permitAll()
+						// 토큰 재발급 / 로그아웃은 body의 리프레시 토큰으로 인증한다
+						.requestMatchers("/api/auth/**").permitAll()
 						// 로비(/api/v1/rooms), 게임(/api/v1/games), 직업(/api/v1/roles) API는 로그인한 유저만
 						.requestMatchers("/api/v1/**").authenticated()
 						.anyRequest().permitAll())
-				.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}))
+				.oauth2ResourceServer(oauth2 -> oauth2
+						// 만료된 액세스 토큰이 헤더에 남아 있어도 재발급/로그아웃이 401로 막히지 않게 이 경로는 Authorization 헤더를 읽지 않는다
+						.bearerTokenResolver(request -> request.getRequestURI().startsWith("/api/auth/")
+								? null : new DefaultBearerTokenResolver().resolve(request))
+						.jwt(jwt -> {}))
 				.exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
 
 		return http.build();
