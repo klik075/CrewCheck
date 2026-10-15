@@ -9,7 +9,8 @@ namespace WhoisntCitizen.Network
     ///
     /// 하는 일
     ///  - 연결: 실제 소켓은 IRealtimeTransport(연결 한 번에 객체 하나)가 맡는다. 끊기면 ReconnectBackoff(1→2→4…30초)로 다시 연결.
-    ///          데스크톱·모바일·에디터는 ClientWebSocketTransport(Authorization 헤더). CreateTransport() 한곳에서 고른다.
+    ///          데스크톱·모바일·에디터는 ClientWebSocketTransport(Authorization 헤더),
+    ///          WebGL 빌드는 BrowserWebSocketTransport(?token= 주소). CreateTransport() 한곳에서 고른다.
     ///  - 수신: transport가 쌓아 둔 사건(Opened/Message/Closed)을 Update(메인 스레드)에서 꺼내 해석·처리한다.
     ///          → 이벤트를 받는 화면 코드는 Unity API를 마음껏 써도 된다.
     ///  - ping: 서버가 connected를 보낸 뒤 10초마다. 서버는 30초 동안 조용하면 끊는다.
@@ -312,11 +313,17 @@ namespace WhoisntCitizen.Network
 
         /// <summary>
         /// 이번 연결에 쓸 transport를 만든다. 플랫폼별 구현을 고르는 곳은 여기 한곳이다.
-        /// (W-3에서 WebGL 빌드는 BrowserWebSocketTransport를 고르게 된다)
+        ///  - WebGL 플레이어 빌드: 브라우저 WebSocket(jslib). 스레드·ClientWebSocket을 쓸 수 없기 때문.
+        ///  - 그 밖(에디터·데스크톱·모바일): .NET ClientWebSocket.
+        /// 에디터는 빌드 대상을 WebGL로 바꿔 둬도 ClientWebSocketTransport를 쓴다(!UNITY_EDITOR). 에디터에는 jslib가 없다.
         /// </summary>
         private static IRealtimeTransport CreateTransport()
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            return BrowserWebSocketNative.CreateTransport();
+#else
             return new ClientWebSocketTransport();
+#endif
         }
 
         // ================================================================ 메인 스레드 처리
