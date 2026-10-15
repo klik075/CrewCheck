@@ -56,6 +56,8 @@ namespace WhoisntCitizen.Friend
         [SerializeField] private Button searchButton;
         [Tooltip("검색 결과 영역. 검색 전/실패 시에는 숨긴다.")]
         [SerializeField] private GameObject resultRoot;
+        [Tooltip("(선택) 검색된 유저의 아바타")]
+        [SerializeField] private Image resultAvatarImage;
         [SerializeField] private TMP_Text resultNicknameText;
         [Tooltip("검색된 유저의 레벨/전적. 예) Lv.3 · 12전 7승 · 58.3%")]
         [SerializeField] private TMP_Text resultInfoText;
@@ -379,6 +381,7 @@ namespace WhoisntCitizen.Friend
         {
             searchResult = user;
             if (resultRoot != null) resultRoot.SetActive(true);
+            AvatarCatalog.Apply(resultAvatarImage, user.profileImageId);
             if (resultNicknameText != null) resultNicknameText.text = user.nickname;
             if (resultInfoText != null)
                 resultInfoText.text = $"Lv.{user.level} · {user.playCount}전 {user.winCount}승 · {user.WinRatePercent:0.#}%";

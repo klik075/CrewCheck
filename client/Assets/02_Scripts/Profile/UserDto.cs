@@ -19,10 +19,18 @@ namespace WhoisntCitizen.Profile
         public int playCount;
         public int winCount;
         public int lossCount;
+        public int profileImageId; // 아바타 프리셋 번호 (AvatarCatalog)
         public double winRate;  // 서버 계산값. 0~1 / 0~100 중 어느 쪽인지 모호하므로 화면에는 WinRatePercent를 쓴다.
 
         /// <summary>승률(%). 서버 winRate의 단위에 의존하지 않도록 승/판수로 직접 계산한다. (0~100)</summary>
         public double WinRatePercent => playCount <= 0 ? 0d : (double)winCount / playCount * 100d;
+    }
+
+    /// <summary>프로필 이미지 변경 요청. PATCH /api/users/me/profile-image</summary>
+    [Serializable]
+    public class ChangeProfileImageRequest
+    {
+        public int profileImageId;
     }
 
     /// <summary>닉네임 변경 요청. PATCH /api/users/me/nickname</summary>
