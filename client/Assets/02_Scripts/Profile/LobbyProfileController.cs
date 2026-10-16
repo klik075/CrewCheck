@@ -79,6 +79,12 @@ namespace WhoisntCitizen.Profile
         [SerializeField] private int nicknameMinLength = 2;
         [SerializeField] private int nicknameMaxLength = 10;
 
+        // 상단 패널(UserInfoArea/Info/MatchHistory)의 "전체/선원/해적 전적" 값 텍스트. 제목 글자로 찾는다.
+        private TMP_Text topTotalRecord, topCrewRecord, topPirateRecord;
+        private bool topRecordsBound;
+        // 프로필 팝업의 진영별 전적 줄 (전적 줄을 복제해서 만든다)
+        private TMP_Text factionValueText;
+
         private bool isLoading;     // 프로필 조회 중
         private Action<bool> pendingDone; // 조회 중에 들어온 LoadProfile 호출의 콜백 (같은 응답으로 함께 완료한다)
         private bool isChanging;    // 닉네임/아바타 변경 중
@@ -118,6 +124,7 @@ namespace WhoisntCitizen.Profile
         {
             if (profilePopup != null) profilePopup.SetActive(false); // 씬에 켜 둔 채 저장했어도 닫고 시작
             if (avatarPopup != null) avatarPopup.SetActive(false);
+            EnsureFactionRow();
 
             // 로그인하지 않았으면 LobbyUIController가 타이틀로 보내므로 요청하지 않는다.
             if (!AuthSession.IsAuthenticated) return;
@@ -193,6 +200,7 @@ namespace WhoisntCitizen.Profile
         private void RenderButton(UserProfileResponse profile)
         {
             if (profile != null) AvatarCatalog.Apply(profileButtonAvatar, profile.profileImageId);
+            if (profile != null) RenderTopRecords(profile);
             if (profileButtonText == null) return;
 
             profileButtonText.text = profile == null
@@ -209,6 +217,73 @@ namespace WhoisntCitizen.Profile
             if (goldText != null) goldText.text = p.gold.ToString("N0");
             if (recordText != null) recordText.text = $"{p.playCount}전 {p.winCount}승 {p.lossCount}패";
             if (winRateText != null) winRateText.text = $"{p.WinRatePercent:0.#}%";
+            if (factionValueText != null) factionValueText.text = FactionRecord.Lines(p);
+        }
+
+        // ------------------------------------------------------------------
+        // 진영별 전적 (상단 패널 / 프로필 팝업)
+        // ------------------------------------------------------------------
+
+        // 상단 패널의 전체/선원/해적 전적 칸을 찾아 "00승 00패" 자리에 값을 넣는다.
+        // 각 칸은 Item(Title/Text + Text (TMP) (1)) 구조이고, 제목 글자("전체 전적" 등)로 어느 칸인지 구분한다.
+        private void RenderTopRecords(UserProfileResponse p)
+        {
+            if (!topRecordsBound)
+            {
+                topRecordsBound = true;
+                Transform area = profileButton != null ? profileButton.transform.parent : null;
+                if (area != null)
+                {
+                    foreach (TMP_Text title in area.GetComponentsInChildren<TMP_Text>(true))
+                    {
+                        if (title.transform.parent == null || title.transform.parent.name != "Title") continue;
+                        Transform item = title.transform.parent.parent;
+                        TMP_Text value = null;
+                        foreach (TMP_Text t in item.GetComponentsInChildren<TMP_Text>(true))
+                            if (t != title) { value = t; break; }
+
+                        string label = title.text.Trim();
+                        if (label == "전체 전적") topTotalRecord = value;
+                        else if (label == "선원 전적") topCrewRecord = value;
+                        else if (label == "해적 전적") topPirateRecord = value;
+                    }
+                }
+            }
+
+            if (topTotalRecord != null) topTotalRecord.text = FactionRecord.WinLoss(p.playCount, p.winCount);
+            if (topCrewRecord != null) topCrewRecord.text = FactionRecord.WinLoss(p.crewPlayCount, p.crewWinCount);
+            if (topPirateRecord != null) topPirateRecord.text = FactionRecord.WinLoss(p.piratePlayCount, p.pirateWinCount);
+        }
+
+        // 프로필 팝업의 승률 줄 아래에 "선원/해적/중립" 세 줄을 복제해서 만든다. (씬을 고치지 않아도 되게)
+        private void EnsureFactionRow()
+        {
+            if (factionValueText != null || winRateText == null) return;
+            Transform winRow = winRateText.transform.parent;
+            if (winRow == null || winRow.parent == null) return;
+
+            GameObject row = Instantiate(winRow.gameObject, winRow.parent, false);
+            row.name = "Row_진영별";
+            row.transform.SetSiblingIndex(winRow.GetSiblingIndex() + 1);
+
+            TMP_Text[] texts = row.GetComponentsInChildren<TMP_Text>(true);
+            if (texts.Length < 2) { Destroy(row); return; }
+            TMP_Text title = texts[0], value = texts[1];
+
+            title.text = FactionRecord.Titles();
+            title.fontSize = 30f;
+            title.alignment = TextAlignmentOptions.MidlineLeft;
+            value.fontSize = 30f;
+            value.alignment = TextAlignmentOptions.MidlineRight;
+            value.text = string.Empty;
+
+            LayoutElement le = row.GetComponent<LayoutElement>();
+            if (le == null) le = row.AddComponent<LayoutElement>();
+            le.preferredHeight = 140f;
+            LayoutElement titleLe = title.GetComponent<LayoutElement>();
+            if (titleLe != null) titleLe.preferredHeight = -1f;
+
+            factionValueText = value;
         }
 
         // ------------------------------------------------------------------

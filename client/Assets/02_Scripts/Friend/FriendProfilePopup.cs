@@ -16,7 +16,7 @@ namespace WhoisntCitizen.Friend
     public class FriendProfilePopup : MonoBehaviour
     {
         private Image avatar;
-        private TMP_Text nickname, status, level, record, winRate;
+        private TMP_Text nickname, status, level, record, winRate, factionValues;
 
         public bool IsOpen => gameObject.activeSelf;
 
@@ -33,22 +33,30 @@ namespace WhoisntCitizen.Friend
 
             var popup = root.AddComponent<FriendProfilePopup>();
 
-            RectTransform panel = FriendConfirmPopup.NewImage("Background", rootRt, new Color(0.10f, 0.12f, 0.16f, 0.98f), new Vector2(600f, 620f));
+            RectTransform panel = FriendConfirmPopup.NewImage("Background", rootRt, new Color(0.10f, 0.12f, 0.16f, 0.98f), new Vector2(600f, 760f));
 
             RectTransform av = FriendConfirmPopup.NewImage("Avatar", panel, Color.white, new Vector2(140f, 140f));
-            av.anchoredPosition = new Vector2(0f, 200f);
+            av.anchoredPosition = new Vector2(0f, 250f);
             popup.avatar = av.GetComponent<Image>();
             popup.avatar.preserveAspect = true;
             popup.avatar.raycastTarget = false;
 
-            popup.nickname = FriendConfirmPopup.NewText("Nickname", panel, fontSource, 40f, new Vector2(520f, 56f), new Vector2(0f, 92f));
-            popup.status = FriendConfirmPopup.NewText("Status", panel, fontSource, 28f, new Vector2(520f, 40f), new Vector2(0f, 48f));
+            popup.nickname = FriendConfirmPopup.NewText("Nickname", panel, fontSource, 40f, new Vector2(520f, 56f), new Vector2(0f, 142f));
+            popup.status = FriendConfirmPopup.NewText("Status", panel, fontSource, 28f, new Vector2(520f, 40f), new Vector2(0f, 98f));
 
-            popup.level = Row(panel, fontSource, "레벨", -10f);
-            popup.record = Row(panel, fontSource, "전적", -80f);
-            popup.winRate = Row(panel, fontSource, "승률", -150f);
+            popup.level = Row(panel, fontSource, "레벨", 40f);
+            popup.record = Row(panel, fontSource, "전적", -30f);
+            popup.winRate = Row(panel, fontSource, "승률", -100f);
 
-            Button close = FriendConfirmPopup.NewButton("Button_Close", panel, "닫기", fontSource, buttonSource, new Vector2(0f, -250f));
+            // 진영별 전적: 왼쪽 선원/해적/중립, 오른쪽 판수·승수·승률 (세 줄)
+            TMP_Text factionTitles = FriendConfirmPopup.NewText("Label_진영", panel, fontSource, 30f, new Vector2(200f, 140f), new Vector2(-150f, -215f));
+            factionTitles.alignment = TextAlignmentOptions.MidlineLeft;
+            factionTitles.color = new Color(1f, 1f, 1f, 0.7f);
+            factionTitles.text = FactionRecord.Titles();
+            popup.factionValues = FriendConfirmPopup.NewText("Value_진영", panel, fontSource, 30f, new Vector2(300f, 140f), new Vector2(100f, -215f));
+            popup.factionValues.alignment = TextAlignmentOptions.MidlineRight;
+
+            Button close = FriendConfirmPopup.NewButton("Button_Close", panel, "닫기", fontSource, buttonSource, new Vector2(0f, -320f));
             close.onClick.AddListener(popup.Close);
 
             root.SetActive(false);
@@ -81,6 +89,8 @@ namespace WhoisntCitizen.Friend
             level.text = $"Lv.{friend.level}";
             record.text = $"{friend.playCount}전 {friend.winCount}승 {Mathf.Max(0, friend.playCount - friend.winCount)}패";
             winRate.text = $"{friend.WinRatePercent:0.#}%";
+            factionValues.text = FactionRecord.Lines(friend.crewPlayCount, friend.crewWinCount, friend.piratePlayCount,
+                friend.pirateWinCount, friend.neutralPlayCount, friend.neutralWinCount);
 
             gameObject.SetActive(true);
             transform.SetAsLastSibling();
