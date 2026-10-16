@@ -169,6 +169,25 @@ namespace WhoisntCitizen.Game
             }
         }
 
+        /// <summary>
+        /// 개발용: 다른 플레이어가 낮 토론을 넘긴 것처럼 처리한다 (봇이 행동하지 않을 때 넘긴 인원 동기화 확인용).
+        /// 낮이 아니거나 죽은 플레이어면 아무것도 하지 않는다. 살아 있는 전원이 넘기면 서버처럼 바로 투표로 넘어간다.
+        /// </summary>
+        public void SkipDayAs(long playerId)
+        {
+            Advance();
+            FakePlayer skipper = Find(playerId);
+            if (phase != GamePhases.Day || skipper == null || !skipper.Alive)
+            {
+                return;
+            }
+            daySkippers.Add(playerId);
+            if (DaySkipCount() >= AliveCount())
+            {
+                EnterVote(clock());
+            }
+        }
+
         /// <summary>개발용: 서버가 게임을 취소한 것처럼 승리 팀 없이 끝낸다. reason은 EndReasons.Cancelled*.</summary>
         public void CancelGame(string reason)
         {
@@ -200,7 +219,8 @@ namespace WhoisntCitizen.Game
                 serverTime = Iso(clock()),
                 phaseVersion = phaseVersion,
                 winner = winner,
-                endReason = endReason
+                endReason = endReason,
+                daySkipCount = phase == GamePhases.Day ? DaySkipCount() : 0 // 서버 GameStateResponse.daySkipCount와 같다
             };
             foreach (FakePlayer p in players)
             {
