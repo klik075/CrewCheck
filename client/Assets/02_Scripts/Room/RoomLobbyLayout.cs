@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using WhoisntCitizen.Chat;
 using WhoisntCitizen.Common;
 using WhoisntCitizen.GameUI;
+using WhoisntCitizen.Profile;
 
 namespace WhoisntCitizen.Lobby
 {
@@ -212,7 +213,7 @@ namespace WhoisntCitizen.Lobby
             row.gameObject.AddComponent<LayoutElement>().preferredHeight = 102;
             var mask = Icon("PortraitMask", row.transform, 19, -1, 104, RoomHelmGraphic.Symbol.Disc, new Color32(45,  30, 19, 255));
             mask.gameObject.AddComponent<Mask>().showMaskGraphic = true;
-            var portrait = Box("CrewPortrait", mask.transform, portraits?.Find(PortraitIds[(int)((ulong)player.userId % (ulong)PortraitIds.Length)]), Color.white);
+            var portrait = Box("CrewPortrait", mask.transform, PortraitOf(player), Color.white);
             Place(portrait.rectTransform, -17, -6, 138, 150); portrait.preserveAspect = true;
             Icon("PortraitMedallion", row.transform, 12, -8, 118, RoomHelmGraphic.Symbol.Medallion, Gold);
             var name = Label("Nickname", row.transform, 184, 24, 404, 54, "", 30, Ink);
@@ -231,6 +232,13 @@ namespace WhoisntCitizen.Lobby
             var view = row.gameObject.AddComponent<RoomPlayerView>();
             view.ConfigureCabin(name, badge.gameObject, state, manage, self.gameObject, stateIcon);
             return view;
+        }
+
+        // 로비에서 고른 프로필 이미지. 구버전 서버(-1)면 userId로 고른 기본 초상화를 쓴다.
+        private Sprite PortraitOf(RoomPlayerResponse player)
+        {
+            if (player.profileImageId >= 0) return AvatarCatalog.Get(player.profileImageId);
+            return portraits?.Find(PortraitIds[(int)((ulong)player.userId % (ulong)PortraitIds.Length)]);
         }
 
         public void AddEmptySlots(int count)
