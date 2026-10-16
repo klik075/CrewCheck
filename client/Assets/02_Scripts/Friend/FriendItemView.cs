@@ -30,6 +30,8 @@ namespace WhoisntCitizen.Friend
 
         private FriendResponse friend;
         private Action<FriendResponse> onRemove;
+        private Action<FriendResponse> onSelect;
+        private Button rowButton;
 
         public FriendResponse Friend => friend;
 
@@ -37,17 +39,35 @@ namespace WhoisntCitizen.Friend
         {
             if (removeButton != null && removeButton.onClick.GetPersistentEventCount() == 0)
                 removeButton.onClick.AddListener(OnRemoveClicked);
+
+            // 줄 전체를 눌러 프로필을 연다. (삭제 버튼은 자식이라 자기 클릭을 먼저 받는다)
+            Image rowImage = GetComponent<Image>();
+            if (rowImage != null)
+            {
+                rowImage.raycastTarget = true;
+                rowButton = GetComponent<Button>();
+                if (rowButton == null) rowButton = gameObject.AddComponent<Button>();
+                rowButton.targetGraphic = rowImage;
+                rowButton.onClick.AddListener(OnRowClicked);
+            }
         }
 
         private void OnDestroy()
         {
             if (removeButton != null) removeButton.onClick.RemoveListener(OnRemoveClicked);
+            if (rowButton != null) rowButton.onClick.RemoveListener(OnRowClicked);
         }
 
-        public void Bind(FriendResponse data, Action<FriendResponse> onRemoveClicked)
+        private void OnRowClicked()
+        {
+            if (friend != null) onSelect?.Invoke(friend);
+        }
+
+        public void Bind(FriendResponse data, Action<FriendResponse> onRemoveClicked, Action<FriendResponse> onSelectClicked = null)
         {
             friend = data;
             onRemove = onRemoveClicked;
+            onSelect = onSelectClicked;
 
             string statusRichText = $"<color=#{ColorUtility.ToHtmlStringRGB(StatusColor(data))}>● {data.StatusLabel}</color>";
 
@@ -59,7 +79,7 @@ namespace WhoisntCitizen.Friend
                 recordText.text = $"Lv.{data.level} · {data.playCount}전 {data.winCount}승 · {data.WinRatePercent:0.#}%";
         }
 
-        private static Color StatusColor(FriendResponse data)
+        internal static Color StatusColor(FriendResponse data)
         {
             switch (data.status)
             {
@@ -75,6 +95,7 @@ namespace WhoisntCitizen.Friend
         public void SetLocked(bool value)
         {
             if (removeButton != null) removeButton.interactable = !value;
+            if (rowButton != null) rowButton.interactable = !value;
         }
 
         public void OnRemoveClicked()
