@@ -106,6 +106,9 @@ namespace WhoisntCitizen.Lobby
             text.richText = false; text.enableAutoSizing = false;
             var hint = ui.Label("Placeholder", viewport, 0, 0, w - 36, h - 16, placeholder, 28, new Color32(128, 100, 74, 255));
             var input = background.gameObject.AddComponent<TMP_InputField>();
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            background.gameObject.AddComponent<WebGLSupport.WebGLInput>();
+            #endif
             input.textViewport = viewport; input.textComponent = text; input.placeholder = hint; input.targetGraphic = background.GetComponent<Image>();
             input.lineType = TMP_InputField.LineType.SingleLine; return input;
         }
