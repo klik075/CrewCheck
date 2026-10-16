@@ -236,6 +236,45 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 게임_결과가_처형_결과보다_먼저_와도_처형_결과를_보여준_뒤에_띄운다()
+        {
+            Start(RoleCodes.CrewCaptain, false);
+            session.Tick();
+            SkipUntil(GamePhases.Vote);
+            session.Vote(102);
+            api.HoldResponses = true;
+            SkipAndPoll();                         // VOTE → ENDED: 처형 결과와 게임 결과를 한꺼번에 묻는다
+            api.ReleaseResponse("GetState");
+            api.ReleaseResponse("GetResult");
+            Assert.AreEqual(0, view.GameResults.Count, "처형 결과(컷신)보다 결과 화면이 먼저 뜨지 않는다");
+
+            api.ReleaseResponse("GetExecutionResult");
+            Assert.AreEqual(102L, view.Executions.Single().executedPlayerId);
+            Assert.AreEqual(Factions.Crew, view.GameResults.Single().winner);
+        }
+
+        [Test]
+        public void 게임_결과가_밤_결과보다_먼저_와도_밤_결과를_보여준_뒤에_띄운다()
+        {
+            Start(RoleCodes.PirateRaider, false);
+            session.Tick();
+            SkipUntil(GamePhases.Vote);
+            session.Vote(104);
+            SkipUntil(GamePhases.Night);
+            session.SubmitNightAction(105);
+            api.HoldResponses = true;
+            SkipAndPoll();                         // NIGHT → ENDED: 밤 결과·(없는) 처형 결과·게임 결과를 한꺼번에 묻는다
+            api.ReleaseResponse("GetState");
+            api.ReleaseResponse("GetResult");
+            api.ReleaseResponse("GetNightResult");
+            Assert.AreEqual(105L, view.NightResults.Last().killedPlayerId);
+            Assert.AreEqual(0, view.GameResults.Count, "처형 결과 조회의 응답도 기다린다");
+
+            api.ReleaseResponse("GetExecutionResult");
+            Assert.AreEqual(Factions.Pirate, view.GameResults.Single().winner);
+        }
+
+        [Test]
         public void 취소된_게임은_결과를_받고_취소로_표시한다()
         {
             Start(RoleCodes.CrewSailor, false);

@@ -45,6 +45,7 @@ namespace WhoisntCitizen.Game
         private bool nightInFlight;
         private bool executionInFlight;
         private bool resultInFlight;
+        private GameResultDto heldResult;   // 같이 보낸 밤·처형 결과 조회의 응답을 기다리는 게임 결과
         private int nightShownDay;          // 보여 준 마지막 밤 결과의 일차
         private int executionShownDay;      // 보여 준(또는 볼 것이 없다고 확인한) 마지막 처형 결과의 일차
 
@@ -781,15 +782,15 @@ namespace WhoisntCitizen.Game
             api.GetNightResult(GameId, r =>
             {
                 nightInFlight = false;
-                if (!OnFetchResponse(r) || r.Data.day < expectedDay)
+                if (OnFetchResponse(r) && r.Data.day >= expectedDay) // 아직 그날 결과가 아니면 다음 폴링에서 다시
                 {
-                    return; // 아직 그날 결과가 아니면 다음 폴링에서 다시
+                    nightShownDay = r.Data.day;
+                    LastNightResult = r.Data;
+                    RememberKraken(r.Data);
+                    RememberInvestigations(r.Data);
+                    view.ShowNightResult(r.Data);
                 }
-                nightShownDay = r.Data.day;
-                LastNightResult = r.Data;
-                RememberKraken(r.Data);
-                RememberInvestigations(r.Data);
-                view.ShowNightResult(r.Data);
+                ShowHeldResult();
             });
         }
 
@@ -845,17 +846,16 @@ namespace WhoisntCitizen.Game
                     executionShownDay = r.Data.day;
                     LastExecutionResult = r.Data;
                     view.ShowExecutionResult(r.Data);
-                    return;
                 }
-                if (ended && (r.Success || r.IsRuleViolation))
+                else if (ended && (r.Success || r.IsRuleViolation))
                 {
                     executionShownDay = expectedDay; // 그날은 투표 전에 끝났다
-                    return;
                 }
-                if (!r.Success && !CloseIfGone(r) && r.IsConnectionError)
+                else if (!r.Success && !CloseIfGone(r) && r.IsConnectionError)
                 {
                     SetConnected(false);
                 }
+                ShowHeldResult();
             });
         }
 
@@ -870,8 +870,25 @@ namespace WhoisntCitizen.Game
                     return;
                 }
                 Result = r.Data;
-                view.ShowGameResult(r.Data);
+                heldResult = r.Data;
+                ShowHeldResult();
             });
+        }
+
+        /// <summary>
+        /// 게임 결과는 같이 보낸 밤·처형 결과 조회의 응답이 다 온 뒤에 보여 준다. 서버는 VOTE·NIGHT에서 바로 ENDED로 넘어가므로
+        /// 세 조회가 한꺼번에 나가는데, 게임 결과가 먼저 오면 마지막 처형·밤 컷신보다 결과 화면이 먼저 뜬다.
+        /// 그 조회가 실패해도(다음 폴링에서 다시) 결과는 미루지 않는다.
+        /// </summary>
+        private void ShowHeldResult()
+        {
+            if (heldResult == null || closed || nightInFlight || executionInFlight)
+            {
+                return;
+            }
+            GameResultDto result = heldResult;
+            heldResult = null;
+            view.ShowGameResult(result);
         }
 
         /// <summary>조회 응답 공통 처리. 성공이면 true. 실패는 조용히 넘기고 다음 폴링 때 다시 받는다.</summary>
