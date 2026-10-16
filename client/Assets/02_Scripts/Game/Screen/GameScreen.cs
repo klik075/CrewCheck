@@ -183,6 +183,7 @@ namespace WhoisntCitizen.Game
             {
                 serverChat = FindFirstObjectByType<GameChatController>(FindObjectsInactive.Include);
             }
+            if (serverChat != null) serverChat.LiveMessageReceived += OnLiveServerMessage;
             if (votePanel != null)
             {
                 votePanel.PortraitResolver = PortraitOf;
@@ -298,6 +299,7 @@ namespace WhoisntCitizen.Game
 
         private void OnDestroy()
         {
+            if (serverChat != null) serverChat.LiveMessageReceived -= OnLiveServerMessage;
             GameAudioCues.Stop(); // 게임 BGM 끄기 (오디오 매니저는 씬이 바뀌어도 남는다)
             // [카드패 투표로 교체 - 주석 처리]
             // if (votePanel != null)
@@ -874,6 +876,14 @@ namespace WhoisntCitizen.Game
                 AddSystem(GameScreenText.DaySkipAccepted(result));
             }
             RefreshPanels(); // 넘긴 인원은 패널 안내에 항상 보인다
+        }
+
+        private void OnLiveServerMessage(ChatMessage message)
+        {
+            if (message == null || !message.IsSystem || serverChat == null || serverChat.lobbyChat
+                || controller == null || controller.UsesFakeServer || !RoomSession.HasRoom
+                || serverChat.RoomId != RoomSession.RoomId) return;
+            if (Session != null && Session.ReceiveDaySkipAnnouncement(message.content)) RefreshPanels();
         }
 
         public void ShowDayExtendAccepted(DayExtendResultDto result)
