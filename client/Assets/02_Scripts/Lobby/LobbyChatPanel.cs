@@ -237,6 +237,9 @@ namespace WhoisntCitizen.Lobby
             text.richText = false;
 
             input = fieldRt.gameObject.AddComponent<TMP_InputField>();
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            fieldRt.gameObject.AddComponent<WebGLSupport.WebGLInput>();
+            #endif
             input.textViewport = area;
             input.textComponent = text;
             input.placeholder = placeholder;
