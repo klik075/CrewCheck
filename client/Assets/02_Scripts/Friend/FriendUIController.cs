@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -69,6 +70,12 @@ namespace WhoisntCitizen.Friend
         [Header("Rules")]
         [Tooltip("닉네임 검색어 최대 글자 수")]
         [SerializeField] private int searchMaxLength = 10;
+        [Tooltip("받은 친구 요청을 확인하는 주기(초). 새 요청이 오면 친구 버튼에 빨간 점이 뜬다.")]
+        [SerializeField] private float requestPollSeconds = 15f;
+
+        private NotificationDot requestDot;          // 친구 버튼의 빨간 점 (받은 요청이 있을 때)
+        private FriendConfirmPopup confirmPopup;     // 친구 삭제 확인 (처음 필요할 때 만든다)
+        private FriendProfilePopup profilePopup;     // 친구 프로필 (처음 필요할 때 만든다)
 
         private readonly List<FriendItemView> friendItems = new List<FriendItemView>();
         private readonly List<FriendRequestItemView> requestItems = new List<FriendRequestItemView>();
@@ -106,6 +113,20 @@ namespace WhoisntCitizen.Friend
         private void Start()
         {
             if (friendPopup != null) friendPopup.SetActive(false); // 씬에 켜 둔 채 저장했어도 닫고 시작
+
+            // 친구 버튼 오른쪽 위에 받은 요청 알림 점을 붙이고, 팝업이 닫혀 있어도 주기적으로 확인한다.
+            if (openButton != null) requestDot = NotificationDot.AttachTo((RectTransform)openButton.transform);
+            StartCoroutine(PollRequestsRoutine());
+        }
+
+        private IEnumerator PollRequestsRoutine()
+        {
+            var wait = new WaitForSeconds(requestPollSeconds);
+            while (true)
+            {
+                if (!isBusy && !SceneLoader.IsLoading) RefreshRequestCount();
+                yield return wait;
+            }
         }
 
         // ------------------------------------------------------------------
@@ -199,7 +220,7 @@ namespace WhoisntCitizen.Friend
             {
                 FriendItemView item = Instantiate(friendItemPrefab, friendListContent);
                 item.name = $"FriendItem_{friend.friendshipId}";
-                item.Bind(friend, OnRemoveFriend);
+                item.Bind(friend, OnRemoveFriend, OnOpenFriendProfile);
                 friendItems.Add(item);
             }
 
@@ -208,6 +229,44 @@ namespace WhoisntCitizen.Friend
 
         // 친구 삭제 버튼
         private void OnRemoveFriend(FriendResponse friend)
+        {
+            if (isBusy) return;
+
+            EnsureConfirmPopup();
+            if (confirmPopup == null)
+            {
+                RemoveFriend(friend); // 팝업을 만들 수 없으면 기존처럼 바로 삭제
+                return;
+            }
+            confirmPopup.Open($"{friend.nickname}님을 친구에서\n삭제할까요?", () => RemoveFriend(friend));
+        }
+
+        // 친구 줄 클릭: 친구 프로필 팝업
+        private void OnOpenFriendProfile(FriendResponse friend)
+        {
+            if (isBusy || friendPopup == null) return;
+
+            if (profilePopup == null)
+            {
+                Transform parent = friendPopup.transform.parent;
+                if (parent == null) return;
+                profilePopup = FriendProfilePopup.Create(parent, PopupFont(), PopupButtonImage());
+            }
+            profilePopup.Open(friend);
+        }
+
+        private TMP_Text PopupFont() => statusMessage != null ? statusMessage.GetComponent<TMP_Text>() : null;
+        private Image PopupButtonImage() => sendRequestButton != null ? sendRequestButton.GetComponent<Image>() : null;
+
+        private void EnsureConfirmPopup()
+        {
+            if (confirmPopup != null || friendPopup == null) return;
+            Transform parent = friendPopup.transform.parent;
+            if (parent == null) return;
+            confirmPopup = FriendConfirmPopup.Create(parent, PopupFont(), PopupButtonImage());
+        }
+
+        private void RemoveFriend(FriendResponse friend)
         {
             if (isBusy) return;
 
@@ -452,10 +511,10 @@ namespace WhoisntCitizen.Friend
             }
         }
 
-        // 받은 요청 개수 배지만 갱신 (requestCountText가 있을 때만 요청한다)
+        // 받은 요청 개수 배지와 친구 버튼의 빨간 점만 갱신
         private void RefreshRequestCount()
         {
-            if (requestCountText == null) return;
+            if (requestCountText == null && requestDot == null) return;
 
             FriendApi.GetRequests(result =>
             {
@@ -466,6 +525,7 @@ namespace WhoisntCitizen.Friend
 
         private void SetRequestCount(int count)
         {
+            if (requestDot != null) requestDot.Show(count > 0);
             if (requestCountText == null) return;
             requestCountText.gameObject.SetActive(count > 0);
             requestCountText.text = count.ToString();
