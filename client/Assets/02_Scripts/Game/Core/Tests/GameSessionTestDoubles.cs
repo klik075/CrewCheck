@@ -12,12 +12,15 @@ namespace WhoisntCitizen.Game.Tests
     {
         private readonly IGameApi inner;
         private readonly List<Action> pending = new List<Action>();
+        private readonly List<Action> responses = new List<Action>();
         private readonly Dictionary<string, int> calls = new Dictionary<string, int>();
 
         public bool Deferred;
         public bool Offline;
         public bool Gone;
         public bool NoExtendApi;
+        public bool HoldResponses; // 서버 처리는 끝내고 응답 전달만 미룬다 (GET/POST 도착 순서 재현)
+        public bool OmitDaySkipCount;
 
         public TestGameApi(IGameApi inner)
         {
@@ -48,7 +51,18 @@ namespace WhoisntCitizen.Game.Tests
 
         public void GetState(string gameId, Action<GameApiResult<GameStateDto>> onDone)
         {
-            Handle("GetState", onDone, cb => inner.GetState(gameId, cb));
+            Handle("GetState", onDone, cb => inner.GetState(gameId, result =>
+            {
+                if (OmitDaySkipCount && result.Success) result.Data.daySkipCount = -1;
+                cb(result);
+            }));
+        }
+
+        public void ReleaseResponse(int index = 0)
+        {
+            Action response = responses[index];
+            responses.RemoveAt(index);
+            response();
         }
 
         public void GetMe(string gameId, Action<GameApiResult<MyRoleDto>> onDone)
@@ -126,7 +140,11 @@ namespace WhoisntCitizen.Game.Tests
                 }
                 else
                 {
-                    forward(onDone);
+                    forward(result =>
+                    {
+                        if (HoldResponses) responses.Add(() => onDone(result));
+                        else onDone(result);
+                    });
                 }
             };
             if (Deferred)

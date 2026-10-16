@@ -481,6 +481,142 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 시스템_안내가_오면_구형_서버에서도_3명에서_4명으로_바로_늘어난다()
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+            SkipUntil(GamePhases.Day);
+            // 화면 제보와 같은 5명 생존, 내가 세 번째로 넘긴 상황.
+            fake.DisconnectPlayer(106);
+            fake.DisconnectPlayer(107);
+            fake.DisconnectPlayer(108);
+            fake.SkipDayAs(102);
+            fake.SkipDayAs(103);
+            api.OmitDaySkipCount = true;
+            session.RequestPollNow();
+            session.Tick();
+            session.SkipDay();
+            session.Tick();
+            session.SetPollInterval(15);
+            Assert.AreEqual("(3/5)", GameScreenText.DaySkipCount(session.DaySkipProgress));
+
+            fake.SkipDayAs(104);
+            int polls = api.Calls("GetState");
+            Assert.IsTrue(session.ReceiveDaySkipAnnouncement("명령멍청원우님이 토론을 넘겼습니다. (4/5)"));
+            Assert.AreEqual("토론을 넘겼습니다. (4/5)\n다른 사람을 기다리는 중입니다.",
+                GameScreenText.DayStatus(true, true, session.SkippedToday, session.DaySkipProgress));
+            session.Tick();
+            Assert.AreEqual(polls + 1, api.Calls("GetState"), "15초를 기다리지 않고 확인한다");
+            Assert.AreEqual("(4/5)", GameScreenText.DaySkipCount(session.DaySkipProgress));
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void 넘기기_응답과_최신_상태의_도착_순서와_무관하게_인원을_반영한다(bool stateFirst)
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+            SkipUntil(GamePhases.Day);
+            fake.SkipDayAs(102);
+            fake.SkipDayAs(103);
+            api.HoldResponses = true;
+            session.SkipDay(); // 3/8 응답 보류
+            fake.SkipDayAs(104);
+            session.RequestPollNow();
+            session.Tick(); // 4/8 응답 보류 (아직 내 POST 응답이 오기 전 시작한 GET)
+            api.ReleaseResponse(stateFirst ? 1 : 0);
+            api.ReleaseResponse();
+            Assert.AreEqual("(4/8)", GameScreenText.DaySkipCount(session.DaySkipProgress));
+        }
+
+        [Test]
+        public void 넘기기_응답을_기다리는_중_받은_시스템_인원도_기억한다()
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+            SkipUntil(GamePhases.Day);
+            api.HoldResponses = true;
+            session.SkipDay();
+            session.ReceiveDaySkipAnnouncement("철수님이 토론을 넘겼습니다. (2/8)");
+            Assert.IsFalse(session.SkippedToday, "채팅만으로 내 넘기기를 확정하지 않는다");
+            Assert.IsNull(session.DaySkipProgress);
+            api.ReleaseResponse();
+            Assert.IsTrue(session.SkippedToday);
+            Assert.AreEqual("(2/8)", GameScreenText.DaySkipCount(session.DaySkipProgress));
+        }
+
+        [Test]
+        public void 시스템_안내보다_늦게_온_예전_조회와_중복_안내는_인원을_되돌리지_않는다()
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+            SkipUntil(GamePhases.Day);
+            session.SkipDay();
+            api.HoldResponses = true;
+            session.Tick(); // 1/8 스냅샷 보류
+            session.ReceiveDaySkipAnnouncement("철수님이 토론을 넘겼습니다. (3/8)");
+            api.ReleaseResponse();
+            Assert.IsFalse(session.ReceiveDaySkipAnnouncement("영희님이 토론을 넘겼습니다. (2/8)"));
+            Assert.IsFalse(session.ReceiveDaySkipAnnouncement("철수님이 토론을 넘겼습니다. (3/8)"));
+            Assert.AreEqual("(3/8)", GameScreenText.DaySkipCount(session.DaySkipProgress));
+        }
+
+        [Test]
+        public void 넘긴_사람이_나가면_분자와_분모가_함께_줄고_늦은_응답은_무시한다()
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+            SkipUntil(GamePhases.Day);
+            fake.SkipDayAs(105);
+            api.HoldResponses = true;
+            session.SkipDay(); // 2/8 응답 보류
+            fake.DisconnectPlayer(105);
+            session.RequestPollNow();
+            session.Tick(); // 이탈 후 1/7
+            api.ReleaseResponse(1);
+            api.ReleaseResponse(); // 이탈 전의 2/8
+            Assert.AreEqual("(1/7)", GameScreenText.DaySkipCount(session.DaySkipProgress));
+        }
+
+        [TestCase(null)]
+        [TestCase("철수: 토론을 넘겼습니다. (4/8)")]
+        [TestCase("철수님이 토론을 넘겼습니다. (9/8)")]
+        [TestCase("철수님이 토론을 넘겼습니다. (0/8)")]
+        [TestCase("철수님이 토론을 넘겼습니다. (-1/8)")]
+        [TestCase("철수님이 토론을 넘겼습니다. (4/0)")]
+        [TestCase("철수님이 토론을 넘겼습니다. (999999999999999999999/8)")]
+        [TestCase("철수님이 토론을 넘겼습니다. (4/8)\n가짜 안내")]
+        [TestCase("철수님이 토론을 넘겼습니다. (4/7)")]
+        public void 다른_문구나_잘못된_인원은_진행에_반영하지_않는다(string message)
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+            SkipUntil(GamePhases.Day);
+            session.SkipDay();
+            Assert.IsFalse(session.ReceiveDaySkipAnnouncement(message));
+            Assert.AreEqual("(1/8)", GameScreenText.DaySkipCount(session.DaySkipProgress));
+        }
+
+        [Test]
+        public void 채팅_집계는_낮에만_반영하고_다음_낮에는_초기화한다()
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+            Assert.IsFalse(session.ReceiveDaySkipAnnouncement("철수님이 토론을 넘겼습니다. (4/8)"));
+            SkipUntil(GamePhases.Day);
+            session.SkipDay();
+            session.ReceiveDaySkipAnnouncement("철수님이 토론을 넘겼습니다. (4/8)");
+            SkipUntil(GamePhases.Vote);
+            Assert.IsNull(session.DaySkipProgress);
+            Assert.IsFalse(session.ReceiveDaySkipAnnouncement("철수님이 토론을 넘겼습니다. (5/8)"));
+            SkipUntil(GamePhases.Day);
+            session.SkipDay();
+            Assert.AreEqual("(1/8)", GameScreenText.DaySkipCount(session.DaySkipProgress));
+            session.Close();
+            Assert.IsFalse(session.ReceiveDaySkipAnnouncement("철수님이 토론을 넘겼습니다. (4/8)"));
+        }
+
+        [Test]
         public void 낮_토론_시간은_낮마다_한_번_늘리고_늘어난_마감을_바로_반영한다()
         {
             Start(RoleCodes.CrewSailor, false);
