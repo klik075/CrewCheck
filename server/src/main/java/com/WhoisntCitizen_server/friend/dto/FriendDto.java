@@ -33,6 +33,12 @@ public class FriendDto {
 		private int winCount;
 		private double winRate;
 		private int profileImageId;
+		private int crewPlayCount;
+		private int crewWinCount;
+		private int piratePlayCount;
+		private int pirateWinCount;
+		private int neutralPlayCount;
+		private int neutralWinCount;
 		/** 접속 중인지 (status가 OFFLINE이 아니면 true). JSON 이름은 online */
 		private boolean online;
 		/** 접속 상태: OFFLINE, ONLINE, IN_ROOM(대기실), IN_GAME(게임 중) */
@@ -50,6 +56,12 @@ public class FriendDto {
 					.winCount(friendUser.getWinCount())
 					.winRate(rate)
 					.profileImageId(friendUser.getProfileImageId())
+					.crewPlayCount(friendUser.getCrewPlayCount())
+					.crewWinCount(friendUser.getCrewWinCount())
+					.piratePlayCount(friendUser.getPiratePlayCount())
+					.pirateWinCount(friendUser.getPirateWinCount())
+					.neutralPlayCount(friendUser.getNeutralPlayCount())
+					.neutralWinCount(friendUser.getNeutralWinCount())
 					.online(presence.isOnline())
 					.status(presence.name())
 					.build();
