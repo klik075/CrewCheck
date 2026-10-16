@@ -32,6 +32,12 @@ public class UserDto {
 		private int lossCount;
 		private double winRate; // 백분율 (예: 62.5%)
 		private int profileImageId;
+		private int crewPlayCount;
+		private int crewWinCount;
+		private int piratePlayCount;
+		private int pirateWinCount;
+		private int neutralPlayCount;
+		private int neutralWinCount;
 
 		public static MyProfileResponse from(User user) {
 			int loss = Math.max(0, user.getPlayCount() - user.getWinCount());
@@ -48,6 +54,12 @@ public class UserDto {
 					.lossCount(loss)
 					.winRate(rate)
 					.profileImageId(user.getProfileImageId())
+					.crewPlayCount(user.getCrewPlayCount())
+					.crewWinCount(user.getCrewWinCount())
+					.piratePlayCount(user.getPiratePlayCount())
+					.pirateWinCount(user.getPirateWinCount())
+					.neutralPlayCount(user.getNeutralPlayCount())
+					.neutralWinCount(user.getNeutralWinCount())
 					.build();
 		}
 	}
@@ -65,6 +77,12 @@ public class UserDto {
 		private int winCount;
 		private double winRate;
 		private int profileImageId;
+		private int crewPlayCount;
+		private int crewWinCount;
+		private int piratePlayCount;
+		private int pirateWinCount;
+		private int neutralPlayCount;
+		private int neutralWinCount;
 
 		public static PublicProfileResponse from(User user) {
 			double rate = Math.round(user.getWinRate() * 1000.0) / 10.0;
@@ -77,6 +95,12 @@ public class UserDto {
 					.winCount(user.getWinCount())
 					.winRate(rate)
 					.profileImageId(user.getProfileImageId())
+					.crewPlayCount(user.getCrewPlayCount())
+					.crewWinCount(user.getCrewWinCount())
+					.piratePlayCount(user.getPiratePlayCount())
+					.pirateWinCount(user.getPirateWinCount())
+					.neutralPlayCount(user.getNeutralPlayCount())
+					.neutralWinCount(user.getNeutralWinCount())
 					.build();
 		}
 	}

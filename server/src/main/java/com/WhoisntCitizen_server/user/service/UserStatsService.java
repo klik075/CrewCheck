@@ -41,7 +41,7 @@ public class UserStatsService {
                 log.warn("[{}] 전적 저장 건너뜀: 존재하지 않는 userId={}", event.gameId(), outcome.userId());
                 continue;
             }
-            user.recordGame(outcome.win());
+            user.recordGame(outcome.faction(), outcome.win());
             updated++;
         }
         return updated;
