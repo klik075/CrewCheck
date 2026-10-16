@@ -12,7 +12,7 @@ namespace WhoisntCitizen.Game.Tests
     {
         private readonly IGameApi inner;
         private readonly List<Action> pending = new List<Action>();
-        private readonly List<Action> responses = new List<Action>();
+        private readonly List<KeyValuePair<string, Action>> responses = new List<KeyValuePair<string, Action>>();
         private readonly Dictionary<string, int> calls = new Dictionary<string, int>();
 
         public bool Deferred;
@@ -60,9 +60,15 @@ namespace WhoisntCitizen.Game.Tests
 
         public void ReleaseResponse(int index = 0)
         {
-            Action response = responses[index];
+            Action response = responses[index].Value;
             responses.RemoveAt(index);
             response();
+        }
+
+        /// <summary>보류한 응답 중 그 메서드의 첫 응답을 보낸다.</summary>
+        public void ReleaseResponse(string method)
+        {
+            ReleaseResponse(responses.FindIndex(r => r.Key == method));
         }
 
         public void GetMe(string gameId, Action<GameApiResult<MyRoleDto>> onDone)
@@ -142,7 +148,7 @@ namespace WhoisntCitizen.Game.Tests
                 {
                     forward(result =>
                     {
-                        if (HoldResponses) responses.Add(() => onDone(result));
+                        if (HoldResponses) responses.Add(new KeyValuePair<string, Action>(method, () => onDone(result)));
                         else onDone(result);
                     });
                 }
