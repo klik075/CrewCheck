@@ -95,6 +95,7 @@ public class RoomService {
      *
      * 닉네임이 필요한 곳
      *   - 방 생성·입장: 방 참가자 목록과 입장 알림에 닉네임이 들어가므로 findUser(userId)로 User를 조회한다.
+     *     대기실 초상화에 쓸 프로필 이미지 번호도 이때 같이 저장한다.
      *   - 나가기: 퇴장 알림 닉네임은 DB가 아니라 방 참가자 정보(RoomPlayer)에서 꺼낸다. 입장할 때 저장해 둔 값이다.
      */
 
@@ -117,7 +118,7 @@ public class RoomService {
                 privateRoom, request.getPassword());
 
         // 방을 만든 사람은 자동으로 해당 방에 입장 (비밀방이어도 방장은 비밀번호를 입력하지 않는다)
-        room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
+        room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false, user.getProfileImageId()));
 
         roomRepository.save(room);
         eventPublisher.publishEvent(new RoomPlayerJoinedEvent(roomId, user.getId(), user.getNickname()));
@@ -155,7 +156,7 @@ public class RoomService {
             if (!room.matchesPassword(password)) throw new RoomPasswordException();
             if (room.isFull()) throw new IllegalStateException("방이 가득 찼습니다.");
 
-            room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
+            room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false, user.getProfileImageId()));
 
             roomRepository.save(room);
             return RoomResponseDto.from(room);
