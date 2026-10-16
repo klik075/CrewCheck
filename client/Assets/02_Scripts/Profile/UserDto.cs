@@ -21,6 +21,13 @@ namespace WhoisntCitizen.Profile
         public int lossCount;
         public int profileImageId; // 아바타 프리셋 번호 (AvatarCatalog)
         public double winRate;  // 서버 계산값. 0~1 / 0~100 중 어느 쪽인지 모호하므로 화면에는 WinRatePercent를 쓴다.
+        // 진영별 전적 (선원/해적/중립). 옛 서버 응답에는 없을 수 있다(0).
+        public int crewPlayCount;
+        public int crewWinCount;
+        public int piratePlayCount;
+        public int pirateWinCount;
+        public int neutralPlayCount;
+        public int neutralWinCount;
 
         /// <summary>승률(%). 서버 winRate의 단위에 의존하지 않도록 승/판수로 직접 계산한다. (0~100)</summary>
         public double WinRatePercent => playCount <= 0 ? 0d : (double)winCount / playCount * 100d;
