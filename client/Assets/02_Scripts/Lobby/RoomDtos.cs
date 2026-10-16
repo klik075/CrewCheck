@@ -140,6 +140,7 @@ namespace WhoisntCitizen.Lobby
         public long userId;
         public string nickname;
         public bool ready; // 준비 상태 (방장은 준비하지 않으므로 의미 없음)
+        public int profileImageId = -1; // 입장할 때의 프로필 이미지 (AvatarCatalog 번호). 구버전 서버는 키가 없어 -1
     }
 
     /// <summary>

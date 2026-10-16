@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using WhoisntCitizen.Common;
 using WhoisntCitizen.Chat; // ChatNotice: 내 화면 전용 안내 (채팅창 + 콘솔)
+using WhoisntCitizen.Profile; // LobbyProfileController.ProfileChanged: 닉네임 변경 반영
 
 namespace WhoisntCitizen.Lobby
 {
@@ -11,7 +12,7 @@ namespace WhoisntCitizen.Lobby
     /// Lobby 씬 전체 UI 담당 (Manager 오브젝트에 부착).
     ///
     /// 기능
-    ///   1) UserInfoArea : Name = 로그인 아이디(username), ID = userId 표시
+    ///   1) UserInfoArea : 닉네임 표시 (닉네임을 바꾸면 갱신. 로그인 아이디·userId는 보여 주지 않는다)
     ///   2) Button_CreatRoom : 방 만들기 팝업(CreateRoomPopup) 열기
     ///   3) Button_Refresh : 방 목록 새로고침
     ///   4) RoomListArea : RoomItem 프리팹으로 방 목록 표시, Enter → 방 입장 → Room 씬
@@ -30,8 +31,9 @@ namespace WhoisntCitizen.Lobby
     public class LobbyUIController : MonoBehaviour
     {
         [Header("User Info (UserInfoArea)")]
-        [SerializeField] private TMP_Text userNameValueText; // Area_UserCreate/Text (TMP) (1)  → username
-        [SerializeField] private TMP_Text userIdValueText;   // Area_ID/Text (TMP) (1)          → userId
+        [SerializeField] private TMP_Text userNameValueText; // UserName/Text_userID → 닉네임
+        [Tooltip("(선택) 예전 userId 표시 칸. 아이디는 보여 주지 않으므로 시작할 때 숨긴다.")]
+        [SerializeField] private TMP_Text userIdValueText;   // UserName/Text_ID
 
         [Header("Buttons")]
         [SerializeField] private Button createRoomButton;    // Buttons/Button_CreatRoom
@@ -104,6 +106,8 @@ namespace WhoisntCitizen.Lobby
                 if (searchInput.characterLimit <= 0 || searchInput.characterLimit > SearchKeywordMaxLength) searchInput.characterLimit = SearchKeywordMaxLength;
                 searchInput.onSubmit.AddListener(OnSearchSubmitted);
             }
+
+            LobbyProfileController.ProfileChanged += OnProfileChanged;
         }
 
         private void Start()
@@ -160,6 +164,7 @@ namespace WhoisntCitizen.Lobby
             if (searchButton != null) searchButton.onClick.RemoveListener(OnSearchClicked);
             if (clearButton != null) clearButton.onClick.RemoveListener(OnClearSearchClicked);
             if (searchInput != null) searchInput.onSubmit.RemoveListener(OnSearchSubmitted);
+            LobbyProfileController.ProfileChanged -= OnProfileChanged;
         }
 
         // ------------------------------------------------------------------
@@ -250,11 +255,14 @@ namespace WhoisntCitizen.Lobby
         // 유저 정보
         // ------------------------------------------------------------------
 
+        // 상단 정보 패널에는 닉네임만 보여 준다. 닉네임을 바꾸면 LobbyProfileController.ProfileChanged로 다시 그린다.
         private void ShowUserInfo()
         {
-            if (userNameValueText != null) userNameValueText.text = AuthSession.Username;
-            if (userIdValueText != null) userIdValueText.text = AuthSession.UserId.ToString();
+            if (userNameValueText != null) userNameValueText.text = AuthSession.Nickname;
+            if (userIdValueText != null) userIdValueText.gameObject.SetActive(false);
         }
+
+        private void OnProfileChanged(UserProfileResponse profile) => ShowUserInfo();
 
         // ------------------------------------------------------------------
         // 방 목록

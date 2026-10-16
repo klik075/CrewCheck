@@ -15,7 +15,7 @@ namespace WhoisntCitizen.Game
     /// - Action line: only what can be done now, with small buttons: day skip by day, the night ability at night
     ///   (target picked in the strip), the vote (picked in the strip, the card hand stays hidden), otherwise the latest
     ///   announcement. The bottom drawer and its panels are not shown; the line drives the panels instead.
-    /// - Strip: each player's bust and name; the dead crossed out, my pirate mates marked (only I see them), the one
+    /// - Strip: each player's bust and name; the dead wear a crimson ribbon, my pirate mates marked (only I see them), the one
     ///   I picked ringed, the vote counts during the execution. Tap to pick a night target or a vote.
     /// GameScene3 has these parts baked in (<see cref="Bake"/>, Tools/Game Scene/게임 화면 굽기): this component is on its
     /// canvas with them, Build only wires them, and nothing here moves them, so they are laid out in the editor. The
@@ -699,8 +699,9 @@ namespace WhoisntCitizen.Game
                 root.gameObject.AddClickSoundButton().onClick.AddListener(() => OnSlotClicked(id));
                 var slot = new Slot { id = id, group = root.gameObject.AddComponent<CanvasGroup>() };
                 float mid = spacing * 0.5f;
-                Avatar(root, "Avatar", mid - face * 0.5f, centre - face * 0.5f, face, p.playerId, p.nickname, false);
-                NauticalHud.Whole(AddImage(Box(root, "Ring", mid - w * 0.5f, centre - w * 0.5f, w, h), null, Color.white), "PortraitRing");
+                Image avatar = Avatar(root, "Avatar", mid - face * 0.5f, centre - face * 0.5f, face, p.playerId, p.nickname, false);
+                Image portraitRing = AddImage(Box(root, "Ring", mid - w * 0.5f, centre - w * 0.5f, w, h), null, Color.white);
+                NauticalHud.Whole(portraitRing, "PortraitRing");
                 RectTransform ring = Box(root, "Pick", mid - outer * 0.5f - 7f, centre - outer * 0.5f - 7f, outer + 14f, outer + 14f);
                 HudShapes.Panel(ring, new Color(0f, 0f, 0f, 0f), Pick, (outer + 14f) * 0.5f);
                 slot.ring = ring.gameObject;
@@ -719,7 +720,8 @@ namespace WhoisntCitizen.Game
                 name.text = p.nickname;
                 if (!p.alive)
                 {
-                    AddImage(Box(root, "Dead", mid - face * 0.32f, centre - face * 0.32f, face * 0.64f, face * 0.64f), Icon("clear"), Target).preserveAspect = true;
+                    BuildDeathRibbon(avatar.rectTransform, face);
+                    portraitRing.color = new Color(0.65f, 0.62f, 0.57f);
                     name.color = Muted;
                 }
                 if (session.Me != null && session.Me.mafiaTeammateIds.Contains(p.playerId))
@@ -749,6 +751,30 @@ namespace WhoisntCitizen.Game
             shownPick = -1;
             shownMarks = null;
             neutralSlots = -1; // new slots: draw their neutral marks again
+        }
+
+        // The portrait's existing circular mask clips the diagonal ribbon, keeping the ring, nickname and badges clear.
+        // Drawn with UI geometry and live text: it stays sharp at every roster size and needs no resized texture.
+        private void BuildDeathRibbon(RectTransform avatar, float size)
+        {
+            RectTransform shade = Box(avatar, "DeadShade", 0f, 0f, size, size);
+            AddImage(shade, null, new Color(0.03f, 0.04f, 0.06f, 0.6f));
+
+            RectTransform ribbon = Box(avatar, "DeathRibbon", size * 0.5f, size * 0.73f, size * 1.18f, size * 0.34f);
+            ribbon.pivot = new Vector2(0.5f, 0.5f);
+            ribbon.localRotation = Quaternion.Euler(0f, 0f, 20f);
+            AddImage(ribbon, null, GoldLine);
+
+            float edge = Mathf.Max(1f, size * 0.018f);
+            RectTransform cloth = NewRect("Cloth", ribbon);
+            Stretch(cloth, edge, edge, edge, edge);
+            AddImage(cloth, null, new Color(0.38f, 0.025f, 0.07f));
+
+            TextMeshProUGUI label = NewText(ribbon, "Label", size * 0.26f,
+                new Color(1f, 0.93f, 0.76f), FontStyles.Bold, TextAlignmentOptions.Center);
+            Stretch(label.rectTransform, size * 0.18f, 0f, size * 0.18f, 0f);
+            label.overflowMode = TextOverflowModes.Overflow;
+            label.text = "사망";
         }
 
         // The neutral roles' parts of one roster slot, all hidden until UpdateNeutralMarks shows them.
