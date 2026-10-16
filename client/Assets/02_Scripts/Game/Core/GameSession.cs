@@ -38,6 +38,7 @@ namespace WhoisntCitizen.Game
         private bool pollInFlight;
         private bool pollAgain;             // 응답을 기다리는 중에 RequestPollNow → 응답이 오면 한 번 더
         private double lastPollAt = double.NaN; // 마지막으로 GET을 보낸 시각. 아직 없으면 NaN
+        private long stateRequestSeq;       // 보낸 상태 조회(GET)의 번호. 1부터 센다
         private bool actionInFlight;        // 밤 행동·넘기기·토론 넘기기·투표는 한 번에 하나만
         private bool meNeeded = true;
         private bool meInFlight;
@@ -55,7 +56,8 @@ namespace WhoisntCitizen.Game
         private long voteTarget;            // 0 = 표 없음 (기권)
         private bool voteConfirmed;         // "투표 완료"를 서버가 받았는지
         private long daySkipVersion = -1;   // 토론을 넘긴 낮의 phaseVersion
-        private DaySkipResultDto daySkipResult;
+        private DaySkipResultDto daySkipResult; // 넘긴 인원. 넘기기 응답으로 채우고, 그 뒤 상태 조회의 daySkipCount로 맞춘다
+        private long daySkipAcceptedSeq;    // 토론 넘기기가 접수됐을 때까지 보낸 상태 조회 번호. 이보다 뒤에 보낸 조회만 넘긴 인원에 쓴다
         private long dayExtendVersion = -1; // 토론 시간을 늘린 낮의 phaseVersion
         private bool dayExtendUnsupported;  // 서버에 연장 API가 없다 (404). 이번 판에는 버튼을 거둔다
         private bool markedByKraken;        // 크라켄의 표식이 내게 남아 있음 (KRAKEN_MARKED를 받았고 그 뒤 발동이 없었다)
@@ -210,7 +212,10 @@ namespace WhoisntCitizen.Game
             get { return State != null && State.phase == GamePhases.Day && daySkipVersion == State.phaseVersion; }
         }
 
-        /// <summary>이번 낮에 넘겼을 때 서버가 알려 준 인원. 넘기지 않았으면 null.</summary>
+        /// <summary>
+        /// 이번 낮에 넘긴 인원 (넘긴 생존자 수 / 생존자 수). 넘기지 않았으면 null.
+        /// 처음에는 넘기기 응답의 값이고, 다른 사람이 넘기면 상태 조회의 daySkipCount로 따라 바뀐다.
+        /// </summary>
         public DaySkipResultDto DaySkipProgress
         {
             get { return SkippedToday ? daySkipResult : null; }
@@ -323,7 +328,8 @@ namespace WhoisntCitizen.Game
             nextPollAt = now + pollInterval;
             lastPollAt = now;
             pollInFlight = true;
-            api.GetState(GameId, OnState);
+            long seq = ++stateRequestSeq;
+            api.GetState(GameId, r => OnState(r, seq));
         }
 
         /// <summary>
@@ -514,6 +520,7 @@ namespace WhoisntCitizen.Game
                 }
                 daySkipVersion = version;
                 daySkipResult = r.Data;
+                daySkipAcceptedSeq = stateRequestSeq; // 지금까지 보낸 조회는 내 넘기기를 세지 않았을 수 있다
                 view.ShowDaySkipAccepted(r.Data);
                 PollNowIfChanged(version, r.Data.phaseVersion);
             });
@@ -602,7 +609,8 @@ namespace WhoisntCitizen.Game
 
         // ================================================================ 응답 처리
 
-        private void OnState(GameApiResult<GameStateDto> r)
+        /// <param name="seq">이 응답을 받은 상태 조회의 번호 (Tick에서 보낸 순서)</param>
+        private void OnState(GameApiResult<GameStateDto> r, long seq)
         {
             pollInFlight = false;
             if (pollAgain)
@@ -631,6 +639,7 @@ namespace WhoisntCitizen.Game
                 return; // 늦게 도착한 옛 응답
             }
             phaseClock.Sync(state, clock());
+            SyncDaySkipProgress(state, seq);
             List<string> lostChoices = ForgetChoicesOnDeaths(events); // 패널을 다시 그리기 전에 지운다
             view.ShowState(state);
             foreach (GameEvent e in events)
@@ -650,6 +659,34 @@ namespace WhoisntCitizen.Game
                 view.ShowError(message);
             }
             CatchUp(state);
+        }
+
+        /// <summary>
+        /// 내가 토론을 넘긴 낮이면 넘긴 인원(DaySkipProgress)을 상태의 daySkipCount와 생존자 수로 맞춘다.
+        /// 다른 사람이 넘겨도 페이즈는 그대로라, 넘기기 응답만으로는 "(1/6)"에서 늘지 않는다.
+        /// 내 넘기기가 접수되기 전에 보낸 조회는 나를 세지 않았을 수 있어 쓰지 않는다(숫자가 잠깐 줄어 보이지 않도록).
+        /// 서버가 값을 보내지 않으면(예전 서버, -1) 넘기기 응답의 인원을 그대로 둔다.
+        /// </summary>
+        private void SyncDaySkipProgress(GameStateDto state, long seq)
+        {
+            if (!SkippedToday || state.daySkipCount < 0 || seq <= daySkipAcceptedSeq)
+            {
+                return;
+            }
+            long required = GameStateQueries.AliveCount(state);
+            if (daySkipResult != null && daySkipResult.skippedCount == state.daySkipCount
+                && daySkipResult.requiredCount == required)
+            {
+                return; // 그대로면 새로 만들지 않는다 (화면이 매 프레임 읽는다)
+            }
+            daySkipResult = new DaySkipResultDto
+            {
+                accepted = true,
+                phase = state.phase,
+                phaseVersion = state.phaseVersion,
+                skippedCount = state.daySkipCount,
+                requiredCount = required
+            };
         }
 
         /// <summary>

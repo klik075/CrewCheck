@@ -37,6 +37,10 @@ namespace WhoisntCitizen.Game
         public List<PlayerViewDto> players = new List<PlayerViewDto>();
         public string winner;       // Winners. 끝나기 전이나 취소된 게임이면 null
         public string endReason;    // EndReasons. 끝나기 전에는 null
+        // 낮에 토론을 넘긴 생존자 수 (낮이 아니면 0). 넘겨야 하는 인원은 살아 있는 플레이어 수다.
+        // 다른 사람이 넘겨도 페이즈는 그대로라, 이 값으로 "(넘긴 수/생존자 수)"를 맞춘다.
+        // -1 = 서버가 이 값을 보내지 않음(예전 서버). JsonUtility는 응답에 없는 필드의 초깃값을 그대로 둔다.
+        public long daySkipCount = -1;
     }
 
     [Serializable]

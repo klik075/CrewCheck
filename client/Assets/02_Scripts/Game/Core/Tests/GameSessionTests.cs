@@ -445,6 +445,42 @@ namespace WhoisntCitizen.Game.Tests
         }
 
         [Test]
+        public void 토론을_넘긴_뒤_다른_사람이_넘기면_넘긴_인원이_따라_늘어난다()
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+            SkipUntil(GamePhases.Day);
+            Assert.IsTrue(session.SkipDay());
+            Assert.AreEqual(1L, session.DaySkipProgress.skippedCount);
+
+            fake.SkipDayAs(102); // 페이즈는 그대로라 넘기기 응답만으로는 알 수 없다
+            fake.SkipDayAs(103);
+            now += 1;
+            session.Tick();
+
+            Assert.AreEqual(GamePhases.Day, session.State.phase, "아직 모두 넘기지 않아 낮이 이어진다");
+            Assert.AreEqual(3L, session.DaySkipProgress.skippedCount);
+            Assert.AreEqual(8L, session.DaySkipProgress.requiredCount);
+            Assert.AreEqual("(3/8)", GameScreenText.DaySkipCount(session.DaySkipProgress));
+        }
+
+        [Test]
+        public void 토론을_넘긴_뒤_누가_나가면_넘겨야_하는_인원도_줄어든다()
+        {
+            Start(RoleCodes.CrewSailor, false);
+            session.Tick();
+            SkipUntil(GamePhases.Day);
+            Assert.IsTrue(session.SkipDay());
+
+            fake.DisconnectPlayer(105); // 아직 넘기지 않은 사람이 연결이 끊겨 죽음
+            now += 1;
+            session.Tick();
+
+            Assert.AreEqual(1L, session.DaySkipProgress.skippedCount);
+            Assert.AreEqual(7L, session.DaySkipProgress.requiredCount);
+        }
+
+        [Test]
         public void 낮_토론_시간은_낮마다_한_번_늘리고_늘어난_마감을_바로_반영한다()
         {
             Start(RoleCodes.CrewSailor, false);

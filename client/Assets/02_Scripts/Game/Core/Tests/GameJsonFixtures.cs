@@ -10,6 +10,10 @@ namespace WhoisntCitizen.Game.Tests
         public const string GameStateEnded =
             @"{""gameId"":""g-ended"",""phase"":""ENDED"",""day"":3,""phaseEndsAt"":null,""serverTime"":""2026-10-01T12:10:00Z"",""phaseVersion"":21,""players"":[{""playerId"":11,""nickname"":""철수"",""alive"":true}],""winner"":""CREW""}";
 
+        // 낮 토론 중: 넘긴 생존자 수(daySkipCount)가 함께 온다. (서버 GameStateResponse에 daySkipCount를 더한 뒤의 형식)
+        public const string GameStateDaySkipped =
+            @"{""gameId"":""g-day"",""phase"":""DAY"",""day"":2,""phaseEndsAt"":""2026-10-01T12:01:00Z"",""serverTime"":""2026-10-01T12:00:10Z"",""phaseVersion"":9,""players"":[{""playerId"":11,""nickname"":""철수"",""alive"":true},{""playerId"":12,""nickname"":""영희"",""alive"":true},{""playerId"":13,""nickname"":""민수"",""alive"":false}],""winner"":null,""endReason"":null,""daySkipCount"":2}";
+
         public const string MyRoleRaider =
             @"{""playerId"":11,""role"":""PIRATE_RAIDER"",""roleName"":""해적"",""faction"":""PIRATE"",""actionCode"":""SELECT_ATTACK_TARGET"",""remainingUses"":-1,""alive"":true,""mafiaTeammateIds"":[13,14],""contacted"":false}";
 

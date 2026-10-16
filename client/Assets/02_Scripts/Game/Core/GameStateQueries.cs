@@ -27,6 +27,24 @@ namespace WhoisntCitizen.Game
             return p != null && p.alive;
         }
 
+        /// <summary>살아 있는 플레이어 수. 낮 토론을 넘겨야 하는 인원이다.</summary>
+        public static long AliveCount(GameStateDto state)
+        {
+            if (state == null)
+            {
+                return 0;
+            }
+            long count = 0;
+            foreach (PlayerViewDto p in state.players)
+            {
+                if (p.alive)
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+
         /// <summary>사망자가 한 명이라도 있는지 (주정뱅이처럼 시체를 대상으로 하는 능력의 조건).</summary>
         public static bool AnyDead(GameStateDto state)
         {
