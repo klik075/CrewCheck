@@ -1655,11 +1655,17 @@ namespace WhoisntCitizen.Game
             });
         }
 
-        /// <summary>설정 버튼: 아직 내용이 없다.</summary>
+        /// <summary>설정 버튼: 타이틀 설정 팝업과 같은 볼륨(마스터·배경 음악·효과음)과 해상도. 바꾸면 바로 적용되고 저장된다.</summary>
         private void OnSettingsClicked()
         {
-            hud.Popup.Show("설정", string.Empty);
-            hud.Popup.ShowMessage("준비 중입니다.");
+            HudPopup popup = hud.Popup;
+            popup.Show("설정", string.Empty);
+            popup.AddHeading("오디오");
+            popup.AddVolumeRow("마스터 볼륨", AudioVolumeTarget.Master);
+            popup.AddVolumeRow("배경 음악", AudioVolumeTarget.BGM);
+            popup.AddVolumeRow("효과음", AudioVolumeTarget.SFX);
+            popup.AddHeading("해상도");
+            popup.AddResolutionRow("해상도 변경");
         }
 
         private static Color FactionColor(string faction)

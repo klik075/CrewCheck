@@ -21,6 +21,17 @@ namespace WhoisntCitizen.Game.Tests
             Assert.AreEqual(2, s.day);
             Assert.AreEqual(7L, s.phaseVersion);
             Assert.IsTrue(string.IsNullOrEmpty(s.winner), "진행 중에는 winner가 없다");
+            Assert.AreEqual(-1L, s.daySkipCount, "daySkipCount가 없는 예전 응답은 -1(모름)로 남는다");
+        }
+
+        [Test]
+        public void 낮_토론_중이면_넘긴_인원이_온다()
+        {
+            var s = GameJson.FromJson<GameStateDto>(GameJsonFixtures.GameStateDaySkipped);
+
+            Assert.AreEqual(GamePhases.Day, s.phase);
+            Assert.AreEqual(2L, s.daySkipCount);
+            Assert.AreEqual(2L, GameStateQueries.AliveCount(s), "넘겨야 하는 인원은 생존자 수");
         }
 
         [Test]
