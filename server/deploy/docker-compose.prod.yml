@@ -30,8 +30,14 @@ services:
     image: redis:7
     container_name: whoisntcitizen-redis
     restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    #                     --appendonly : 쓰기명령 디스크 파일 기록 여부
+    #                                      --maxmemory : Redis에 할당된 메모리 상한
+    #                                                        --maxmemory-policy : 상한에 닿으면 기존데이터삭제없이 신규 작성 거부
     ports:
       - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data # redis-data(docker볼륨)에 연결
 
   # HTTPS 입구 (역방향 프록시). itch.io의 WebGL 빌드는 HTTPS 페이지라 https:// · wss:// 로만 접속할 수 있다.
   #   브라우저 ─https/wss :443─▶ nginx(인증서) ─http─▶ 127.0.0.1:8080 Spring 서버(systemd mafia-server)
@@ -64,3 +70,4 @@ services:
 
 volumes:
   mysql-data:
+  redis-data:
