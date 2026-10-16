@@ -23,7 +23,7 @@ namespace WhoisntCitizen.Lobby
     ///      ClearButton → 검색어를 지우고 전체 목록으로 돌아간다.
     ///   7) 로비 채팅 (LobbyChatPanel) : [방 만들기] 오른편 [채팅] 버튼. 누르면 방 목록 아래쪽 절반에 채팅창이 열리고(방 목록은 위로 줄어듦),
     ///      다시 누르면 닫히고 방 목록이 원래 크기로 돌아온다. 채팅창 모양은 Room 채팅창과 같다.
-    ///      로비에 들어온 뒤의 대화만 보이고, 방으로 이동하면 씬과 함께 사라진다. (버튼·채팅창은 실행할 때 코드로 만든다)
+    ///      로비에 들어온 뒤의 대화만 보이고, 방으로 이동하면 씬과 함께 사라진다. (버튼·채팅창은 실행할 때 코드로 만들고, 입력 바는 ChatInputBar 프리팹에서 만든다)
     ///
     /// 진입 조건
     ///   로그인하지 않은 상태(토큰 없음)로 이 씬에 들어오면 타이틀 씬으로 돌려보낸다.
@@ -65,6 +65,8 @@ namespace WhoisntCitizen.Lobby
         [Header("Lobby Chat")]
         [Tooltip("방 목록 영역. 채팅창이 열리면 이 영역의 아래쪽 절반에 채팅창을 놓고 방 목록은 위로 줄인다. 비워 두면 방 만들기 버튼과 같은 부모의 RoomListArea를 찾는다.")]
         [SerializeField] private RectTransform chatRoomListArea;
+        [Tooltip("채팅 입력 바 프리팹 (03_Prefabs/GameUI/ChatInputBar). GameScene3·Room과 같은 입력 바를 이 프리팹에서 만든다.")]
+        [SerializeField] private WhoisntCitizen.GameUI.ChatInputBar chatInputBarPrefab;
 
         [Header("Status")]
         [SerializeField] private StatusMessageView statusMessage; // Canvas/StatusMessageText
@@ -152,7 +154,7 @@ namespace WhoisntCitizen.Lobby
             }
             var chat = GetComponent<LobbyChatPanel>();
             if (chat == null) chat = gameObject.AddComponent<LobbyChatPanel>();
-            chat.Build(createRoomButton, area);
+            chat.Build(createRoomButton, area, chatInputBarPrefab);
         }
 
         private void OnDestroy()

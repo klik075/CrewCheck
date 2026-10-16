@@ -16,6 +16,7 @@ namespace WhoisntCitizen.Lobby
     ///    [채팅] 버튼을 다시 누르거나 채팅창의 [닫기]를 누르면 채팅창이 닫히고 방 목록이 원래 크기로 돌아간다.
     ///  - 채팅창 모양은 Room 씬 채팅창(RoomLobbyLayout.BuildChat)과 같다: 호두나무 판 + 황동 테두리, 크림색 글자, CabinFont,
     ///    입력 바(어두운 바 + 크림색 입력칸 + 금색 [전송] 버튼)
+    ///  - 입력 바는 GameScene3·Room과 같은 ChatInputBar 프리팹(03_Prefabs/GameUI/ChatInputBar)에서 만들고, 로비 모양만 입힌다.
     ///  - 서버 통신은 GameChatController(lobbyChat)가 한다. 채팅창이 닫혀 있어도 로비에 들어온 순간부터 계속 받고,
     ///    닫혀 있는 동안 새 메시지가 오면(미확인 채팅이 있으면) 버튼 오른쪽 위에 빨간 점 하나를 찍는다. (NotificationDot)
     ///    몇 개가 와도 점은 하나뿐이고, 채팅창을 열면 사라진다.
@@ -59,15 +60,23 @@ namespace WhoisntCitizen.Lobby
         private RectTransform logContent;
         private TMP_InputField input;
         private ChatInputBar inputBar;
+        private ChatInputBar inputBarPrefab;
         private GameChatController controller;
 
         public bool IsOpen { get; private set; }
 
         /// <param name="createRoomButton">[방 만들기] 버튼. 이 버튼 오른편에 [채팅] 버튼을 만든다</param>
         /// <param name="roomListArea">방 목록 영역. 채팅창이 열리면 아래쪽 절반에 채팅창을 놓고 이 영역은 위쪽으로 줄인다</param>
-        public void Build(Button createRoomButton, RectTransform roomListArea)
+        /// <param name="inputBarPrefab">채팅 입력 바 프리팹 (03_Prefabs/GameUI/ChatInputBar). GameScene3·Room과 같은 입력 바</param>
+        public void Build(Button createRoomButton, RectTransform roomListArea, ChatInputBar inputBarPrefab)
         {
             if (panel != null) return;
+            if (inputBarPrefab == null)
+            {
+                Debug.LogError("[LobbyChat] 채팅 입력 바 프리팹(LobbyUIController.chatInputBarPrefab)이 없어 로비 채팅을 만들 수 없습니다.");
+                return;
+            }
+            this.inputBarPrefab = inputBarPrefab;
             if (createRoomButton == null || roomListArea == null)
             {
                 Debug.LogError("[LobbyChat] 방 만들기 버튼 또는 방 목록 영역이 없어 로비 채팅을 만들 수 없습니다.");
@@ -209,65 +218,82 @@ namespace WhoisntCitizen.Lobby
 
         private void BuildInputBar()
         {
-            // Room 입력 바: 어두운 바 + 크림색 입력칸 + 금색 [전송]
-            var bar = Rect("ChatInputBar", panel);
+            // GameScene3·Room과 같은 ChatInputBar 프리팹에서 입력 바를 만든 뒤, 로비 모양(Room 입력 바: 어두운 바 + 크림색 입력칸 + 금색 [전송])을 입힌다.
+            // 입력칸·전송 버튼 연결(ChatInputBar.chatInput/sendButton)은 프리팹에 이미 되어 있다.
+            inputBar = Instantiate(inputBarPrefab, panel, false);
+            inputBar.name = "ChatInputBar";
+            var bar = (RectTransform)inputBar.transform;
             Anchor(bar, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(28f, 26f), new Vector2(-28f, 108f));
-            bar.gameObject.AddComponent<Image>().color = new Color32(40, 20, 13, 255);
-
-            Sprite fieldArt = FindLoadedSprite("InputFieldBackground");
-            Sprite sendArt = FindLoadedSprite("UISprite");
+            var barImage = bar.GetComponent<Image>();
+            if (barImage != null) barImage.color = new Color32(40, 20, 13, 255);
 
             // 입력칸
-            var fieldRt = Rect("ChatInput", bar);
-            Anchor(fieldRt, Vector2.zero, Vector2.one, new Vector2(11f, 11f), new Vector2(-133f, -11f));
-            var fieldImage = fieldRt.gameObject.AddComponent<Image>();
-            fieldImage.sprite = fieldArt;
-            fieldImage.type = fieldArt != null ? Image.Type.Sliced : Image.Type.Simple;
-            fieldImage.color = new Color32(250, 233, 197, 255);
+            input = bar.GetComponentInChildren<TMP_InputField>(true);
+            if (input != null)
+            {
+                var fieldRt = (RectTransform)input.transform;
+                Anchor(fieldRt, Vector2.zero, Vector2.one, new Vector2(11f, 11f), new Vector2(-133f, -11f));
+                var fieldImage = fieldRt.GetComponent<Image>();
+                if (fieldImage != null) fieldImage.color = new Color32(250, 233, 197, 255);
+                if (input.textViewport != null)
+                    Anchor(input.textViewport, Vector2.zero, Vector2.one, new Vector2(10f, 4f), new Vector2(-10f, -4f));
 
-            var area = Rect("Text Area", fieldRt);
-            Anchor(area, Vector2.zero, Vector2.one, new Vector2(10f, 4f), new Vector2(-10f, -4f));
-            area.gameObject.AddComponent<RectMask2D>();
+                if (input.placeholder is TMP_Text placeholder)
+                {
+                    Dress(placeholder, "메시지를 입력하세요", InputFontSize, new Color(0.19607843f, 0.19607843f, 0.19607843f, 0.5f));
+                    Anchor(placeholder.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+                }
+                if (input.textComponent != null)
+                {
+                    Dress(input.textComponent, null, InputFontSize, Ink);
+                    Anchor(input.textComponent.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+                    input.textComponent.enableAutoSizing = false;
+                    input.textComponent.richText = false;
+                }
 
-            var placeholder = Label("Placeholder", area, "메시지를 입력하세요", InputFontSize, new Color(0.19607843f, 0.19607843f, 0.19607843f, 0.5f));
-            Anchor(placeholder.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
-            var text = Label("Text", area, "", InputFontSize, Ink);
-            Anchor(text.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
-            text.enableAutoSizing = false;
-            text.richText = false;
-
-            input = fieldRt.gameObject.AddComponent<TMP_InputField>();
-            #if UNITY_WEBGL && !UNITY_EDITOR
-            fieldRt.gameObject.AddComponent<WebGLSupport.WebGLInput>();
-            #endif
-            input.textViewport = area;
-            input.textComponent = text;
-            input.placeholder = placeholder;
-            input.fontAsset = font;
-            input.pointSize = InputFontSize;
-            input.lineType = TMP_InputField.LineType.SingleLine; // Enter로 보낸다
-            input.characterLimit = 1000;                          // 서버 ChatMessage.MAX_MESSAGE_LENGTH
-            input.richText = false;
-            input.targetGraphic = fieldImage;
+                input.fontAsset = font;
+                input.pointSize = InputFontSize;
+                input.lineType = TMP_InputField.LineType.SingleLine; // Enter로 보낸다
+                input.characterLimit = 1000;                          // 서버 ChatMessage.MAX_MESSAGE_LENGTH
+                input.richText = false;
+            }
 
             // [전송]
-            var sendRt = Rect("SendButton", bar);
-            sendRt.anchorMin = sendRt.anchorMax = new Vector2(1f, 0.5f);
-            sendRt.pivot = new Vector2(1f, 0.5f);
-            sendRt.anchoredPosition = new Vector2(-11f, 0f);
-            sendRt.sizeDelta = new Vector2(111f, 58f);
-            var sendImage = sendRt.gameObject.AddComponent<Image>();
-            sendImage.sprite = sendArt;
-            sendImage.type = sendArt != null ? Image.Type.Sliced : Image.Type.Simple;
-            sendImage.color = new Color32(242, 193, 78, 255);
-            var send = sendRt.gameObject.AddClickSoundButton();
-            send.targetGraphic = sendImage;
-            var sendLabel = Label("Text (TMP)", sendRt, "전송", InputFontSize, new Color32(27, 30, 38, 255));
-            Anchor(sendLabel.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
-            sendLabel.alignment = TextAlignmentOptions.Center;
+            var sendRt = bar.Find("SendButton") as RectTransform;
+            if (sendRt != null)
+            {
+                sendRt.anchorMin = sendRt.anchorMax = new Vector2(1f, 0.5f);
+                sendRt.pivot = new Vector2(1f, 0.5f);
+                sendRt.anchoredPosition = new Vector2(-11f, 0f);
+                sendRt.sizeDelta = new Vector2(111f, 58f);
+                var sendImage = sendRt.GetComponent<Image>();
+                if (sendImage != null) sendImage.color = new Color32(242, 193, 78, 255);
+                sendRt.gameObject.AddClickSoundButton(); // 로비 버튼처럼 누르면 효과음 (프리팹 Button에 UIButtonBase만 더한다)
+                var sendLabel = sendRt.GetComponentInChildren<TMP_Text>(true);
+                if (sendLabel != null)
+                {
+                    Dress(sendLabel, "전송", InputFontSize, new Color32(27, 30, 38, 255));
+                    Anchor(sendLabel.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+                    sendLabel.alignment = TextAlignmentOptions.Center;
+                }
+            }
+        }
 
-            inputBar = bar.gameObject.AddComponent<ChatInputBar>();
-            inputBar.Configure(input, send);
+        /// 프리팹 글자에 로비 글자 모양(Label과 같은 설정)을 입힌다. text가 null이면 내용은 그대로 둔다
+        private void Dress(TMP_Text label, string text, float size, Color color)
+        {
+            label.font = font;
+            if (text != null) label.text = text;
+            label.fontSize = size;
+            label.color = color;
+            label.fontStyle = FontStyles.Normal;
+            label.raycastTarget = false;
+            label.enableAutoSizing = true;
+            label.fontSizeMin = size * .72f;
+            label.fontSizeMax = size;
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+            label.alignment = TextAlignmentOptions.MidlineLeft;
         }
 
         // ------------------------------------------------------------------
@@ -438,15 +464,6 @@ namespace WhoisntCitizen.Lobby
         {
             var sprites = Resources.LoadAll<Sprite>("RoomLobby/" + name);
             return sprites.Length > 0 ? sprites[0] : null;
-        }
-
-        /// Room 입력 바가 쓰는 Unity 기본 UI 그림(InputFieldBackground, UISprite)은 런타임에 이름으로 불러올 수 없어서,
-        /// 로비 씬이 이미 쓰고 있어 메모리에 올라온 것을 찾아 쓴다. 없으면 null (단색으로 그린다)
-        private static Sprite FindLoadedSprite(string name)
-        {
-            foreach (var sprite in Resources.FindObjectsOfTypeAll<Sprite>())
-                if (sprite != null && string.Equals(sprite.name, name, StringComparison.Ordinal)) return sprite;
-            return null;
         }
     }
 }
