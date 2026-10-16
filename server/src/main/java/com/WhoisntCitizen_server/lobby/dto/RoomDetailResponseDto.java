@@ -23,7 +23,7 @@ import java.util.List;
  * JSON 예시 (부모 필드가 먼저, 자식 필드가 뒤에 붙은 평평한 구조)
  *   {"id":1,"title":"초보만","hostUserId":3,"maxPlayers":8,"currentPlayers":2,"status":"WAITING","gameId":null,"privateRoom":false,
  *    "roleSetup":{"mode":"CUSTOM","customCompositions":[{"playerCount":6,"roles":["PIRATE_RAIDER", ...]}],"randomCandidates":["PIRATE_PARROT", ...]},
- *    "players":[{"userId":3,"nickname":"유진","ready":false}, ...], "kickedUserIds":[7]}
+ *    "players":[{"userId":3,"nickname":"유진","ready":false,"profileImageId":13}, ...], "kickedUserIds":[7]}
  */
 @Getter
 public class RoomDetailResponseDto extends RoomResponseDto {
