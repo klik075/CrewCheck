@@ -37,6 +37,14 @@ namespace WhoisntCitizen.Common
             input.selectionAnchorPosition = 0;
             input.selectionFocusPosition = 0;
             input.ForceLabelUpdate(); // 글자 정보(textInfo)를 빈 문자열 기준으로 다시 계산
+
+            //webgl에서 발생한 한글 텍스트 안비워짐 버그 해결
+            #if UNITY_WEBGL && !UNITY_EDITOR
+                // WebGL: 실제 입력은 WebGLInput이 만든 숨은 HTML <input>이 받는다.
+                // TMP만 비우면 HTML 쪽에 이전 글자가 남아 다음 입력 때 다시 붙으므로 함께 비운다.
+                var webInput = input.GetComponent<WebGLSupport.WebGLInput>();
+                if (webInput != null) webInput.SyncText(0); // HTML 입력칸도 비우고 커서를 0으로
+            #endif
         }
 
         private static IEnumerator ClearNextFrame(TMP_InputField input)
