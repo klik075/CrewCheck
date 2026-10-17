@@ -15,6 +15,15 @@ public class SocialTokenRequest
     public string token; // 소셜 SDK에서 받은 토큰 문자열
 }
 
+// POST /api/members/login/google/code | /login/kakao/code, /link/google/code | /link/kakao/code
+// 웹(WebGL) 팝업에서 받은 인가 코드 요청 body. redirectUri는 카카오만 쓴다.
+[Serializable]
+public class SocialCodeRequest
+{
+    public string code;
+    public string redirectUri;
+}
+
 // 계정 후연동 성공 응답: { "memberId": 1, "linkedProvider": "GOOGLE", "message": "..." }
 [Serializable]
 public class SocialLinkResponse

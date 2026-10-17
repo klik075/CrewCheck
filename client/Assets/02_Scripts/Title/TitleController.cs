@@ -193,20 +193,20 @@ namespace WhoisntCitizen.Title
 
         private async void RunSocialLogin(SocialProvider provider)
         {
-            string token = null;
+            SocialCredential credential = null;
             string error = null;
-            try { token = await SocialAuth.GetTokenAsync(provider); }
+            try { credential = await SocialAuth.GetCredentialAsync(provider); }
             catch (Exception e) { error = e.Message; }
 
             if (this == null) return; // 대기 중 씬이 바뀐 경우
 
-            if (string.IsNullOrEmpty(token))
+            if (credential == null || credential.IsEmpty)
             {
                 SetBusy(false);
                 SetMessage(loginSelectMessageText, error ?? $"{provider} 로그인에 실패했습니다.", errorColor);
                 return;
             }
-            AuthService.SocialLogin(provider, token, result => OnLoginResult(result, provider.ToString()));
+            AuthService.SocialLogin(provider, credential, result => OnLoginResult(result, provider.ToString()));
         }
 
         // ---------- 계정(ID/PW) 로그인 / 회원가입 ----------
