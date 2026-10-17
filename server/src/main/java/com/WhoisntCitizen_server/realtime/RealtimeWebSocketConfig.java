@@ -1,5 +1,7 @@
 package com.WhoisntCitizen_server.realtime;
 
+import com.WhoisntCitizen_server.common.servermode.ConditionalOnServerSetting;
+import com.WhoisntCitizen_server.common.servermode.ServerSetting;
 import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
 import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeMessageCodec;
@@ -23,7 +25,8 @@ import java.time.Clock;
  * 구성
  *  - RealtimeWebSocketHandler: 연결·메시지 처리
  *  - RealtimeSessionRegistry: 이 서버의 연결 목록 (사용자 → 연결, 방 → 연결)
- *  - RealtimeNotifier: 다른 모듈이 신호를 보내는 입구. 지금은 LocalRealtimeNotifier(서버 1대), 5단계에서 Redis Pub/Sub 구현으로 바꾼다
+ *  - RealtimeNotifier: 다른 모듈이 신호를 보내는 입구. mafia.realtime.notifier의 최종 값으로 고른다
+ *      local → LocalRealtimeNotifier (이 클래스, 서버 1대) / redis → RedisRealtimeNotifier (RealtimeRedisConfig, 서버 여러 대)
  *  - RoomMembership: 구독할 때 방 참가자인지 확인 (로비 저장소)
  *  - RealtimePresenceRecorder: 연결 상태를 유저 접속 상태(온라인/대기실/게임 중)로 Redis에 기록
  *
@@ -69,27 +72,35 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
         return new RealtimeSessionRegistry();
     }
 
+    /**
+     * 서버 메모리 실시간 신호. mafia.realtime.notifier의 최종 값이 local일 때만 등록한다. (서버 1대)
+     * redis면 이 Bean은 만들지 않고 RealtimeRedisConfig의 RedisRealtimeNotifier가 RealtimeNotifier가 된다.
+     */
     @Bean
+    @ConditionalOnServerSetting(value = ServerSetting.REALTIME_NOTIFIER, havingValue = "local")
     public RealtimeNotifier realtimeNotifier() {
         return new LocalRealtimeNotifier(realtimeSessionRegistry(), realtimeMessageCodec());
     }
 
+    // 아래 리스너들은 RealtimeNotifier를 메서드 호출(realtimeNotifier())이 아니라 인자로 받는다.
+    // 어느 구현이 등록됐는지(local/redis)는 설정에 따라 달라지므로, Spring이 등록된 쪽을 넣어 주게 한다.
+
     /** 게임 상태가 저장되면 그 방에 game.changed를 보낸다 (4-4) */
     @Bean
-    public RealtimeGameListener realtimeGameListener() {
-        return new RealtimeGameListener(realtimeNotifier());
+    public RealtimeGameListener realtimeGameListener(RealtimeNotifier notifier) {
+        return new RealtimeGameListener(notifier);
     }
 
     /** 방이 바뀌면 room.changed를 보내고, 방에서 빠진 사람·삭제된 방의 구독을 푼다 (4-5) */
     @Bean
-    public RealtimeRoomListener realtimeRoomListener() {
-        return new RealtimeRoomListener(realtimeNotifier());
+    public RealtimeRoomListener realtimeRoomListener(RealtimeNotifier notifier) {
+        return new RealtimeRoomListener(notifier);
     }
 
     /** 채팅 메시지가 저장되면 볼 수 있는 사람에게 chat.changed를 보낸다 (4-6) */
     @Bean
-    public RealtimeChatListener realtimeChatListener() {
-        return new RealtimeChatListener(realtimeNotifier());
+    public RealtimeChatListener realtimeChatListener(RealtimeNotifier notifier) {
+        return new RealtimeChatListener(notifier);
     }
 
     @Bean

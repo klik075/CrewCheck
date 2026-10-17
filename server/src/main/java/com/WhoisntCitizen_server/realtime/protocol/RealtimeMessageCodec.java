@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.realtime.protocol;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectReader;
 import tools.jackson.databind.ObjectWriter;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -16,6 +17,8 @@ public class RealtimeMessageCodec {
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
     /** 인터페이스 타입으로 써야 @JsonTypeInfo가 적용돼 "type"이 맨 앞에 붙는다 */
     private final ObjectWriter serverWriter = jsonMapper.writerFor(ServerMessage.class);
+    /** 서버 메시지를 다시 읽을 때. 인터페이스 타입으로 읽어야 "type"을 보고 맞는 record를 고른다 */
+    private final ObjectReader serverReader = jsonMapper.readerFor(ServerMessage.class);
 
     /** 클라이언트 메시지를 한 번에 읽는 그릇. 모르는 값은 무시한다 (클라이언트가 먼저 새 값을 보내도 깨지지 않게) */
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -24,6 +27,22 @@ public class RealtimeMessageCodec {
 
     public String encode(ServerMessage message) {
         return serverWriter.writeValueAsString(message);
+    }
+
+    /**
+     * encode로 만든 문자열을 ServerMessage로 되돌린다.
+     * 다른 서버가 Redis 채널로 보낸 신호를 이 서버의 연결에 다시 보낼 때 쓴다. (RedisRealtimeNotifier.deliver)
+     * @throws IllegalArgumentException 해석할 수 없을 때
+     */
+    public ServerMessage decodeServerMessage(String json) {
+        if (json == null || json.isBlank()) {
+            throw new IllegalArgumentException("서버 메시지가 비어 있습니다");
+        }
+        try {
+            return serverReader.readValue(json);
+        } catch (JacksonException e) {
+            throw new IllegalArgumentException("서버 메시지를 읽을 수 없습니다: " + e.getOriginalMessage(), e);
+        }
     }
 
     /**
