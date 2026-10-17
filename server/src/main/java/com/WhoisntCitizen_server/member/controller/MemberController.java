@@ -2,6 +2,7 @@ package com.WhoisntCitizen_server.member.controller;
 
 import com.WhoisntCitizen_server.member.dto.MemberDto;
 import com.WhoisntCitizen_server.member.dto.OAuthUserInfo;
+import com.WhoisntCitizen_server.member.dto.SocialCodeRequest;
 import com.WhoisntCitizen_server.member.dto.SocialLoginRequest;
 import com.WhoisntCitizen_server.member.entity.AuthProvider;
 import com.WhoisntCitizen_server.member.service.GoogleAuthService;
@@ -39,13 +40,47 @@ public class MemberController {
 	@PostMapping("/login/google")
 	public ResponseEntity<MemberDto.AuthResult> googleLogin(@Valid @RequestBody SocialLoginRequest req) {
 		OAuthUserInfo info = googleAuthService.verifyToken(req.getToken());
-		return ResponseEntity.ok(memberService.socialLogin(info.getProvider(), info.getProviderId(), info.getNickname()));
+		return ResponseEntity.ok(memberService.socialLogin(info.getProvider(), info.getProviderId()));
 	}
 
 	@PostMapping("/login/kakao")
 	public ResponseEntity<MemberDto.AuthResult> kakaoLogin(@Valid @RequestBody SocialLoginRequest req) {
 		OAuthUserInfo info = kakaoAuthService.verifyToken(req.getToken());
-		return ResponseEntity.ok(memberService.socialLogin(info.getProvider(), info.getProviderId(), info.getNickname()));
+		return ResponseEntity.ok(memberService.socialLogin(info.getProvider(), info.getProviderId()));
+	}
+
+	// ---------- 웹(WebGL): 인가 코드 → 서버가 토큰으로 교환 → 위 토큰 경로와 같은 회원 처리 ----------
+
+	@PostMapping("/login/google/code")
+	public ResponseEntity<MemberDto.AuthResult> googleLoginByCode(@Valid @RequestBody SocialCodeRequest req) {
+		OAuthUserInfo info = googleAuthService.verifyAuthCode(req.getCode());
+		return ResponseEntity.ok(memberService.socialLogin(info.getProvider(), info.getProviderId()));
+	}
+
+	@PostMapping("/login/kakao/code")
+	public ResponseEntity<MemberDto.AuthResult> kakaoLoginByCode(@Valid @RequestBody SocialCodeRequest req) {
+		OAuthUserInfo info = kakaoAuthService.verifyAuthCode(req.getCode(), req.getRedirectUri());
+		return ResponseEntity.ok(memberService.socialLogin(info.getProvider(), info.getProviderId()));
+	}
+
+	@PostMapping("/link/google/code")
+	public ResponseEntity<MemberDto.LinkResult> linkGoogleByCode(
+			@AuthenticationPrincipal Jwt jwt,
+			@RequestBody @Valid SocialCodeRequest request
+	) {
+		Long currentMemberId = Long.valueOf(jwt.getSubject());
+		OAuthUserInfo userInfo = googleAuthService.verifyAuthCode(request.getCode());
+		return ResponseEntity.ok(memberService.linkSocialAccount(currentMemberId, AuthProvider.GOOGLE, userInfo.getProviderId()));
+	}
+
+	@PostMapping("/link/kakao/code")
+	public ResponseEntity<MemberDto.LinkResult> linkKakaoByCode(
+			@AuthenticationPrincipal Jwt jwt,
+			@RequestBody @Valid SocialCodeRequest request
+	) {
+		Long currentMemberId = Long.valueOf(jwt.getSubject());
+		OAuthUserInfo userInfo = kakaoAuthService.verifyAuthCode(request.getCode(), request.getRedirectUri());
+		return ResponseEntity.ok(memberService.linkSocialAccount(currentMemberId, AuthProvider.KAKAO, userInfo.getProviderId()));
 	}
 
 	@PostMapping("/guest")
@@ -63,7 +98,7 @@ public class MemberController {
 	) {
 		Long currentMemberId = Long.valueOf(jwt.getSubject());
 
-		// 1. 구글 토큰 검증 후 고유 providerId 추출 (에디터 mock_ 토큰도 여기서 처리됨)
+		// 1. 구글 토큰 검증 후 고유 providerId 추출
 		OAuthUserInfo userInfo = googleAuthService.verifyToken(request.getToken());
 
 		// 2. 서비스 호출하여 계정 연동
@@ -83,7 +118,7 @@ public class MemberController {
 	) {
 		Long currentMemberId = Long.valueOf(jwt.getSubject());
 
-		// 1. 카카오 토큰 검증 후 고유 providerId 추출 (에디터 mock_ 토큰도 여기서 처리됨)
+		// 1. 카카오 토큰 검증 후 고유 providerId 추출
 		OAuthUserInfo userInfo = kakaoAuthService.verifyToken(request.getToken());
 
 		// 2. 서비스 호출하여 계정 연동

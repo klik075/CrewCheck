@@ -63,7 +63,8 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 						// 회원가입 / 로그인은 토큰 없이
 						.requestMatchers("/api/members/signup", "/api/members/login",
-									"/api/members/login/google", "/api/members/login/kakao").permitAll()
+									"/api/members/login/google", "/api/members/login/kakao",
+									"/api/members/login/google/code", "/api/members/login/kakao/code").permitAll()
 						// 토큰 재발급 / 로그아웃은 body의 리프레시 토큰으로 인증한다
 						.requestMatchers("/api/auth/**").permitAll()
 						// 로비(/api/v1/rooms), 게임(/api/v1/games), 직업(/api/v1/roles) API는 로그인한 유저만
