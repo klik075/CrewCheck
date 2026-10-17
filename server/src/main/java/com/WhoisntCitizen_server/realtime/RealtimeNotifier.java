@@ -12,7 +12,8 @@ import java.util.Collection;
  *
  * 구현
  *  - LocalRealtimeNotifier (4단계): 이 서버의 연결 목록으로 바로 보낸다. 서버 1대 기준
- *  - 5단계: Redis Pub/Sub으로 모든 서버에 뿌리고, 각 서버가 자기 연결 목록으로 보낸다
+ *  - RedisRealtimeNotifier (5단계, realtime.redis): Redis Pub/Sub으로 모든 서버에 뿌리고, 각 서버가 자기 연결 목록으로 보낸다
+ *  - 고르는 설정: mafia.realtime.notifier (local/redis, 비우면 mafia.server.mode를 따름)
  * 보내는 쪽 코드는 이 인터페이스만 알므로 5단계에서 바뀌지 않는다.
  */
 public interface RealtimeNotifier {
