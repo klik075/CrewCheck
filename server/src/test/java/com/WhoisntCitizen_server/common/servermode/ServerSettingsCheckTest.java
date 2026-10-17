@@ -20,7 +20,7 @@ class ServerSettingsCheckTest {
     @Test
     void single에서_전부_redis로_덮어써도_섞이지_않았으니_경고가_없다() {
         assertThat(warnings("mafia.game.repository", "redis", "mafia.game.lock", "redis", "mafia.room.lock", "redis",
-                "mafia.game.timer", "redis", "mafia.game.activity", "redis"))
+                "mafia.game.timer", "redis", "mafia.game.activity", "redis", "mafia.realtime.notifier", "redis"))
                 .isEmpty();
     }
 

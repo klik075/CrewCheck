@@ -5,6 +5,9 @@ import com.WhoisntCitizen_server.realtime.protocol.ServerMessage;
 import com.WhoisntCitizen_server.realtime.redis.RealtimeSignalCodec;
 import com.WhoisntCitizen_server.realtime.redis.RealtimeSignalListener;
 import com.WhoisntCitizen_server.realtime.redis.RedisRealtimeNotifier;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
+import io.lettuce.core.api.StatefulRedisConnection;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -12,7 +15,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
-import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
@@ -22,6 +24,7 @@ import org.testcontainers.utility.DockerImageName;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,6 +44,13 @@ class RedisRealtimeNotifierMultiServerTest {
     private static GenericContainer<?> redisContainer;
     private static LettuceConnectionFactory connectionFactory;
     private static StringRedisTemplate redis;
+    /**
+     * 구독 수(PUBSUB NUMSUB)를 묻는 전용 Lettuce 연결.
+     * Spring의 RedisConnection.execute로 직접 보내면 응답을 바이트 배열 하나로만 읽어서,
+     * [채널 이름, 숫자] 배열인 NUMSUB 응답을 읽지 못한다. (UnsupportedOperationException)
+     */
+    private static RedisClient probeClient;
+    private static StatefulRedisConnection<String, String> probe;
 
     private final RealtimeMessageCodec messageCodec = new RealtimeMessageCodec();
     private Server serverA;
@@ -74,10 +84,18 @@ class RedisRealtimeNotifierMultiServerTest {
                 new RedisStandaloneConfiguration(redisContainer.getHost(), redisContainer.getMappedPort(6379)));
         connectionFactory.afterPropertiesSet();
         redis = new StringRedisTemplate(connectionFactory);
+        probeClient = RedisClient.create(RedisURI.create(redisContainer.getHost(), redisContainer.getMappedPort(6379)));
+        probe = probeClient.connect();
     }
 
     @AfterAll
     static void stopRedis() {
+        if (probe != null) {
+            probe.close();
+        }
+        if (probeClient != null) {
+            probeClient.shutdown();
+        }
         if (connectionFactory != null) {
             connectionFactory.destroy();
         }
@@ -124,14 +142,10 @@ class RedisRealtimeNotifierMultiServerTest {
         return serverId.equals("A") ? 1 : 2;
     }
 
-    /** 지금 이 채널을 구독 중인 연결 수 (PUBSUB NUMSUB 결과: [채널 이름, 구독 수]) */
+    /** 지금 이 채널을 구독 중인 연결 수 (PUBSUB NUMSUB) */
     private static long subscriberCount() {
-        Object reply = redis.execute((RedisCallback<Object>) connection ->
-                connection.execute("PUBSUB", "NUMSUB".getBytes(), CHANNEL.getBytes()));
-        if (reply instanceof List<?> list && list.size() == 2 && list.get(1) instanceof Number count) {
-            return count.longValue();
-        }
-        return 0;
+        Map<String, Long> counts = probe.sync().pubsubNumsub(CHANNEL);
+        return counts.getOrDefault(CHANNEL, 0L);
     }
 
     @Test
