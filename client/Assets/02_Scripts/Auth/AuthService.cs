@@ -12,8 +12,18 @@ public static class AuthService
     public const string RefreshPath = "/api/auth/refresh";
     public const string LogoutPath = "/api/auth/logout";
 
-    private static string LoginPathOf(SocialProvider p) => p == SocialProvider.Google ? "/api/members/login/google" : "/api/members/login/kakao";
-    private static string LinkPathOf(SocialProvider p) => p == SocialProvider.Google ? "/api/members/link/google" : "/api/members/link/kakao";
+    // 토큰(모바일)은 /login/google, 인가 코드(웹)는 /login/google/code 로 보낸다.
+    private static string LoginPathOf(SocialProvider p, SocialCredentialKind kind) =>
+        (p == SocialProvider.Google ? "/api/members/login/google" : "/api/members/login/kakao") + CodeSuffix(kind);
+    private static string LinkPathOf(SocialProvider p, SocialCredentialKind kind) =>
+        (p == SocialProvider.Google ? "/api/members/link/google" : "/api/members/link/kakao") + CodeSuffix(kind);
+    private static string CodeSuffix(SocialCredentialKind kind) => kind == SocialCredentialKind.Code ? "/code" : "";
+
+    // 토큰/코드에 맞는 요청 body를 만든다.
+    private static object SocialBody(SocialCredential credential) =>
+        credential.Kind == SocialCredentialKind.Code
+            ? (object)new SocialCodeRequest { code = credential.Value, redirectUri = credential.RedirectUri }
+            : new SocialTokenRequest { token = credential.Value };
 
     /// <summary>현재 로그인한 계정이 게스트인지 (게스트 로그인 시 서버가 username을 guest_...로 만든다)</summary>
     public static bool IsGuestAccount => AuthSession.IsAuthenticated
@@ -34,21 +44,19 @@ public static class AuthService
         ApiClient.Post<AuthResponse>(LoginPath, body, r => Finish(r, onDone), requireAuth: false);
     }
 
-    /// <summary>소셜 로그인. token은 Google/Kakao SDK에서 받은 토큰</summary>
-    public static void SocialLogin(SocialProvider provider, string token, Action<ApiResult<AuthResponse>> onDone)
+    /// <summary>소셜 로그인. credential은 SocialAuth에서 받은 값(모바일: 토큰, 웹: 인가 코드)</summary>
+    public static void SocialLogin(SocialProvider provider, SocialCredential credential, Action<ApiResult<AuthResponse>> onDone)
     {
-        var body = new SocialTokenRequest { token = token };
-        ApiClient.Post<AuthResponse>(LoginPathOf(provider), body, r => Finish(r, onDone), requireAuth: false);
+        ApiClient.Post<AuthResponse>(LoginPathOf(provider, credential.Kind), SocialBody(credential), r => Finish(r, onDone), requireAuth: false);
     }
 
     /// <summary>
     /// 현재 계정(게스트/일반)에 소셜 계정을 연동한다. 현재 JWT가 Authorization 헤더로 자동 첨부된다.
     /// 이미 다른 계정에 연동된 소셜 계정이면 409 (result.IsConflict).
     /// </summary>
-    public static void LinkSocial(SocialProvider provider, string token, Action<ApiResult<SocialLinkResponse>> onDone)
+    public static void LinkSocial(SocialProvider provider, SocialCredential credential, Action<ApiResult<SocialLinkResponse>> onDone)
     {
-        var body = new SocialTokenRequest { token = token };
-        ApiClient.Post<SocialLinkResponse>(LinkPathOf(provider), body, onDone, requireAuth: true);
+        ApiClient.Post<SocialLinkResponse>(LinkPathOf(provider, credential.Kind), SocialBody(credential), onDone, requireAuth: true);
     }
 
     /// <summary>

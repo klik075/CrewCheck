@@ -81,20 +81,20 @@ namespace WhoisntCitizen.Lobby
 
         private async void RunLink(SocialProvider provider)
         {
-            string token = null;
+            SocialCredential credential = null;
             string error = null;
-            try { token = await SocialAuth.GetTokenAsync(provider); }
+            try { credential = await SocialAuth.GetCredentialAsync(provider); }
             catch (System.Exception e) { error = e.Message; }
 
             if (this == null) return;
 
-            if (string.IsNullOrEmpty(token))
+            if (credential == null || credential.IsEmpty)
             {
                 Finish(false, error ?? $"{provider} 로그인에 실패했습니다.");
                 return;
             }
             // 현재 JWT가 Authorization 헤더로 자동 첨부된다.
-            AuthService.LinkSocial(provider, token, result => OnLinkResult(result, provider));
+            AuthService.LinkSocial(provider, credential, result => OnLinkResult(result, provider));
         }
 
         private void OnLinkResult(ApiResult<SocialLinkResponse> result, SocialProvider provider)
