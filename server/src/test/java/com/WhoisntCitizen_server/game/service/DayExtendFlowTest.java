@@ -12,6 +12,7 @@ import com.WhoisntCitizen_server.game.entity.GamePlayer;
 import com.WhoisntCitizen_server.game.event.GameStateChangedEvent;
 import com.WhoisntCitizen_server.game.lock.LocalGameLock;
 import com.WhoisntCitizen_server.game.repository.ChangeEventGameRepository;
+import com.WhoisntCitizen_server.game.result.GameResultRecorder;
 import com.WhoisntCitizen_server.game.scheduling.GameTimer;
 import com.WhoisntCitizen_server.game.scheduling.LocalGameTimer;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
@@ -93,7 +94,7 @@ class DayExtendFlowTest {
         holder[0] = new GameFlowService(repository, new NightActionResolver(new Random(0)), new VoteResolver(),
                 new WinConditionChecker(), recordingTimer,
                 new SchedulerDeferredEventPublisher(scheduler, clock, events::add),
-                lock, new LocalPlayerActivityTracker(), PROPS, clock, events::add);
+                lock, new LocalPlayerActivityTracker(), PROPS, clock, events::add, GameResultRecorder.NONE);
         flow = holder[0];
         gameService = new GameService(repository, mock(RoleAssigner.class), flow, lock,
                 new LocalPlayerActivityTracker(), clock);

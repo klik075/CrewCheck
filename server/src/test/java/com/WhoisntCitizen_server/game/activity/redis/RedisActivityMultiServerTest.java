@@ -12,6 +12,7 @@ import com.WhoisntCitizen_server.game.repository.redis.GameRedis;
 import com.WhoisntCitizen_server.game.repository.redis.GameRedisProperties;
 import com.WhoisntCitizen_server.game.repository.redis.RedisGameRepository;
 import com.WhoisntCitizen_server.game.repository.snapshot.GameSnapshotCodec;
+import com.WhoisntCitizen_server.game.result.GameResultRecorder;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
 import com.WhoisntCitizen_server.game.scheduling.redis.RedisGameTimer;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
@@ -131,7 +132,7 @@ class RedisActivityMultiServerTest {
         ManualTaskScheduler scheduler = new ManualTaskScheduler(new MutableClock(NOW)); // 지연 이벤트(로비·전적)는 여기서 다루지 않음
         flow[0] = new GameFlowService(repository, new NightActionResolver(new Random(0)), new VoteResolver(),
                 new WinConditionChecker(), timer, new SchedulerDeferredEventPublisher(scheduler, serverClock, event -> { }),
-                lock, activity, PROPS, serverClock, event -> { });
+                lock, activity, PROPS, serverClock, event -> { }, GameResultRecorder.NONE);
         GameService games = new GameService(repository, TestRoles.assigner(7), flow[0], lock, activity, serverClock);
         return new Server(repository, timer, flow[0], games, activity);
     }
