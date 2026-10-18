@@ -15,7 +15,8 @@ import java.util.List;
  *
  *  - v: 신호 형식 버전. 형식을 바꾸면 올린다. (서버를 한 대씩 교체하는 동안 옛 서버와 새 서버가 섞여 있을 수 있다)
  *  - origin: 보낸 서버의 ID. 보낸 서버는 자기 연결에 이미 직접 보냈으므로, 채널로 되돌아온 자기 신호는 버린다
- *  - message: 클라이언트에게 보낼 ServerMessage를 JSON 문자열로 바꾼 것. 보내기 신호(ROOM·USERS_IN_ROOM·USER)에만 있다
+ *  - message: 클라이언트에게 보낼 ServerMessage를 JSON 문자열로 바꾼 것. 보내기 신호(ROOM·USERS_IN_ROOM·USER·LOBBY)에만 있다
+ *  - LOBBY는 userId 칸에 sendToLobby의 excludeUserId(신호를 받지 않을 사용자)를 담는다
  *
  * 비어 있는 칸은 JSON에 넣지 않는다(NON_NULL). 모르는 칸은 무시한다. (새 서버가 칸을 추가해도 옛 서버가 깨지지 않게)
  */
@@ -43,6 +44,8 @@ public record RealtimeSignal(
         USERS_IN_ROOM,
         /** sendToUser */
         USER,
+        /** sendToLobby. userId = excludeUserId */
+        LOBBY,
         /** disconnectUser */
         DISCONNECT_USER,
         /** removeUserFromRoom */
@@ -61,6 +64,11 @@ public record RealtimeSignal(
 
     public static RealtimeSignal user(String origin, long userId, String message) {
         return new RealtimeSignal(VERSION, origin, Op.USER, null, userId, null, null, null, message);
+    }
+
+    /** 로비(어떤 방도 구독하지 않은 연결)에 보내기. excludeUserId의 연결은 받는 서버가 뺀다 */
+    public static RealtimeSignal lobby(String origin, long excludeUserId, String message) {
+        return new RealtimeSignal(VERSION, origin, Op.LOBBY, null, excludeUserId, null, null, null, message);
     }
 
     public static RealtimeSignal disconnectUser(String origin, long userId, int closeCode, String reason) {

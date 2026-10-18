@@ -27,6 +27,19 @@ class RealtimeSignalCodecTest {
     }
 
     @Test
+    void 로비_신호는_제외할_사용자와_함께_되돌아온다() {
+        String message = messageCodec.encode(new ServerMessage.RoomCreated(9));
+        RealtimeSignal signal = RealtimeSignal.lobby("A", 1, message);
+
+        RealtimeSignal decoded = codec.decode(codec.encode(signal));
+
+        assertThat(decoded).isEqualTo(signal);
+        assertThat(decoded.op()).isEqualTo(RealtimeSignal.Op.LOBBY);
+        assertThat(decoded.userId()).isEqualTo(1L);
+        assertThat(messageCodec.decodeServerMessage(decoded.message())).isEqualTo(new ServerMessage.RoomCreated(9));
+    }
+
+    @Test
     void 빈_칸은_JSON에_넣지_않는다() {
         String json = codec.encode(RealtimeSignal.removeRoom("A", 7));
 
@@ -60,7 +73,8 @@ class RealtimeSignalCodecTest {
                 new ServerMessage.GameChanged("g1", 7),
                 new ServerMessage.RoomChanged(3),
                 new ServerMessage.ChatChanged(3, 42),
-                new ServerMessage.Subscribed(3));
+                new ServerMessage.Subscribed(3),
+                new ServerMessage.RoomCreated(9));
 
         for (ServerMessage message : messages) {
             assertThat(messageCodec.decodeServerMessage(messageCodec.encode(message))).isEqualTo(message);
