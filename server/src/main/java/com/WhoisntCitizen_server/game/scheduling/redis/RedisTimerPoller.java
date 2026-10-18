@@ -16,6 +16,7 @@ import java.util.function.IntSupplier;
  * 서버가 켜져 있는 동안 짧은 간격(기본 100ms, mafia.redis.game.timer.poll-interval-millis)으로 시간이 된 예약을 확인한다.
  * 서버에서는 RedisTimerDispatcher.dispatchOnce()를 부른다. (가져가서 작업 스레드에 넘기기. 실행은 작업 스레드가 한다)
  * 서버마다 하나씩 돈다. 여러 서버가 같은 예약을 확인해도 한 서버만 가져간다. (RedisGameTimer의 Lua 가져가기)
+ * [서버 여러 대] 주기 작업 — 서버마다 돈다. 두 번 돌아도 안전: 위의 가져가기(lease)로 예약 하나는 한 서버만 실행한다.
  *
  * 동작
  *  - 서버가 켜지면(start) 바로 한 번 확인하고, 그 뒤로는 "확인이 끝난 시각 + 간격"마다 확인한다.

@@ -12,6 +12,7 @@ import java.util.concurrent.ScheduledFuture;
 
 /**
  * 같은 서버 ID를 쓰는 서버가 또 있는지 Redis로 확인한다. (멀티서버 2단계)
+ * [서버 여러 대] 주기 작업 — 서버마다 돌아야 한다. 각 서버가 자기 ID 키만 연장한다.
  *
  * 왜 필요한가
  *  두 서버에 SERVER_ID를 실수로 똑같이 넣으면, Redis Pub/Sub에서 서로의 신호를 "내가 보낸 것"으로 알고 버린다.

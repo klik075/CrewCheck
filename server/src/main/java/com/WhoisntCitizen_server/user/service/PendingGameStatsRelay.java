@@ -16,6 +16,7 @@ import java.util.OptionalInt;
 
 /**
  * 전적 반영 재시도 (outbox 릴레이).
+ * [서버 여러 대] 주기 작업 — 서버마다 돈다. 두 번 돌아도 안전: 반영 시각(stats_applied_at)을 조건부 UPDATE로 먼저 차지한 쪽만 전적을 올린다.
  * 게임 결과는 게임이 끝날 때 DB(game_results)에 남지만, 전적을 올리는 GameEndedEvent는 서버 메모리로만 전달된다.
  * 그래서 게임 종료 직후 서버가 꺼지거나 전적 저장이 실패하면 "결과는 있는데 전적에 반영 안 된" 게임이 남는다.
  * 서버가 켜질 때 한 번, 그 뒤 mafia.stats.relay-interval-seconds마다 이런 게임을 찾아 반영한다.
