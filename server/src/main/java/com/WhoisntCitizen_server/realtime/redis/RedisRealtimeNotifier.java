@@ -76,6 +76,13 @@ public class RedisRealtimeNotifier implements RealtimeNotifier {
     }
 
     @Override
+    public void sendToLobby(ServerMessage message, long excludeUserId) {
+        // 로비에 있는 사람(어떤 방도 구독하지 않은 연결)은 서버마다 다르므로, 받은 서버가 자기 연결 목록에서 고른다
+        local.sendToLobby(message, excludeUserId);
+        publish(RealtimeSignal.lobby(serverId, excludeUserId, messageCodec.encode(message)));
+    }
+
+    @Override
     public void sendToUser(long userId, ServerMessage message) {
         local.sendToUser(userId, message);
         publish(RealtimeSignal.user(serverId, userId, messageCodec.encode(message)));
@@ -111,6 +118,7 @@ public class RedisRealtimeNotifier implements RealtimeNotifier {
             case USERS_IN_ROOM -> local.sendToUsersInRoom(signal.roomId(), signal.userIds(),
                     messageCodec.decodeServerMessage(signal.message()));
             case USER -> local.sendToUser(signal.userId(), messageCodec.decodeServerMessage(signal.message()));
+            case LOBBY -> local.sendToLobby(messageCodec.decodeServerMessage(signal.message()), signal.userId());
             case DISCONNECT_USER -> local.disconnectUser(signal.userId(), signal.closeCode(), signal.reason());
             case REMOVE_USER_FROM_ROOM -> local.removeUserFromRoom(signal.roomId(), signal.userId());
             case REMOVE_ROOM -> local.removeRoom(signal.roomId());

@@ -186,6 +186,25 @@ class RedisRealtimeNotifierMultiServerTest {
     }
 
     @Test
+    void 로비에_보내면_다른_서버의_로비_연결도_받고_방_구독자와_제외한_사용자는_받지_않는다() {
+        FakeConnection hostOnA = serverA.connect("a1", 1, null);     // 방을 만든 사람 (제외 대상)
+        FakeConnection lobbyOnA = serverA.connect("a2", 2, null);
+        FakeConnection lobbyOnB = serverB.connect("b1", 3, null);
+        FakeConnection inRoomOnB = serverB.connect("b2", 4, 3L);     // 방에 있는 사람은 로비가 아니다
+        FakeConnection hostAlsoOnB = serverB.connect("b3", 1, null); // 제외 대상의 다른 기기
+
+        serverA.notifier().sendToLobby(new ServerMessage.RoomCreated(9), 1);
+
+        String expected = messageCodec.encode(new ServerMessage.RoomCreated(9));
+        waitUntil(() -> lobbyOnB.sent.size() == 1);
+        assertThat(lobbyOnB.sent).containsExactly(expected);
+        assertThat(lobbyOnA.sent).containsExactly(expected); // 자기 연결에는 직접 보내고, 되돌아온 신호는 버린다 (한 번만)
+        assertThat(inRoomOnB.sent).isEmpty();
+        assertThat(hostOnA.sent).isEmpty();
+        assertThat(hostAlsoOnB.sent).isEmpty();
+    }
+
+    @Test
     void 중복_로그인_강제_종료는_다른_서버의_연결도_닫는다() {
         FakeConnection onB = serverB.connect("b1", 1, 3L);
 
