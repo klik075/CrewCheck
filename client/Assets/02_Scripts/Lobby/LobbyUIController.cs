@@ -3,6 +3,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using WhoisntCitizen.Common;
+using WhoisntCitizen.Network; // RealtimeClient: 새 방 생성 신호(room.created) → 새로고침 버튼 RedDot
 using WhoisntCitizen.Chat; // ChatNotice: 내 화면 전용 안내 (채팅창 + 콘솔)
 using WhoisntCitizen.Profile; // LobbyProfileController.ProfileChanged: 닉네임 변경 반영
 
@@ -15,6 +16,9 @@ namespace WhoisntCitizen.Lobby
     ///   1) UserInfoArea : 닉네임 표시 (닉네임을 바꾸면 갱신. 로그인 아이디·userId는 보여 주지 않는다)
     ///   2) Button_CreatRoom : 방 만들기 팝업(CreateRoomPopup) 열기
     ///   3) Button_Refresh : 방 목록 새로고침
+    ///      다른 사람이 방을 새로 만들면(실시간 신호 room.created) 자식 RedDot을 켠다. 목록은 자동으로 바꾸지 않는다.
+    ///      목록을 다시 받으면(새로고침·검색·입장 실패 후 갱신) RedDot이 꺼진다. 검색 중이어도 켜지고, 검색어는 그대로 유지된다.
+    ///      인원·상태 변경과 방 삭제는 RedDot을 켜지 않는다. (입장하다 실패하면 에러를 보여 주고 바로 목록을 다시 받는다)
     ///   4) RoomListArea : RoomItem 프리팹으로 방 목록 표시, Enter → 방 입장 → Room 씬
     ///      비밀방이면 Enter → 비밀번호 팝업(RoomPasswordPopup) → 방 입장 → Room 씬
     ///   5) 로그아웃 버튼 (선택) : 연결하면 세션을 비우고 타이틀 씬으로 이동
@@ -38,6 +42,8 @@ namespace WhoisntCitizen.Lobby
         [Header("Buttons")]
         [SerializeField] private Button createRoomButton;    // Buttons/Button_CreatRoom
         [SerializeField] private Button refreshButton;       // Buttons/Button_Refresh
+        [Tooltip("(선택) Button_Refresh의 자식 RedDot. 다른 사람이 방을 새로 만들면 켜지고, 목록을 다시 받으면 꺼진다. 비워 두면 refreshButton 아래의 'RedDot'을 찾는다.")]
+        [SerializeField] private GameObject refreshRedDot;    // Buttons/Button_Refresh/RedDot
         [Tooltip("(선택) 로그아웃 버튼. 비워 두면 사용하지 않는다.")]
         [SerializeField] private Button logoutButton;
         [Tooltip("(선택) 설정 버튼. 누르면 계정 연동(구글/카카오)이 있는 설정 팝업을 연다.")]
@@ -87,6 +93,9 @@ namespace WhoisntCitizen.Lobby
         private string currentKeyword = string.Empty; // 지금 목록에 적용된 검색어 ("" = 전체 목록)
         private bool hasPendingSearch;                // 목록 요청 중에 검색을 눌렀으면, 응답 뒤에 한 번 더 요청한다
 
+        private RealtimeClient realtime;      // room.created 신호를 받는 실시간 클라이언트 (로그인할 때 RealtimeSession이 연결해 둔다)
+        private int roomCreatedSignalCount;  // 받은 room.created 수. 목록 요청 뒤에 또 받았으면 그 응답에 새 방이 없을 수 있어 RedDot을 끄지 않는다
+
         // ------------------------------------------------------------------
         // Unity 생명주기
         // ------------------------------------------------------------------
@@ -134,9 +143,12 @@ namespace WhoisntCitizen.Lobby
             if (roomPasswordPopup != null) roomPasswordPopup.Close();
             if (accountLinkPopup != null) accountLinkPopup.gameObject.SetActive(false);
             ClearRoomList();                                      // Content에 놓여 있던 샘플 RoomItem 제거
+            ResolveRefreshRedDot();
+            SetRefreshRedDot(false);                              // 씬에서 켜 둔 채 저장했어도 끄고 시작 (곧 목록을 받는다)
+            AttachRealtime();                                     // 새 방 생성 신호 → RedDot
             BuildLobbyChat();                                     // [채팅] 버튼 + 채팅창 (로비에 들어온 지금부터의 대화를 받는다)
 
-            // 4) 방 목록 불러오기 (이후에는 새로고침 버튼을 눌렀을 때만 갱신한다)
+            // 4) 방 목록 불러오기 (이후에는 새로고침 버튼을 눌렀을 때만 갱신한다. 새 방이 생기면 RedDot으로 알린다)
             RefreshRooms(silent: false);
         }
 
@@ -167,6 +179,51 @@ namespace WhoisntCitizen.Lobby
             if (clearButton != null) clearButton.onClick.RemoveListener(OnClearSearchClicked);
             if (searchInput != null) searchInput.onSubmit.RemoveListener(OnSearchSubmitted);
             LobbyProfileController.ProfileChanged -= OnProfileChanged;
+            DetachRealtime();
+        }
+
+        // ------------------------------------------------------------------
+        // 새 방 알림 (Button_Refresh/RedDot)
+        // ------------------------------------------------------------------
+
+        private void AttachRealtime()
+        {
+            // 플레이 종료 중에 새로 만들지 않도록 이미 있는 클라이언트만 쓴다. (로그인했다면 RealtimeSession이 만들어 둔다)
+            realtime = RealtimeClient.ExistingInstance;
+            if (realtime == null)
+            {
+                Debug.LogWarning("[Lobby] 실시간 연결이 없어 새 방 알림(RedDot)을 받지 않습니다. 새로고침 버튼은 그대로 쓸 수 있습니다.");
+                return;
+            }
+            realtime.RoomCreated += OnRealtimeRoomCreated;
+        }
+
+        private void DetachRealtime()
+        {
+            RealtimeClient rt = realtime != null ? RealtimeClient.ExistingInstance : null;
+            if (rt != null) rt.RoomCreated -= OnRealtimeRoomCreated;
+            realtime = null;
+        }
+
+        // 다른 사람이 방을 새로 만들었다. 목록은 바꾸지 않고 RedDot만 켠다. (검색 중이어도 켜고, 검색어는 그대로 둔다)
+        private void OnRealtimeRoomCreated(long roomId)
+        {
+            if (this == null) return;
+            roomCreatedSignalCount++;
+            SetRefreshRedDot(true);
+        }
+
+        private void ResolveRefreshRedDot()
+        {
+            if (refreshRedDot != null || refreshButton == null) return;
+            Transform dot = refreshButton.transform.Find("RedDot");
+            if (dot != null) refreshRedDot = dot.gameObject;
+            else Debug.LogWarning("[Lobby] Button_Refresh 아래에 RedDot이 없어 새 방 알림을 표시하지 않습니다. (LobbyUIController.refreshRedDot로 지정할 수 있습니다)");
+        }
+
+        private void SetRefreshRedDot(bool on)
+        {
+            if (refreshRedDot != null && refreshRedDot.activeSelf != on) refreshRedDot.SetActive(on);
         }
 
         // ------------------------------------------------------------------
@@ -283,6 +340,7 @@ namespace WhoisntCitizen.Lobby
             isRefreshing = true;
             if (refreshButton != null) refreshButton.interactable = false;
             string keyword = currentKeyword; // 응답이 올 때까지 검색어가 바뀌어도 이 요청의 검색어로 문구를 만든다
+            int signalsAtRequest = roomCreatedSignalCount; // 요청 뒤에 생긴 방은 이 응답에 없을 수 있다
             bool searching = !string.IsNullOrEmpty(keyword);
             if (!silent) statusMessage?.ShowInfo(searching ? $"'{keyword}' 검색 중..." : "방 목록을 불러오는 중...", keep: true);
 
@@ -313,6 +371,14 @@ namespace WhoisntCitizen.Lobby
 
                 BuildRoomList(result.data);
 
+                // 목록이 최신이 됐으니 RedDot을 끈다. 검색 중이라 새 방이 목록에 안 보여도 끈다.
+                // 단, 요청을 보낸 뒤에 새 방 신호가 또 왔으면 그 방은 이 응답에 없을 수 있으므로 켜 둔다.
+                if (roomCreatedSignalCount == signalsAtRequest) SetRefreshRedDot(false);
+
+                // silent(입장 실패 직후 갱신)면 방금 띄운 에러("존재하지 않는 방입니다." 등)를 덮지 않는다.
+                // 하나뿐인 방이 삭제된 경우 "방이 없습니다" 안내가 에러를 바로 덮어써 실패 이유가 안 보이던 문제.
+                if (silent) return;
+
                 if (!string.IsNullOrEmpty(lobbyNotice))
                 {
                     statusMessage?.ShowInfo(lobbyNotice, keep: true); // 로비로 돌아온 이유가 "n개를 불러왔습니다"보다 중요하다
@@ -322,7 +388,7 @@ namespace WhoisntCitizen.Lobby
                     statusMessage?.ShowInfo(searching
                         ? $"'{keyword}'에 해당하는 방이 없습니다."
                         : EmptyRoomNotice, keep: true);  // 방이 없으면 안내 문구 유지
-                else if (!silent)
+                else
                     statusMessage?.ShowSuccess(searching
                         ? $"'{keyword}' 검색 결과 {result.data.Count}개"
                         : $"방 {result.data.Count}개를 불러왔습니다.");

@@ -158,6 +158,7 @@ namespace WhoisntCitizen.Network.Realtime
         public const string Subscribed = "subscribed";
         public const string GameChanged = "game.changed";
         public const string RoomChanged = "room.changed";
+        public const string RoomCreated = "room.created";
         public const string ChatChanged = "chat.changed";
         public const string Error = "error";
     }

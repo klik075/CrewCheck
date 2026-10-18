@@ -96,6 +96,12 @@ namespace WhoisntCitizen.Network
         /// <summary>방 정보가 바뀌었다 (roomId) → GET /api/v1/rooms/{roomId}. 메인 스레드, 프레임당 최대 한 번.</summary>
         public event Action<long> RoomChanged;
 
+        /// <summary>
+        /// 로비에 방이 새로 생겼다 (roomId). 방을 구독하지 않았을 때(로비)만 오고, 만든 사람은 받지 않는다.
+        /// 로비는 목록을 바꾸지 않고 새로고침 버튼의 RedDot만 켠다. 메인 스레드에서 불린다.
+        /// </summary>
+        public event Action<long> RoomCreated;
+
         /// <summary>게임 상태가 바뀌었다 (gameId, phaseVersion) → GET /api/v1/games/{gameId}. 메인 스레드, 프레임당 최대 한 번.</summary>
         public event Action<string, long> GameChanged;
 
@@ -414,6 +420,12 @@ namespace WhoisntCitizen.Network
                     }
                     break;
 
+                case RoomCreatedMessage created:
+                    // 방 구독과 상관없는 로비 신호라 signalFilter를 거치지 않고 바로 알린다.
+                    Log("신호: " + Describe(message));
+                    Invoke(RoomCreated, created.RoomId);
+                    break;
+
                 case RealtimeErrorMessage err:
                     HandleServerError(err);
                     break;
@@ -592,6 +604,7 @@ namespace WhoisntCitizen.Network
             switch (message)
             {
                 case RoomChangedMessage r: return $"room.changed room={r.RoomId}";
+                case RoomCreatedMessage rc: return $"room.created room={rc.RoomId}";
                 case GameChangedMessage g: return $"game.changed game={g.GameId} v={g.PhaseVersion}";
                 case ChatChangedMessage c: return $"chat.changed room={c.RoomId} last={c.LastMessageId}";
                 default: return message.Type;

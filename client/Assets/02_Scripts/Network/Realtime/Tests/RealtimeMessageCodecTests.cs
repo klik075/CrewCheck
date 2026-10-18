@@ -63,6 +63,12 @@ namespace WhoisntCitizen.Network.Realtime.Tests
         }
 
         [Test]
+        public void room_created를_읽는다()
+        {
+            Assert.AreEqual(7L, Decode<RoomCreatedMessage>("{\"type\":\"room.created\",\"roomId\":7}").RoomId);
+        }
+
+        [Test]
         public void chat_changed를_읽는다()
         {
             var m = Decode<ChatChangedMessage>("{\"type\":\"chat.changed\",\"roomId\":5,\"lastMessageId\":104}");

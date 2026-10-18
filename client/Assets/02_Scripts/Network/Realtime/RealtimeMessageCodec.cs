@@ -99,6 +99,11 @@ namespace WhoisntCitizen.Network.Realtime
                     message = new RoomChangedMessage(e.roomId);
                     return true;
 
+                case ServerMessageTypes.RoomCreated:
+                    if (e.roomId <= 0) return Fail(e.type, "roomId", out error);
+                    message = new RoomCreatedMessage(e.roomId);
+                    return true;
+
                 case ServerMessageTypes.ChatChanged:
                     if (e.roomId <= 0) return Fail(e.type, "roomId", out error);
                     message = new ChatChangedMessage(e.roomId, e.lastMessageId);

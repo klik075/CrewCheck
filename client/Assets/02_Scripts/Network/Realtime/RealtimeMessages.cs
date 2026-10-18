@@ -84,6 +84,21 @@ namespace WhoisntCitizen.Network.Realtime
         }
     }
 
+    /// <summary>
+    /// 로비에 방이 새로 생겼다. 방을 구독하지 않은 연결(로비)에만 오고, 만든 사람은 받지 않는다.
+    /// 로비는 목록을 바꾸지 않고 새로고침 버튼의 RedDot만 켠다.
+    /// </summary>
+    public sealed class RoomCreatedMessage : RealtimeServerMessage
+    {
+        public override string Type => ServerMessageTypes.RoomCreated;
+        public long RoomId { get; }
+
+        public RoomCreatedMessage(long roomId)
+        {
+            RoomId = roomId;
+        }
+    }
+
     /// <summary>새 채팅이 생겼다 → GET messages?afterId=(마지막 id). 이미 LastMessageId까지 받았다면 무시해도 된다.</summary>
     public sealed class ChatChangedMessage : RealtimeServerMessage
     {
