@@ -125,6 +125,11 @@ public class RealtimeSessionRegistry {
         return connections(byUser.get(userId));
     }
 
+    /** 이 서버의 모든 연결 (복사본). 서버를 끌 때 한꺼번에 닫는 데 쓴다 (RealtimeShutdownCloser) */
+    public synchronized List<RealtimeConnection> allConnections() {
+        return byId.values().stream().map(Entry::connection).toList();
+    }
+
     /** 연결이 구독 중인 방 */
     public synchronized OptionalLong roomOf(String connectionId) {
         Entry entry = byId.get(connectionId);
