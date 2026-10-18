@@ -33,6 +33,8 @@ public class RealtimeShutdownCloser implements SmartLifecycle {
 
     private final RealtimeSessionRegistry registry;
     private volatile boolean running;
+    /** stop()이 시작되면 true. 연결 끊김 처리(RealtimeWebSocketHandler)가 "서버 사정으로 끊긴 것"인지 알 때 쓴다 */
+    private volatile boolean shuttingDown;
 
     public RealtimeShutdownCloser(RealtimeSessionRegistry registry) {
         this.registry = Objects.requireNonNull(registry, "registry");
@@ -46,6 +48,8 @@ public class RealtimeShutdownCloser implements SmartLifecycle {
     @Override
     public void stop() {
         running = false;
+        // 닫기 전에 먼저 표시한다. 닫는 순간 불리는 afterConnectionClosed가 이 값을 보고 접속 상태를 바로 지우지 않는다
+        shuttingDown = true;
         List<RealtimeConnection> connections = registry.allConnections();
         int closed = 0;
         for (RealtimeConnection connection : connections) {
@@ -66,6 +70,11 @@ public class RealtimeShutdownCloser implements SmartLifecycle {
     @Override
     public boolean isRunning() {
         return running;
+    }
+
+    /** 서버가 꺼지는 중인가 (stop()이 불린 뒤 true). 이 뒤에 끊기는 연결은 모두 서버 사정으로 끊긴 것으로 본다 */
+    public boolean isShuttingDown() {
+        return shuttingDown;
     }
 
     /**
