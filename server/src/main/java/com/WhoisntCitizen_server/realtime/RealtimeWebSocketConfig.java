@@ -126,6 +126,12 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
         return new UserPresenceRecorder(userPresenceService, currentUserResolver, roomRepository);
     }
 
+    /** 서버가 꺼질 때 연결을 모두 1001로 닫아, 클라이언트가 곧바로 다른 서버로 다시 붙게 한다 (멀티서버 2단계) */
+    @Bean
+    public RealtimeShutdownCloser realtimeShutdownCloser() {
+        return new RealtimeShutdownCloser(realtimeSessionRegistry());
+    }
+
     @Bean
     public RealtimeWebSocketHandler realtimeWebSocketHandler() {
         return new RealtimeWebSocketHandler(realtimeMessageCodec(), clock, realtimeSessionRegistry(), roomMembership(),
