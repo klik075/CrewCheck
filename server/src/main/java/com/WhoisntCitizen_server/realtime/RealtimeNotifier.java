@@ -27,6 +27,12 @@ public interface RealtimeNotifier {
      */
     void sendToUsersInRoom(long roomId, Collection<Long> userIds, ServerMessage message);
 
+    /**
+     * 어떤 방도 구독하지 않은 연결(= 로비에 있는 사람)에 보낸다. excludeUserId의 연결은 뺀다.
+     * 새 방이 생겼을 때(room.created) 쓴다.
+     */
+    void sendToLobby(ServerMessage message, long excludeUserId);
+
     /** 사용자의 모든 연결에 보낸다 (방 구독과 상관없이) */
     void sendToUser(long userId, ServerMessage message);
 

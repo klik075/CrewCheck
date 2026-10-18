@@ -1,6 +1,7 @@
 package com.WhoisntCitizen_server.realtime;
 
 import com.WhoisntCitizen_server.game.event.PlayersDepartedEvent;
+import com.WhoisntCitizen_server.lobby.event.RoomCreatedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerKickedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomPlayerLeftEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomStateChangedEvent;
@@ -16,6 +17,7 @@ import java.util.Objects;
  *
  *  - RoomStateChangedEvent (방 저장·삭제) → 그 방 구독자에게 room.changed
  *      삭제된 방이면 보낸 뒤 그 방의 구독을 모두 푼다. (클라이언트는 GET에서 방이 없음을 보고 로비로 간다)
+ *  - RoomCreatedEvent (방 생성) → 방을 구독하지 않은 연결(로비)에 room.created. 만든 사람은 뺀다
  *  - 퇴장(RoomPlayerLeftEvent)·강퇴(RoomPlayerKickedEvent)·게임 중 연결 끊김(PlayersDepartedEvent)
  *      → 그 사람의 연결을 방 구독에서 뺀다. 구독할 때만 참가자인지 확인하므로, 빠진 뒤에도 신호를 받지 않게 여기서 정리한다.
  *
@@ -41,6 +43,15 @@ public class RealtimeRoomListener {
         if (event.deleted()) {
             notifier.removeRoom(event.roomId());
         }
+    }
+
+    @EventListener
+    public void onRoomCreated(RoomCreatedEvent event) {
+        if (event.roomId() == null) {
+            return;
+        }
+        long host = event.hostUserId() == null ? -1L : event.hostUserId();
+        notifier.sendToLobby(new ServerMessage.RoomCreated(event.roomId()), host);
     }
 
     @EventListener

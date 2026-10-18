@@ -43,6 +43,13 @@ public class LocalRealtimeNotifier implements RealtimeNotifier {
     }
 
     @Override
+    public void sendToLobby(ServerMessage message, long excludeUserId) {
+        sendAll(registry.connectionsWithoutRoom().stream()
+                .filter(connection -> connection.userId() != excludeUserId)
+                .toList(), message);
+    }
+
+    @Override
     public void sendToUser(long userId, ServerMessage message) {
         sendAll(registry.connectionsOfUser(userId), message);
     }

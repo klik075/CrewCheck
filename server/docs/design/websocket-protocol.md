@@ -39,6 +39,7 @@ ws://{서버}:8080/ws/v1?token={JWT}                                            
 | `subscribed` | `roomId` | 구독 완료. 이때 방·게임·채팅을 GET으로 한 번 가져옴 (구독 전 변경 보충) |
 | `game.changed` | `gameId`, `phaseVersion` | `GET /api/v1/games/{gameId}` (phaseVersion은 참고용, 항상 다시 조회) |
 | `room.changed` | `roomId` | `GET /api/v1/rooms/{roomId}` |
+| `room.created` | `roomId` | (로비) 새로고침 버튼의 RedDot만 켬. 목록은 자동으로 바꾸지 않음. **방을 구독하지 않은 연결(로비)에만** 가고 만든 사람은 받지 않음. 인원·상태 변경·삭제는 이 신호를 보내지 않음 |
 | `chat.changed` | `roomId`, `lastMessageId` | 이미 받은 id보다 크면 `GET /api/v1/rooms/{roomId}/messages?afterId=...` (사망자·해적·세이렌 전용 메시지는 볼 수 있는 사람에게만 옴) |
 | `error` | `code`, `message` | 로그. 연결은 유지됨 |
 
@@ -47,6 +48,7 @@ ws://{서버}:8080/ws/v1?token={JWT}                                            
 {"type":"subscribed","roomId":3}
 {"type":"game.changed","gameId":"abc","phaseVersion":7}
 {"type":"room.changed","roomId":3}
+{"type":"room.created","roomId":7}
 {"type":"chat.changed","roomId":3,"lastMessageId":42}
 {"type":"error","code":"NOT_IN_ROOM","message":"..."}
 ```
