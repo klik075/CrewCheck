@@ -1,5 +1,6 @@
 package com.WhoisntCitizen_server.realtime.redis;
 
+import com.WhoisntCitizen_server.common.server.ServerIdentity;
 import com.WhoisntCitizen_server.common.servermode.ConditionalOnServerSetting;
 import com.WhoisntCitizen_server.common.servermode.ServerSetting;
 import com.WhoisntCitizen_server.realtime.LocalRealtimeNotifier;
@@ -17,8 +18,6 @@ import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
-import java.net.InetAddress;
-import java.util.UUID;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
@@ -59,9 +58,10 @@ public class RealtimeRedisConfig {
      */
     @Bean
     public RedisRealtimeNotifier redisRealtimeNotifier(RealtimeSessionRegistry registry, RealtimeMessageCodec messageCodec,
-                                                       StringRedisTemplate redis,
+                                                       StringRedisTemplate redis, ServerIdentity serverIdentity,
                                                        @Value("${mafia.realtime.redis.channel:realtime:v1:signals}") String channel) {
-        String serverId = newServerId();
+        // 서버 ID는 ServerIdentity(SERVER_ID 또는 자동 생성) 한 곳에서 정한다. 응답 헤더·중복 확인과 같은 값이다
+        String serverId = serverIdentity.id();
         log.info("[ws] 실시간 신호: Redis Pub/Sub (channel={}, serverId={})", channel, serverId);
         return new RedisRealtimeNotifier(new LocalRealtimeNotifier(registry, messageCodec), messageCodec,
                 realtimeSignalCodec(), redis, channel, serverId);
@@ -104,20 +104,5 @@ public class RealtimeRedisConfig {
         if (signalExecutor != null) {
             signalExecutor.shutdown();
         }
-    }
-
-    /**
-     * 이 서버 프로세스의 ID. 켜질 때마다 새로 만든다. (호스트 이름 + 임의 8자리)
-     * 같은 컴퓨터에서 서버 두 대를 띄워도, 설정을 잘못 복사해도 겹치지 않게 임의 값을 붙인다.
-     * 2단계(서버 식별자·헬스 체크)에서 서버 ID를 따로 만들면 그 값으로 바꾼다.
-     */
-    static String newServerId() {
-        String host;
-        try {
-            host = InetAddress.getLocalHost().getHostName();
-        } catch (Exception e) {
-            host = "server";
-        }
-        return host + "-" + UUID.randomUUID().toString().substring(0, 8);
     }
 }
