@@ -77,8 +77,9 @@ namespace WhoisntCitizen.Lobby
         [SerializeField] private float pollInterval = 1f;
         [Tooltip("게임 시작에 필요한 최소 인원 (서버 RoleAssigner.MIN_PLAYERS = 4)")]
         [SerializeField] private int minPlayersToStart = 4;
-        [Tooltip("로그인(토큰) 남은 시간이 이 분보다 적으면 다시 로그인하라고 안내하고, 방장은 게임을 시작하지 못하게 한다. " +
-                 "게임 중 토큰이 만료되면 상태 조회가 끊겨 서버가 60초 뒤 사망 처리한다.")]
+        [Tooltip("로그인(토큰) 남은 시간이 이 분보다 적으면 방 입장·게임 시작 때 리프레시 토큰으로 미리 연장해 게임 중 재발급을 피한다. " +
+                 "연장할 수 없으면(리프레시 토큰 없음·거절) 다시 로그인하라고 안내하고, 방장은 게임을 시작하지 못하게 한다. " +
+                 "게임 중 토큰이 만료되고 재발급도 안 되면 상태 조회가 끊겨 서버가 60초 뒤 사망 처리한다.")]
         [SerializeField] private int minLoginMinutesForGame = 20;
 
         private const string RoomGoneNotice = "방이 사라져 로비로 돌아왔습니다.";
@@ -163,10 +164,7 @@ namespace WhoisntCitizen.Lobby
             ClearPlayerList(); // Content에 놓여 있던 샘플 아이템 제거
             UpdateStartButton();
             UpdateReadyButton();
-            if (LoginExpiresSoon(out int minutesLeft))
-            {
-                statusMessage?.ShowError($"로그인 유지 시간이 약 {minutesLeft}분 남았습니다. 게임 중 만료되면 연결이 끊겨 탈락하니, 로비에서 로그아웃 후 다시 로그인해 주세요.", keep: true);
-            }
+            if (LoginExpiresSoon(out _)) ExtendLoginInBackground();
 
             AttachRealtime(RoomSession.RoomId);
             pollRoutine = StartCoroutine(PollLoop());
@@ -178,6 +176,31 @@ namespace WhoisntCitizen.Lobby
             double? left = AuthSession.TokenMinutesLeft;
             minutesLeft = left.HasValue ? Mathf.Max(0, Mathf.FloorToInt((float)left.Value)) : 0;
             return left.HasValue && left.Value < minLoginMinutesForGame;
+        }
+
+        /// <summary>
+        /// 방에 들어왔는데 토큰이 곧 만료되면 조용히 연장해 둔다. 연장할 수 없을 때만(리프레시 토큰 없음·거절)
+        /// 게임 중에 끊길 수 있다고 안내한다. 네트워크 실패면 안내하지 않는다(만료 직전 요청에서 ApiClient가 다시 시도한다).
+        /// </summary>
+        private void ExtendLoginInBackground()
+        {
+            if (string.IsNullOrEmpty(AuthSession.RefreshToken))
+            {
+                ShowLoginExpiringWarning();
+                return;
+            }
+
+            TokenRefresher.Refresh(outcome =>
+            {
+                if (this == null || isTransitioning) return;
+                if (outcome == RefreshOutcome.Rejected) ShowLoginExpiringWarning();
+            });
+        }
+
+        private void ShowLoginExpiringWarning()
+        {
+            if (!LoginExpiresSoon(out int minutesLeft)) return;
+            statusMessage?.ShowError($"로그인 유지 시간이 약 {minutesLeft}분 남았습니다. 게임 중 만료되면 연결이 끊겨 탈락하니, 로비에서 로그아웃 후 다시 로그인해 주세요.", keep: true);
         }
 
         private void OnDestroy()
@@ -230,10 +253,54 @@ namespace WhoisntCitizen.Lobby
 
             if (LoginExpiresSoon(out int minutesLeft))
             {
-                statusMessage?.ShowError($"로그인 유지 시간이 약 {minutesLeft}분밖에 남지 않아 게임을 시작할 수 없습니다. 로비에서 로그아웃 후 다시 로그인해 주세요.");
+                if (string.IsNullOrEmpty(AuthSession.RefreshToken))
+                {
+                    statusMessage?.ShowError($"로그인 유지 시간이 약 {minutesLeft}분밖에 남지 않아 게임을 시작할 수 없습니다. 로비에서 로그아웃 후 다시 로그인해 주세요.");
+                    return;
+                }
+                ExtendLoginThenStart();
                 return;
             }
 
+            RequestStartGame();
+        }
+
+        /// <summary>
+        /// 토큰을 먼저 연장하고 게임을 시작한다. 시작 직전에 새 토큰을 받아 두면 게임 중에 재발급할 일이 거의 없다.
+        /// 성공 뒤에는 남은 시간을 다시 보지 않고 바로 시작한다. (서버 토큰 유효 시간이 minLoginMinutesForGame보다 짧아도 반복하지 않게)
+        /// </summary>
+        private void ExtendLoginThenStart()
+        {
+            isStarting = true;
+            UpdateStartButton();
+            statusMessage?.ShowInfo("게임을 시작하는 중...", keep: true);
+
+            TokenRefresher.Refresh(outcome =>
+            {
+                if (this == null) return;
+                isStarting = false;
+                if (isTransitioning || SceneLoader.IsLoading) return;
+
+                switch (outcome)
+                {
+                    case RefreshOutcome.Success:
+                        RequestStartGame();
+                        break;
+                    case RefreshOutcome.Rejected:
+                        // 리프레시 토큰도 만료·폐기됐다 → 401과 같이 "다시 로그인해 주세요" 안내 후 타이틀로
+                        ApiClient.ExpireSession();
+                        break;
+                    default:
+                        statusMessage?.ShowError("로그인 시간을 연장하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+                        UpdateStartButton();
+                        break;
+                }
+            });
+        }
+
+        /// <summary>POST /rooms/{id}/games. 시작 조건 확인은 OnStartGameClicked가 끝낸 뒤 부른다.</summary>
+        private void RequestStartGame()
+        {
             isStarting = true;
             UpdateStartButton();
             statusMessage?.ShowInfo("게임을 시작하는 중...", keep: true);
