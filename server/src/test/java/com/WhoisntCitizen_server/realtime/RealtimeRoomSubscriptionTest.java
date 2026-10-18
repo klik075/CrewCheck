@@ -159,6 +159,18 @@ class RealtimeRoomSubscriptionTest {
     }
 
     @Test
+    void 방_구독이_받아들여지면_바로_접속_기록을_남긴다() throws Exception {
+        // 다시 연결한 직후 첫 ping(10초 뒤)까지 기록이 비지 않게 (멀티서버 3단계)
+        Recorder recorder = new Recorder();
+        WebSocketSession session = connect(recorder, MEMBER);
+
+        session.sendMessage(subscribe(ROOM));
+
+        assertThat(next(recorder)).containsEntry("type", "subscribed");
+        verify(activityRecorder, timeout(2_000)).recordAlive(ROOM, MEMBER);
+    }
+
+    @Test
     void 방을_구독한_채로_ping을_보내면_접속_기록을_남긴다() throws Exception {
         Recorder recorder = new Recorder();
         WebSocketSession session = connect(recorder, MEMBER);
@@ -168,7 +180,8 @@ class RealtimeRoomSubscriptionTest {
         session.sendMessage(new TextMessage("{\"type\":\"ping\"}"));
 
         assertThat(next(recorder)).containsEntry("type", "pong");
-        verify(activityRecorder, timeout(2_000)).recordAlive(ROOM, MEMBER);
+        // 구독 때 1번 + ping 때 1번
+        verify(activityRecorder, timeout(2_000).times(2)).recordAlive(ROOM, MEMBER);
     }
 
     @Test
