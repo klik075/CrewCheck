@@ -10,6 +10,7 @@ import com.WhoisntCitizen_server.game.repository.redis.GameRedis;
 import com.WhoisntCitizen_server.game.repository.redis.GameRedisProperties;
 import com.WhoisntCitizen_server.game.repository.redis.RedisGameRepository;
 import com.WhoisntCitizen_server.game.repository.snapshot.GameSnapshotCodec;
+import com.WhoisntCitizen_server.game.result.GameResultRecorder;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
 import com.WhoisntCitizen_server.game.scheduling.TimerKeys;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
@@ -122,7 +123,7 @@ class RedisTimerGameFlowTest {
         ManualTaskScheduler scheduler = new ManualTaskScheduler(new MutableClock(NOW)); // 지연 이벤트(로비·전적)는 여기서 다루지 않음
         flow[0] = new GameFlowService(repository, new NightActionResolver(new Random(0)), new VoteResolver(),
                 new WinConditionChecker(), timer, new SchedulerDeferredEventPublisher(scheduler, serverClock, event -> { }),
-                new LocalGameLock(), new LocalPlayerActivityTracker(), props, serverClock, event -> { });
+                new LocalGameLock(), new LocalPlayerActivityTracker(), props, serverClock, event -> { }, GameResultRecorder.NONE);
         return new Server(repository, timer, flow[0]);
     }
 

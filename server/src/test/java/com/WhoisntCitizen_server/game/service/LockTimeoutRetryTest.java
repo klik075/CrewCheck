@@ -8,6 +8,7 @@ import com.WhoisntCitizen_server.game.entity.GamePhase;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
 import com.WhoisntCitizen_server.game.lock.GameLock;
 import com.WhoisntCitizen_server.game.lock.LocalGameLock;
+import com.WhoisntCitizen_server.game.result.GameResultRecorder;
 import com.WhoisntCitizen_server.game.scheduling.LocalGameTimer;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
 import com.WhoisntCitizen_server.night.service.NightActionResolver;
@@ -79,7 +80,7 @@ class LockTimeoutRetryTest {
         holder[0] = new GameFlowService(repository, new NightActionResolver(new Random(0)), new VoteResolver(),
                 new WinConditionChecker(), new LocalGameTimer(scheduler, () -> holder[0]),
                 new SchedulerDeferredEventPublisher(scheduler, clock, event -> { }),
-                lock, new LocalPlayerActivityTracker(), PROPS, clock, event -> { });
+                lock, new LocalPlayerActivityTracker(), PROPS, clock, event -> { }, GameResultRecorder.NONE);
         flow = holder[0];
         gameId = repository.save(new Game("1", List.of(
                 new GamePlayer(1L, "해적", TestRoles.RAIDER),

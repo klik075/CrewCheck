@@ -18,6 +18,7 @@ import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
 import com.WhoisntCitizen_server.game.lock.GameLock;
 import com.WhoisntCitizen_server.game.lock.GameLockScope;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
+import com.WhoisntCitizen_server.game.result.GameResultRecorder;
 import com.WhoisntCitizen_server.game.scheduling.DeferredEventPublisher;
 import com.WhoisntCitizen_server.game.scheduling.GameTimeoutHandler;
 import com.WhoisntCitizen_server.game.scheduling.GameTimer;
@@ -58,6 +59,8 @@ import java.util.stream.Collectors;
  *  - 사망자 없는 날: maxDaysWithoutDeath일 연속 아무도 죽지 않으면 그날 투표 결과 직후 게임을 취소한다.
  *  - 페이즈 전환 중 예외(Error 포함): 게임을 취소한다. (그대로 두면 그 페이즈에 영원히 멈춘다)
  *  취소된 게임은 승리 팀이 없고 전적에 반영하지 않으며, 결과 조회 시간이 지나면 방(과 채팅)도 삭제된다.
+ *
+ * 승패가 난 게임은 종료 이벤트보다 먼저 결과를 DB(game_results)에 남긴다. (recordResult, GameResultRecorder)
  */
 @Service
 public class GameFlowService implements GameTimeoutHandler {
@@ -78,6 +81,7 @@ public class GameFlowService implements GameTimeoutHandler {
     private final GamePhaseProperties phaseProps;
     private final Clock clock;
     private final ApplicationEventPublisher eventPublisher;
+    private final GameResultRecorder gameResultRecorder;
 
     public GameFlowService(GameRepository gameRepository,
                            NightActionResolver nightActionResolver,
@@ -89,7 +93,8 @@ public class GameFlowService implements GameTimeoutHandler {
                            PlayerActivityTracker activityTracker,
                            GamePhaseProperties phaseProps,
                            Clock clock,
-                           ApplicationEventPublisher eventPublisher) {
+                           ApplicationEventPublisher eventPublisher,
+                           GameResultRecorder gameResultRecorder) {
         this.gameRepository = gameRepository;
         this.nightActionResolver = nightActionResolver;
         this.voteResolver = voteResolver;
@@ -101,6 +106,7 @@ public class GameFlowService implements GameTimeoutHandler {
         this.phaseProps = phaseProps;
         this.clock = clock;
         this.eventPublisher = eventPublisher;
+        this.gameResultRecorder = gameResultRecorder;
     }
 
     /** 1. 게임 시작 직후 첫 밤으로 진입. 게임은 이미 저장소에 저장돼 있어야 한다. */
@@ -263,12 +269,28 @@ public class GameFlowService implements GameTimeoutHandler {
         }
         Winner winner = victory.get().winner();
         game.end(winner, victory.get().winnerIds());
+        GameEndedEvent ended = GameEndedEvent.from(game); // 잠금 안에서 현재 상태를 복사해 둔다
+        recordResult(ended);
         gameRepository.save(game);
         log.info("[{}] 게임 종료. 승리: {} {}", game.getGameId(), winner, victory.get().winnerIds());
         announce(game, winMessage(winner));
-        publishLater(GameEndedEvent.from(game)); // 잠금 안에서 현재 상태를 복사해 둔다
+        publishLater(ended);
         scheduleCleanup(game);
         return true;
+    }
+
+    /**
+     * 결과를 DB에 먼저 남긴다(outbox). 게임 상태(ENDED) 저장보다 앞이라, 이 뒤 어느 시점에 서버가 꺼져도
+     * 끝난 게임의 결과는 DB에 있고 전적은 PendingGameStatsRelay가 반영한다.
+     * DB 오류로 못 남겨도 게임은 그대로 끝낸다. 잠금이 풀린 뒤 전적 리스너(UserStatsListener)가 한 번 더 남긴다.
+     * (Redis 저장소에서 기록 직후·게임 저장 전에 서버가 꺼지면 같은 게임이 다시 끝날 수 있다. 그때는 먼저 남긴 결과가 유지된다)
+     */
+    private void recordResult(GameEndedEvent ended) {
+        try {
+            gameResultRecorder.record(ended);
+        } catch (RuntimeException e) {
+            log.error("[{}] 게임 결과 기록 실패. 전적 리스너가 다시 시도합니다", ended.gameId(), e);
+        }
     }
 
     private boolean tooLongWithoutDeath(Game game) {
