@@ -12,6 +12,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
  *  - game.changed → GET /api/v1/games/{gameId} (필요하면 /me, /result 등)
  *  - room.changed → GET /api/v1/rooms/{roomId}
  *  - chat.changed → GET /api/v1/rooms/{roomId}/messages?afterId=(마지막으로 받은 id)
+ *  - room.created → (로비) 새로고침 버튼에 RedDot만 켠다. 목록은 사용자가 새로고침할 때 GET /api/v1/rooms
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
@@ -20,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = ServerMessage.Subscribed.class, name = ServerMessage.Subscribed.TYPE),
         @JsonSubTypes.Type(value = ServerMessage.GameChanged.class, name = ServerMessage.GameChanged.TYPE),
         @JsonSubTypes.Type(value = ServerMessage.RoomChanged.class, name = ServerMessage.RoomChanged.TYPE),
+        @JsonSubTypes.Type(value = ServerMessage.RoomCreated.class, name = ServerMessage.RoomCreated.TYPE),
         @JsonSubTypes.Type(value = ServerMessage.ChatChanged.class, name = ServerMessage.ChatChanged.TYPE),
         @JsonSubTypes.Type(value = ServerMessage.ErrorMessage.class, name = ServerMessage.ErrorMessage.TYPE)
 })
@@ -62,6 +64,15 @@ public sealed interface ServerMessage {
     /** 방 정보가 바뀌었다. (입장·퇴장·준비·방장 변경·강퇴·게임 시작·게임 종료 후 복귀·방 삭제) */
     record RoomChanged(long roomId) implements ServerMessage {
         public static final String TYPE = "room.changed";
+    }
+
+    /**
+     * 로비에 방이 새로 생겼다. 방을 구독하지 않은 연결(= 로비에 있는 사람)에게만 가고, 만든 사람은 받지 않는다.
+     * 인원·상태 변경과 삭제는 이 신호를 보내지 않는다. (입장할 때 실패하면 그때 목록을 다시 받는다)
+     * 클라이언트는 목록을 자동으로 바꾸지 않고 새로고침 버튼의 RedDot만 켠다.
+     */
+    record RoomCreated(long roomId) implements ServerMessage {
+        public static final String TYPE = "room.created";
     }
 
     /**

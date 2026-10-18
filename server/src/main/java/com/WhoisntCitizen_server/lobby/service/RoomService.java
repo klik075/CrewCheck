@@ -16,6 +16,7 @@ import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.UpdateRoomSettingsRequestDto;
+import com.WhoisntCitizen_server.lobby.event.RoomCreatedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomGameFinishedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomGameStartingEvent;
@@ -122,6 +123,7 @@ public class RoomService {
 
         roomRepository.save(room);
         eventPublisher.publishEvent(new RoomPlayerJoinedEvent(roomId, user.getId(), user.getNickname()));
+        eventPublisher.publishEvent(new RoomCreatedEvent(roomId, user.getId())); // 로비 새로고침 버튼 RedDot
         return RoomResponseDto.from(room);
     }
 
