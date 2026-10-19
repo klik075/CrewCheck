@@ -76,6 +76,12 @@ public class ChangeEventGameRepository implements GameRepository {
         return delegate.findActiveIds();
     }
 
+    /** 감싼 저장소를 그대로 따른다. (이 클래스는 저장 알림만 더하고 읽기는 바꾸지 않는다) */
+    @Override
+    public boolean returnsSnapshots() {
+        return delegate.returnsSnapshots();
+    }
+
     @Override
     public void delete(String gameId) {
         delegate.delete(gameId);

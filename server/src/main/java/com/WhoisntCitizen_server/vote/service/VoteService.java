@@ -4,6 +4,7 @@ import com.WhoisntCitizen_server.common.exception.GameNotFoundException;
 import com.WhoisntCitizen_server.common.exception.GameRuleException;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.lock.GameLock;
+import com.WhoisntCitizen_server.game.lock.SnapshotRead;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
 import com.WhoisntCitizen_server.vote.dto.ExecutionResultResponse;
@@ -44,9 +45,9 @@ public class VoteService {
         });
     }
 
-    /** 7. 가장 최근 처형 결과 */
+    /** 7. 가장 최근 처형 결과. 보여 주기만 하므로 SnapshotRead로 읽는다. */
     public ExecutionResultResponse getExecutionResult(String gameId) {
-        return gameLock.withLock(gameId, () -> {
+        return SnapshotRead.of(gameRepository, gameLock, gameId, () -> {
             Game game = findGame(gameId);
             ExecutionResult executionResult = game.getLastExecutionResult();
             if (executionResult == null) {
