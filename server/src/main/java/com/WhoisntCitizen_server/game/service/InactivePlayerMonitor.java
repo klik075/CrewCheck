@@ -18,6 +18,8 @@ import java.time.Instant;
 /**
  * 연결 끊김 검사. inactiveCheckSeconds마다 진행 중인 모든 게임(GameRepository.findActiveIds)을 확인해
  * 마지막 요청 후 inactiveTimeoutSeconds가 지난 플레이어를 GameFlowService.checkInactivePlayers로 처리한다.
+ * [서버 여러 대] 주기 작업 — 서버마다 돈다. 두 번 돌아도 안전: 끊긴 사람이 있을 때만 게임 잠금을 잡고,
+ *   잠금 안에서 다시 읽어 판단하므로 먼저 처리한 서버가 있으면 다음 서버는 이미 처리된 상태를 본다. (GameFlowService.checkInactivePlayers)
  * 클라이언트는 게임 화면에서 1초마다 상태를 조회하므로, 상태 조회가 끊기면 연결이 끊긴 것으로 본다.
  *
  * [서버가 하나일때만 적용] 서버가 켜진 뒤 inactiveTimeoutSeconds만큼 기다렸다가 첫 검사를 한다. (재시작 직후 유예, start() 참고)
