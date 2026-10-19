@@ -286,6 +286,8 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
 - itch.io는 HTTPS만 허용해 서버를 EC2 nginx로 HTTPS/WSS 제공합니다.
 - 압축은 Brotli 대신 **Gzip + Decompression Fallback** 을 써서 서버 헤더 설정 없이도 열리게 했고, 탭을 바꿔도 ping이 끊기지 않도록 **Run In Background** 를 켰습니다.
 
+</br>
+
 ## 10. 트러블슈팅
 
 ### 1. WebGL 빌드 용량 최적화
@@ -302,21 +304,7 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
   - 쓰지 않는 씬을 빼고, 1~3px 패딩으로 크기를 4의 배수로 맞췄습니다.
 - **결과 (압축 빌드)**: 470MB → 447 → 355 → 353 → 349 → **130MB** (약 72% 감소)
 
-### 2. macOS에서 한글 입력 중 Enter로 채팅이 전송되지 않음
-
-- **문제**: 맥 크롬에서 한글을 입력하고 Enter를 누르면 글자만 확정되고 전송되지 않았습니다. 영문이거나 Enter를 두 번 누르면 전송됐습니다.
-- **원인**: WebGLInput 패키지는 숨은 `<input>` 의 keydown에서 keyCode 13일 때만 Enter를 처리합니다. Windows IME는 조합 중 Enter에서 keydown(229)과 keydown(13)을 두 번 보내지만, macOS IME는 keydown(229) 한 번만 보냅니다.
-- **해결**: `ImeEnterFix.jslib` 가 "조합 중 Enter 뒤에 정상 Enter 없이 keyup이 온 경우"를 감지해 C#으로 알리고, `WebGLImeEnterFix.cs` 가 선택된 한 줄 입력칸의 `onSubmit` 을 대신 호출합니다. 채팅·검색 등 모든 입력칸에 자동으로 적용되고, Windows에서는 두 번째 keydown이 플래그를 해제하므로 중복 전송이 없습니다.
-
-### 3. Unity가 득표 결과를 읽지 못함
-
-- **원인**: `JsonUtility` 가 `Map<Long, Integer>` 형태의 JSON을 처리하지 못했습니다.
-- **해결**: 서버에 정렬된 리스트 `votes` 를 추가하고(기존 필드는 호환용 유지), 서버 JSON 계약 테스트와 클라이언트 파싱 테스트(`GameDtoParseTests`)로 양쪽 형식을 고정했습니다.
-
-### 4. 남은 시간이 기기마다 어긋남
-
-- **원인**: 기기 시계 설정과 늦게 도착한 응답의 영향을 받았습니다.
-- **해결**: 서버가 주는 `serverTime` 과 `phaseEndsAt` 으로 남은 시간을 구하고, 단조 증가 시간으로 카운트다운합니다. `phaseVersion` 이 낮은 응답은 무시하고, 낮 시간 연장도 따로 반영합니다. 이 로직은 순수 C# 테스트(`PhaseClockTests`)로 분리했습니다.
+</br>
 
 ## 11. 알려진 한계
 
@@ -324,6 +312,8 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
 - 브라우저 탭을 오래 숨기면 ping이 끊겨 탈락할 수 있습니다.
 - 직업 튜토리얼이 없습니다.
 - 이미지·사운드 지연 로딩은 개선 과제입니다.
+
+</br>
 
 ## 12. 팀원별 역할 분담
 
@@ -338,7 +328,3 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
 | 정지용 | Server / Client (게임 진행) | 직업 능력, 신규 직업 5종(요리사·세이렌·크라켄·유령 선장·인어), 직업 배정(추천·커스텀·랜덤), 게임씬 레이아웃, 투표·처형 컷씬, 밤 결과 연출, 토론 시간 연장, 프로필 외형 반영, 로비·룸 레이아웃 | [ST0PDragon](https://github.com/ST0PDragon) |
 | 장현교 | Server / Client (인증·소셜) | 회원가입·로그인, JWT·Refresh Token, 중복 로그인 강제 퇴장, 게스트·구글·카카오 로그인 및 연동, 프로필·친구, WebSocket 기반 접속 상태(Presence), 타이틀 씬 UI | [DoroNyong](https://github.com/DoroNyong) |
 | 김유진 | Server / Client (로비·룸·사운드) | 방 생성·참가, 비밀방, 제목 검색, 준비, 방장 위임·추방, 방 설정 변경, 대기실 접속 기록, 사운드 시스템(BGM·효과음·직업별 대사), 볼륨·해상도 설정, WebGL 빌드 설정·용량 최적화 | [youjin-43](https://github.com/youjin-43) |
-
-## 라이선스
-
-TODO — 사용한 외부 에셋(Artsystack GUI 등)의 라이선스 확인 필요
