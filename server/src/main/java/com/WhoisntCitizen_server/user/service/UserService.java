@@ -1,5 +1,7 @@
 package com.WhoisntCitizen_server.user.service;
 
+import com.WhoisntCitizen_server.chat.filter.ProfanityFilter;
+import com.WhoisntCitizen_server.common.exception.NicknameNotAllowedException;
 import com.WhoisntCitizen_server.user.dto.UserDto;
 import com.WhoisntCitizen_server.user.entity.User;
 import com.WhoisntCitizen_server.user.repository.UserRepository;
@@ -16,6 +18,15 @@ public class UserService {
 	private static final int MAX_NICKNAME_LENGTH = 20; // users.nickname VARCHAR(20)
 
 	private final UserRepository userRepository;
+	// 채팅 욕설 검열과 같은 사전을 닉네임에도 쓴다 (ProfanityFilterConfig가 만든 빈)
+	private final ProfanityFilter profanityFilter;
+
+	/** 닉네임에 욕설·금칙어가 있으면 NicknameNotAllowedException (사용자가 직접 정하는 닉네임에만 쓴다). */
+	public void assertNicknameAllowed(String nickname) {
+		if (profanityFilter.containsProfanity(nickname)) {
+			throw new NicknameNotAllowedException();
+		}
+	}
 
 	public boolean existsByNickname(String nickname) {
 		return userRepository.existsByNickname(nickname);
@@ -81,6 +92,8 @@ public class UserService {
 		if (user.getNickname().equals(newNickname)) {
 			return UserDto.MyProfileResponse.from(user);
 		}
+
+		assertNicknameAllowed(newNickname);
 
 		// 다른 유저가 사용 중인 닉네임인지 검증
 		if (userRepository.existsByNickname(newNickname)) {

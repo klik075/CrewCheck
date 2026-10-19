@@ -44,6 +44,7 @@ public class MemberService {
 
 	@Transactional
 	public MemberDto.Response signup(MemberDto.SignupRequest req) {
+		userService.assertNicknameAllowed(req.getNickname());
 		if (memberRepository.existsByUsername(req.getUsername())) {
 			throw new IllegalArgumentException("이미 사용 중인 아이디입니다.");
 		}
