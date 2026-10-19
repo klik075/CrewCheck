@@ -5,6 +5,9 @@ import com.WhoisntCitizen_server.common.servermode.ConditionalOnServerSetting;
 import com.WhoisntCitizen_server.common.servermode.ServerSetting;
 import com.WhoisntCitizen_server.game.lock.GameLock;
 import com.WhoisntCitizen_server.game.repository.redis.GameRedisProperties;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,10 +39,16 @@ public class GameLockRedisConfig {
         return RedissonClients.create(props.host(), props.port(), props.database(), props.password());
     }
 
-    /** 서버 여러 대가 함께 쓰는 게임 잠금. 대기 시간(mafia.lock.wait-timeout-millis)을 넘기면 LockTimeoutException */
+    /**
+     * 서버 여러 대가 함께 쓰는 게임 잠금. 대기 시간(mafia.lock.wait-timeout-millis)을 넘기면 LockTimeoutException
+     * 잠금 대기·보유 시간을 지표(game.lock.wait, game.lock.hold)로 남긴다. MeterRegistry는 actuator가 만든다.
+     * actuator가 없는 설정(ApplicationContextRunner로 이 설정만 띄우는 테스트 등)에서는 지표를 버리는 저장소를 쓴다.
+     */
     @Bean
     public GameLock redisGameLock(@Qualifier("gameRedisson") RedissonClient gameRedisson,
-                                  @Value("${mafia.lock.wait-timeout-millis:10000}") long waitTimeoutMillis) {
-        return new RedisGameLock(gameRedisson, Duration.ofMillis(waitTimeoutMillis));
+                                  @Value("${mafia.lock.wait-timeout-millis:10000}") long waitTimeoutMillis,
+                                  ObjectProvider<MeterRegistry> meterRegistry) {
+        return new RedisGameLock(gameRedisson, Duration.ofMillis(waitTimeoutMillis),
+                meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
     }
 }
