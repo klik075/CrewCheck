@@ -41,8 +41,10 @@ public class AuthService {
 				.orElseThrow(() -> new UnauthorizedException("존재하지 않는 회원입니다."));
 		User user = userService.getByMemberId(memberId);
 
+		// 비교와 교체를 한 번에 한다. 같은 토큰으로 동시에 온 요청 중 하나만 통과하고 나머지는 여기서 401이 된다.
+		String newRefreshToken = refreshTokenStore.rotate(member.getId(), refreshToken)
+				.orElseThrow(() -> new UnauthorizedException("리프레시 토큰이 만료되었거나 유효하지 않습니다. 다시 로그인해 주세요."));
 		String accessToken = jwtTokenProvider.createToken(member.getId(), member.getUsername());
-		String newRefreshToken = refreshTokenStore.issue(member.getId()); // 같은 키를 덮어쓴다 → 기존 값 무효
 		log.info("[토큰 재발급] 회원 ID: {}", memberId);
 
 		return MemberDto.AuthResult.builder()
