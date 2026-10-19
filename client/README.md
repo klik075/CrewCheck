@@ -47,6 +47,7 @@
 - 구조의 핵심: **서버가 판정하고, 클라이언트는 보여주기만 합니다.** Unity는 투표나 능력을 서버에 요청하고, 서버가 내려주는 상태를 그립니다.
 
 </br>
+
 ### 진영과 직업 (3개 진영, 14개 직업)
 
 | 진영 | 직업 | 능력 |
@@ -68,7 +69,9 @@
 
 **승리 조건**: 선원은 해적을 모두 찾아내고, 해적은 선원을 모두 제거하며, 중립은 각자의 목표를 달성하면 이깁니다. 판정 순서는 [서버 README](https://github.com/IamREALcitizen/project_server#승리-조건)에 있습니다.
 
+
 </br>
+
 ## 2. 플레이 방법
 
 1. **접속**: [itch.io 링크](https://youjin-43.itch.io/crewcheck)를 PC 크롬에서 엽니다. 설치는 필요 없습니다.
@@ -83,6 +86,7 @@
 6. **종료**: 결과 화면을 본 뒤 모두 대기실로 돌아갑니다. 전적은 프로필에서 확인할 수 있습니다.
 
 </br>
+
 ## 3. 핵심 기능과 주요 화면
 
 | 영역 | 내용 |
@@ -97,6 +101,7 @@
 
 
 </br>
+
 ### 주요 화면
 
 #### 계정·소셜
@@ -121,7 +126,7 @@
 | :---: | :---: | :---: |
 | ![](Docs/images/20.gif) | ![](Docs/images/21.gif) | ![](Docs/images/22.gif) |
 
-</br>
+
 #### 채팅
 
 | 대기실 채팅 | 채팅으로 토론 |
@@ -129,6 +134,7 @@
 | ![](Docs/images/12.gif) | ![](Docs/images/17.gif) |
 
 </br>
+
 ## 4. 기술 구성
 
 | 항목 | 내용 |
@@ -146,6 +152,7 @@
 REST는 조회·행동, WebSocket은 "상태가 바뀌었다"는 신호만 받는 구조입니다. 신호를 받으면 REST로 다시 조회합니다. 브라우저에서는 Unity 기본 WebSocket을 쓸 수 없어서 송수신(transport) 부분만 웹용(`BrowserWebSocketTransport`, `RealtimeWebSocket.jslib`)으로 분리했습니다.
 
 </br>
+
 ## 5. 프로젝트 구조
 
 ```text
@@ -221,6 +228,7 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
 - 코드 흐름: `WebGLSocialAuthProvider` ↔ `Plugins/WebGL/SocialAuthWeb.jslib`. 에디터에서는 `MockSocialAuthProvider` 가 쓰입니다.
 
 </br>
+
 ## 7. ERD 및 API 명세
 
 클라이언트는 DB를 직접 다루지 않고 서버 REST API와 WebSocket만 사용합니다. ERD와 API 명세는 서버 저장소에 있습니다.
@@ -229,6 +237,8 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
 - **API 명세**: [서버 README — API 명세](https://github.com/IamREALcitizen/project_server#7-api-명세), Postman 컬렉션 `postman/mafia-game.postman_collection.json`
 - **WebSocket 프로토콜**: 서버 저장소 `Claude outputs/websocket-protocol.md`
 - 클라이언트 쪽 API 호출은 `Assets/02_Scripts/Network/ApiClient` 와 `Game/Core` 의 `IGameApi` 에 모여 있고, 응답 JSON 형식은 `GameDtoParseTests` 로 고정해 두었습니다.
+
+</br>
 
 ## 8. 핵심 사용자 시나리오와 검증 결과
 
@@ -247,6 +257,8 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
 
 - EditMode 테스트 클래스 21개 (`Game.Core.Tests`, `Realtime.Core.Tests`)
 - UI·연출은 플레이 테스트와 버전별 WebGL 빌드로 검증했습니다.
+
+</br>
 
 ## 9. 기술적 의사결정
 
