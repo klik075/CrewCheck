@@ -13,6 +13,7 @@
 
 ![CrewCheck](Docs/images/Crew_Check_main_Image.png)
 
+</br>
 ## 목차
 
 1. [게임 소개](#1-게임-소개)
@@ -29,7 +30,7 @@
 12. [팀원별 역할 분담](#12-팀원별-역할-분담)
 
 ---
-
+</br>
 ## 1. 게임 소개
 
 배 위에서 펼쳐지는 채팅 기반 **온라인 마피아 게임(소셜 추리 게임)** 입니다.
@@ -41,6 +42,7 @@
 - 직업 대사는 팀원이 직접 녹음했고, 밤 결과와 처형은 컷씬으로 보여 줍니다.
 - 구조의 핵심: **서버가 판정하고, 클라이언트는 보여주기만 합니다.** Unity는 투표나 능력을 서버에 요청하고, 서버가 내려주는 상태를 그립니다.
 
+</br>
 ### 진영과 직업 (3개 진영, 14개 직업)
 
 | 진영 | 직업 | 능력 |
@@ -62,6 +64,7 @@
 
 **승리 조건**: 선원은 해적을 모두 찾아내고, 해적은 선원을 모두 제거하며, 중립은 각자의 목표를 달성하면 이깁니다. 판정 순서는 [서버 README](https://github.com/IamREALcitizen/project_server#승리-조건)에 있습니다.
 
+</br>
 ## 2. 플레이 방법
 
 1. **접속**: [itch.io 링크](https://youjin-43.itch.io/crewcheck)를 PC 크롬에서 엽니다. 설치는 필요 없습니다.
@@ -75,6 +78,7 @@
    - 죽은 사람은 유령 채팅으로 계속 대화할 수 있습니다.
 6. **종료**: 결과 화면을 본 뒤 모두 대기실로 돌아갑니다. 전적은 프로필에서 확인할 수 있습니다.
 
+</br>
 ## 3. 핵심 기능과 주요 화면
 
 | 영역 | 내용 |
@@ -87,6 +91,8 @@
 | 사운드·설정 | BGM, 효과음, 직업별 고유 대사(직접 녹음), 모든 씬에서 볼륨·해상도 설정 |
 | 실시간 | WebSocket "변경 신호" 수신 → REST 재조회, 연결이 끊기면 폴링으로 전환 후 지수 백오프로 자동 재연결 |
 
+
+</br>
 ### 주요 화면
 
 #### 계정·소셜
@@ -111,12 +117,14 @@
 | :---: | :---: | :---: |
 | ![](Docs/images/20.gif) | ![](Docs/images/21.gif) | ![](Docs/images/22.gif) |
 
+</br>
 #### 채팅
 
 | 대기실 채팅 | 채팅으로 토론 |
 | :---: | :---: |
 | ![](Docs/images/12.gif) | ![](Docs/images/17.gif) |
 
+</br>
 ## 4. 기술 구성
 
 | 항목 | 내용 |
@@ -133,6 +141,7 @@
 
 REST는 조회·행동, WebSocket은 "상태가 바뀌었다"는 신호만 받는 구조입니다. 신호를 받으면 REST로 다시 조회합니다. 브라우저에서는 Unity 기본 WebSocket을 쓸 수 없어서 송수신(transport) 부분만 웹용(`BrowserWebSocketTransport`, `RealtimeWebSocket.jslib`)으로 분리했습니다.
 
+</br>
 ## 5. 프로젝트 구조
 
 ```text
@@ -192,12 +201,7 @@ Build Settings에 포함된 씬 (`ProjectSettings/EditorBuildSettings.asset` 기
 public const string DefaultBaseUrl = "https://3-38-222-51.sslip.io";
 public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값을 사용
 ```
-
-**로컬 서버로 테스트하기**
-
-- WebGL: 게임 주소 뒤에 `?api=http://localhost:8080` 을 붙여 엽니다(`ApiBaseUrlOverride`). 예) `http://localhost:8000/?api=http://localhost:8080`
-  보안상 **`localhost` / `127.0.0.1` 주소만** 받아들이고 그 밖의 값은 무시합니다.
-- Unity 에디터: `ApiConfig.DefaultBaseUrl` 을 `http://localhost:8080` 으로 바꿔 실행합니다. (커밋하지 마세요)
+</br>
 
 ### 소셜 로그인 설정
 
@@ -212,24 +216,7 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
 - 위 값은 브라우저에도 드러나는 **공개 값**이라 클라이언트에 둬도 됩니다. **클라이언트 시크릿은 절대 클라이언트에 넣지 마세요.**
 - 코드 흐름: `WebGLSocialAuthProvider` ↔ `Plugins/WebGL/SocialAuthWeb.jslib`. 에디터에서는 `MockSocialAuthProvider` 가 쓰입니다.
 
-### WebGL 빌드와 itch.io 배포
-
-1. `File > Build Profiles` 에서 **Web** 플랫폼을 선택하고 Scenes 목록을 확인합니다.
-2. 압축은 **Gzip + Decompression Fallback**, **Run In Background** 켜짐 상태입니다(`Player Settings`).
-3. Build 하면 `index.html`, `Build/`, `TemplateData/` 가 만들어집니다.
-4. 빌드 폴더 내용을 zip으로 묶고(`index.html` 이 zip 루트에 오도록), itch.io에 **HTML 프로젝트(Play in browser)** 로 업로드합니다.
-5. itch.io는 HTTPS이므로 API/WebSocket도 HTTPS/WSS 여야 합니다(`ApiConfig.DefaultBaseUrl` 이 `https://`).
-6. 배포 전 체크리스트: 서버 주소가 배포 서버인지, 소셜 로그인 승인 도메인에 itch.io 도메인이 등록됐는지 확인
-
-### 테스트
-
-- 규칙·네트워크 로직은 Unity에 의존하지 않는 순수 C# asmdef로 분리해 EditMode 테스트를 붙였습니다.
-  - `Game.Core.Tests` (`Assets/02_Scripts/Game/Core/Tests`), `Realtime.Core.Tests` (`Assets/02_Scripts/Network/Realtime/Tests`)
-- 실행: Unity 에디터 `Window > General > Test Runner > EditMode > Run All`
-- `FakeGameApi` 와 테스트용 시계를 주입하면 서버 없이 게임 흐름을 검증할 수 있습니다.
-
-<!-- 📷 (선택) Test Runner 실행 결과 캡처 → Docs/images/test-runner.png -->
-
+</br>
 ## 7. ERD 및 API 명세
 
 클라이언트는 DB를 직접 다루지 않고 서버 REST API와 WebSocket만 사용합니다. ERD와 API 명세는 서버 저장소에 있습니다.
