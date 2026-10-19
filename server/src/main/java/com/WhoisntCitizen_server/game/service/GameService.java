@@ -16,6 +16,7 @@ import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
 import com.WhoisntCitizen_server.game.lock.GameLock;
+import com.WhoisntCitizen_server.game.lock.SnapshotRead;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.jobs.domain.RoleDefinition;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.time.Clock;
 
@@ -140,16 +142,16 @@ public class GameService {
         return getState(gameId);
     }
 
-    /** 3/5/6/9. 현재 페이즈와 공개 정보 */
+    /** 3/5/6/9. 현재 페이즈와 공개 정보. 보여 주기만 하므로 Redis 저장소에서는 잠금 없이 읽는다. (SnapshotRead) */
     public GameStateResponse getState(String gameId) {
-        return gameLock.withLock(gameId, () ->
+        return SnapshotRead.of(gameRepository, gameLock, gameId, () ->
                 GameStateResponse.from(findGame(gameId), clock.instant())); // phaseEndsAt과 같은 Clock 기준
     }
 
-    /** 2. 내 역할 조회 (본인만) */
+    /** 2. 내 역할 조회 (본인만). 보여 주기만 하므로 Redis 저장소에서는 잠금 없이 읽는다. (SnapshotRead) */
     public MyRoleResponse getMyRole(String gameId, Long playerId) {
         touch(gameId, playerId);
-        return gameLock.withLock(gameId, () -> {
+        return SnapshotRead.of(gameRepository, gameLock, gameId, () -> {
             Game game = findGame(gameId);
             return MyRoleResponse.of(game, game.getPlayer(playerId));
         });
@@ -167,9 +169,9 @@ public class GameService {
 
 
 
-    /** 8~9. 게임 결과. 종료 전에는 ended=false, 역할 비공개. */
+    /** 8~9. 게임 결과. 종료 전에는 ended=false, 역할 비공개. 보여 주기만 하므로 SnapshotRead로 읽는다. */
     public GameResultResponse getResult(String gameId) {
-        return gameLock.withLock(gameId, () -> {
+        return SnapshotRead.of(gameRepository, gameLock, gameId, () -> {
             Game game = findGame(gameId);
             if (!game.isEnded()) {
                 return new GameResultResponse(false, null, null, game.getDay(), List.of());
@@ -187,14 +189,26 @@ public class GameService {
      *  - 메모리에 있고 아직 끝나지 않은 게임
      *  - 취소된 게임: 결과 조회 시간이 지나면 방을 삭제하므로 그때까지 대기 상태로 되돌리지 않는다
      * 로비가 "IN_GAME인데 게임이 사라진 방"(서버 재시작 등)을 찾아 복구할 때 사용한다.
+     *
+     * 방 목록은 게임 중인 방마다 이 확인을 한다. 매번 게임 잠금을 잡으면 방 목록 한 번이 모든 게임의 잠금 줄에 차례로 서서,
+     * 게임이 바쁠 때 로비까지 느려진다. (부하 테스트: 방 5개에서 방 목록 p99 1.85초)
+     * 그래서 복사본을 돌려주는 저장소(Redis)에서는 먼저 잠금 없이 읽는다.
+     *  - 살아 있는 게임이면(true) 그대로 끝낸다. 방을 IN_GAME으로 두는 것뿐이라 상태를 바꾸지 않는다.
+     *    그사이 게임이 끝나도 다음 조회에서 다시 확인되고, 정상 종료는 GameEndedEvent가 방을 대기 상태로 돌린다.
+     *  - 사라졌거나 끝난 것처럼 보이면(false) 호출한 쪽이 방을 대기 상태로 되돌리므로, 잠금 안에서 한 번 더 확인한다.
      */
     public boolean keepsRoomInGame(String gameId) {
         if (gameId == null) {
             return false;
         }
-        return gameLock.withLock(gameId, () -> gameRepository.findById(gameId)
-                .map(game -> !game.isEnded() || game.isCancelled())
-                .orElse(false));
+        if (gameRepository.returnsSnapshots() && keepsRoom(gameRepository.findById(gameId))) {
+            return true;
+        }
+        return gameLock.withLock(gameId, () -> keepsRoom(gameRepository.findById(gameId)));
+    }
+
+    private static boolean keepsRoom(Optional<Game> game) {
+        return game.map(g -> !g.isEnded() || g.isCancelled()).orElse(false);
     }
 
     /** 개발용(local 전용 API에서만 호출): 전원의 실제 직업과 보이는 직업. */
