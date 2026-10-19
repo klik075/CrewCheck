@@ -341,10 +341,18 @@ public class GameFlowService implements GameTimeoutHandler {
      *  - 아니면: 끊긴 사람을 한꺼번에 사망 처리하고 방에서 뺀 뒤 승리 조건을 한 번만 검사한다.
      *    (한 명씩 처리하면 동시에 끊긴 마지막 생존자들 사이에서 승패가 나 버린다)
      *    이미 죽은 사람(관전 중)이 끊기면 방에서만 뺀다.
+     *
+     * [서버 여러 대] 잠금 전 미리 확인 (멀티서버 4단계)
+     *  이 메서드는 5초마다, 진행 중인 게임마다, 서버마다 불린다. 끊긴 사람은 거의 항상 없으므로
+     *  잠금 없이 먼저 확인(mayHaveInactivePlayers)해서 있을 때만 게임 잠금을 잡는다.
+     *  판단은 지금처럼 잠금 안에서 다시 읽은 값으로 하므로 결과는 달라지지 않는다. (대기실 RoomPresenceService.check와 같은 방식)
      */
     public void checkInactivePlayers(String gameId) {
         if (phaseProps.inactiveTimeoutSeconds() <= 0) {
             return;
+        }
+        if (!mayHaveInactivePlayers(gameId)) {
+            return; // 평소에는 여기서 끝난다. 게임 잠금을 잡지 않는다
         }
         gameLock.runWithLock(gameId, () -> {
             Optional<Game> found = gameRepository.findById(gameId);
@@ -371,6 +379,33 @@ public class GameFlowService implements GameTimeoutHandler {
                 cancelAfterError(game, e);
             }
         });
+    }
+
+    /**
+     * [서버 여러 대] 잠금 없이 "기준을 넘긴 사람이 있을 수도 있는가"만 본다. (멀티서버 4단계)
+     *
+     * 잠금 없이 읽은 게임은 낡은 값일 수 있다. 그래서 이 결과로는 "잠금을 잡을지"만 정하고, 실제 판단은 잠금 안에서 다시 한다.
+     *  - 낡은 값 때문에 true(있음)인데 실제로는 없으면: 잠금 안에서 다시 보고 아무것도 하지 않는다. (잠금 한 번 낭비)
+     *  - 낡은 값 때문에 false(없음)인데 그 직후 누가 기준을 넘기면: 다음 검사(inactiveCheckSeconds 뒤)에서 처리된다.
+     *    검사 주기 때문에 원래도 그만큼 늦을 수 있으므로 새로 생기는 지연이 아니다.
+     * 읽기에 실패하면(Redis 일시 오류, 저장 형식 문제 등) true를 돌려 예전처럼 잠금 안에서 확인하게 한다.
+     */
+    private boolean mayHaveInactivePlayers(String gameId) {
+        try {
+            Optional<Game> found = gameRepository.findById(gameId);
+            if (found.isEmpty()) {
+                return false;
+            }
+            Game game = found.get();
+            if (game.getPhase() == null || game.isEnded()) {
+                return false;
+            }
+            Instant cutoff = clock.instant().minusSeconds(phaseProps.inactiveTimeoutSeconds());
+            return !game.inactivePlayers(activityTracker.lastSeen(gameId), cutoff).isEmpty();
+        } catch (RuntimeException e) {
+            log.debug("[{}] 연결 끊김 미리 확인 실패, 잠금 안에서 확인한다: {}", gameId, e.toString());
+            return true;
+        }
     }
 
     private void handleDepartures(Game game, List<GamePlayer> inactive, long aliveGoneByNextCheck) {
