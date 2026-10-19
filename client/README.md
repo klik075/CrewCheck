@@ -154,6 +154,9 @@ REST는 조회·행동, WebSocket은 "상태가 바뀌었다"는 신호만 받�
 </br>
 
 ## 5. 프로젝트 구조
+![](Docs/images/diagram.png)
+
+
 
 ```text
 Assets/
