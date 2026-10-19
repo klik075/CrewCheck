@@ -187,7 +187,7 @@ Build Settings에 포함된 씬 (`ProjectSettings/EditorBuildSettings.asset` 기
 
 `AuthTestScene`, `LobbyTestScene`, `Title_test`, `Vote_test`, `GameScene2/4` 등은 개발·실험용입니다.
 
-## 6. 실행 방법 및 개발 환경
+## 6. 개발 환경
 
 ### 개발 환경
 
@@ -196,36 +196,8 @@ Build Settings에 포함된 씬 (`ProjectSettings/EditorBuildSettings.asset` 기
 | Unity | 6000.3.11f1 (WebGL Build Support 모듈 포함) |
 | Git | UPM Git 패키지(WebGLInput) 설치에 필요 |
 | 브라우저 | 크롬 (WebGL 실행·테스트) |
-| 서버(로컬 테스트 시) | JDK 21, Docker — [서버 README](https://github.com/IamREALcitizen/project_server) 참고 |
+| 서버 | JDK 21, Docker — [서버 README](https://github.com/IamREALcitizen/project_server) 참고 |
 
-### 시작하기
-
-1. **Unity Hub** 에서 **Unity 6000.3.11f1** (WebGL Build Support 모듈 포함)을 설치합니다.
-2. 이 저장소를 clone한 뒤 Unity Hub에서 `project_client` 폴더를 프로젝트로 추가해 엽니다. 처음 열 때 UPM 패키지(WebGLInput 등)를 Git에서 내려받습니다.
-3. `Assets/01_Scenes/Title.unity` 를 열고 Play 하면 기본적으로 **배포 서버**에 접속합니다.
-
-### 서버 주소 설정
-
-서버 주소는 `Assets/02_Scripts/Network/ApiConfig.cs` 의 `ApiConfig.DefaultBaseUrl` 에 모여 있습니다.
-
-```csharp
-public const string DefaultBaseUrl = "https://3-38-222-51.sslip.io";
-public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값을 사용
-```
-</br>
-
-### 소셜 로그인 설정
-
-웹(WebGL)에서는 구글·카카오 로그인 팝업에서 **인가 코드**를 받아 서버(`/api/members/login/{google,kakao}/code`)에 보내고, 서버가 토큰으로 교환합니다. 설정은 `Assets/02_Scripts/Auth/SocialAuthConfig.cs` 에 있습니다.
-
-| 항목 | 설명 |
-| --- | --- |
-| `GoogleWebClientId` | 구글 "웹 애플리케이션" OAuth 클라이언트 ID. 서버의 `GOOGLE_CLIENT_ID` 와 같은 값. Google Cloud Console의 "승인된 JavaScript 원본"에 게임 도메인(로컬은 `http://localhost:8000`)을 등록해야 함 |
-| `KakaoRestApiKey` | 카카오 REST API 키. 서버의 `KAKAO_REST_API_KEY` 와 같은 앱의 키 |
-| `KakaoCallbackPath` | `/kakao-callback.html` — **서버**가 서비스하는 콜백 페이지. `ApiConfig.BaseUrl + 경로` 가 카카오 콘솔 Redirect URI와 서버 `KAKAO_ALLOWED_REDIRECT_URIS` 에 똑같이 등록되어 있어야 함 |
-
-- 위 값은 브라우저에도 드러나는 **공개 값**이라 클라이언트에 둬도 됩니다. **클라이언트 시크릿은 절대 클라이언트에 넣지 마세요.**
-- 코드 흐름: `WebGLSocialAuthProvider` ↔ `Plugins/WebGL/SocialAuthWeb.jslib`. 에디터에서는 `MockSocialAuthProvider` 가 쓰입니다.
 
 </br>
 
