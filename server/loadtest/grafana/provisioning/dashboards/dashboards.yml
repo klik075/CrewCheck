@@ -1,0 +1,9 @@
+# grafana/dashboards 폴더의 JSON을 대시보드로 자동 등록한다
+apiVersion: 1
+providers:
+  - name: loadtest
+    folder: Load Test
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
