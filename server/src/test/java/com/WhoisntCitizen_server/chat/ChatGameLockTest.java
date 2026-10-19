@@ -144,15 +144,16 @@ class ChatGameLockTest {
     }
 
     @Test
-    void 전송할_때_게임을_잠금_안에서_한_번만_읽는다() {
+    void 전송할_때_게임_잠금을_잡지_않고_한_번만_읽는다() {
         startGame(GamePhase.DAY);
         lock.acquired = 0;
         games.readsOutsideLock = 0;
 
         service.send(ROOM_ID, SAILOR_MEMBER, "안녕");
 
-        assertThat(games.readsOutsideLock).isZero();
-        assertThat(lock.acquired).isEqualTo(1);
+        // 채팅 전송은 투표·페이즈 전환과 같은 잠금 줄에 서지 않는다 (스냅숏 읽기 1번)
+        assertThat(lock.acquired).isZero();
+        assertThat(games.readsOutsideLock).isEqualTo(1);
     }
 
     @Test
