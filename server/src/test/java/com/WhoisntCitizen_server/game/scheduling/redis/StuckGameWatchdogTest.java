@@ -10,6 +10,7 @@ import com.WhoisntCitizen_server.game.repository.redis.GameRedis;
 import com.WhoisntCitizen_server.game.repository.redis.GameRedisProperties;
 import com.WhoisntCitizen_server.game.repository.redis.RedisGameRepository;
 import com.WhoisntCitizen_server.game.repository.snapshot.GameSnapshotCodec;
+import com.WhoisntCitizen_server.game.result.GameResultRecorder;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
 import com.WhoisntCitizen_server.game.scheduling.TimerKeys;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
@@ -90,7 +91,7 @@ class StuckGameWatchdogTest {
         holder[0] = new GameFlowService(repository, new NightActionResolver(new Random(0)), new VoteResolver(),
                 new WinConditionChecker(), timer,
                 new SchedulerDeferredEventPublisher(new ManualTaskScheduler(new MutableClock(NOW)), clock, event -> { }),
-                new LocalGameLock(), new LocalPlayerActivityTracker(), PROPS, clock, event -> { });
+                new LocalGameLock(), new LocalPlayerActivityTracker(), PROPS, clock, event -> { }, GameResultRecorder.NONE);
         flow = holder[0];
         watchdog = new StuckGameWatchdog(repository, timer, new ManualTaskScheduler(clock), clock);
         gameId = repository.save(newGame()).getGameId();

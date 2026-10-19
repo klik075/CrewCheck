@@ -6,6 +6,7 @@ import com.WhoisntCitizen_server.user.service.CurrentUserResolver;
 import com.WhoisntCitizen_server.user.service.UserPresenceService;
 import com.WhoisntCitizen_server.user.service.UserPresenceStatus;
 
+import java.time.Duration;
 import java.util.Objects;
 import java.util.OptionalLong;
 
@@ -38,6 +39,12 @@ public class UserPresenceRecorder implements RealtimePresenceRecorder {
     public void offline(long memberId) {
         Long userId = userResolver.userIdByMemberId(memberId);
         presenceService.removePresence(userId);
+    }
+
+    @Override
+    public void expireSoon(long memberId, Duration grace) {
+        Long userId = userResolver.userIdByMemberId(memberId);
+        presenceService.expireSoon(userId, grace);
     }
 
     private UserPresenceStatus statusOf(OptionalLong roomId) {

@@ -9,9 +9,11 @@ import com.WhoisntCitizen_server.user.service.UserPresenceStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.OptionalLong;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -70,5 +72,13 @@ class UserPresenceRecorderTest {
         recorder.offline(MEMBER_ID);
 
         verify(presenceService).removePresence(USER_ID);
+    }
+
+    @Test
+    void 서버_종료로_끊기면_지우지_않고_유효시간만_줄인다() {
+        recorder.expireSoon(MEMBER_ID, Duration.ofSeconds(10));
+
+        verify(presenceService).expireSoon(USER_ID, Duration.ofSeconds(10));
+        verify(presenceService, never()).removePresence(USER_ID);
     }
 }
