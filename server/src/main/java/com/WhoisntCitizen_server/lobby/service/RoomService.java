@@ -590,6 +590,7 @@ public class RoomService {
      *   - keyword가 MAX_SEARCH_KEYWORD_LENGTH자를 넘으면 400
      *
      * Redis에 제목 인덱스는 없다. 원래 목록 조회가 방 전체를 읽는 구조라 메모리에서 필터만 추가한다.
+     * 방 읽기는 MGET 한 번으로 한다. (loadtest/README.md 시나리오 B 참고)
      */
     public List<RoomResponseDto> getRooms(String keyword) {
         String normalizedKeyword = normalizeSearchText(keyword);
@@ -601,10 +602,9 @@ public class RoomService {
 
         if (roomIds == null || roomIds.isEmpty()) return List.of();
 
-        return roomIds.stream()
-                .map(Long::valueOf) //String을 Long으로 바꿈
-                .map(roomRepository::findById)// 각 id를 room으로 바꿈 Stream<String>에서 -> Stream<Room>이 됨
-                .filter(Objects::nonNull)
+        // 방 ID → 방을 한 번에 읽는다 (MGET, Redis 왕복 1번). 방마다 findById를 부르면 방 N개에 N번 왕복한다.
+        List<Long> ids = roomIds.stream().map(Long::valueOf).toList(); // String을 Long으로 바꿈
+        return roomRepository.findAllByIds(ids).stream() // 그 사이 지워진 방은 이미 빠져 있다
                 // 제목 검색은 복구보다 먼저: 복구는 잠금을 잡을 수 있는데, 검색에서 빠질 방까지 복구할 필요는 없다 (복구해도 제목은 그대로)
                 .filter(room -> titleMatches(room, normalizedKeyword))
                 .map(this::recoverInListIfOrphaned) // 서버 재시작 등으로 게임이 사라진 방은 WAITING으로 복구해서 보여준다

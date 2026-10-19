@@ -8,6 +8,9 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 @Repository
@@ -36,6 +39,22 @@ public class LobbyRoomRepository {
 
     public Room findById(Long roomId) {
         return redisTemplate.opsForValue().get(PREFIX + roomId);
+    }
+
+    /**
+     * 여러 방을 Redis 왕복 1번(MGET)으로 읽는다. 방 목록 조회용.
+     *
+     * 예전에는 방마다 findById(GET)를 불러 방 N개면 Redis를 N번 직렬 왕복했다. (N+1 문제)
+     * 부하테스트(방 1000개, 동시 100명)에서 목록 조회 p95가 1.5초까지 늘어나 MGET 한 번으로 바꿨다.
+     *
+     * 그 사이 지워진 방(키 없음)은 결과에서 뺀다. 순서는 넘겨준 ID 순서를 따른다.
+     */
+    public List<Room> findAllByIds(Collection<Long> roomIds) {
+        if (roomIds == null || roomIds.isEmpty()) return List.of();
+        List<String> keys = roomIds.stream().map(id -> PREFIX + id).toList();
+        List<Room> rooms = redisTemplate.opsForValue().multiGet(keys);
+        if (rooms == null) return List.of(); // 파이프라인·트랜잭션 안에서는 null을 돌려준다
+        return rooms.stream().filter(Objects::nonNull).toList();
     }
 
     public void delete(Long roomId) {
