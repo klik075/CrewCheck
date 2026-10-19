@@ -26,6 +26,7 @@ namespace WhoisntCitizen.Network
         public bool IsUnauthorized => statusCode == 401; // 토큰 없음/만료
         public bool IsNotFound => statusCode == 404;
         public bool IsConflict => statusCode == 409;     // 규칙/상태 충돌 (정원 초과, 게임 중 등)
+        public bool IsNicknameNotAllowed => errorCode == "NICKNAME_NOT_ALLOWED"; // 닉네임에 욕설·금칙어 (400)
         public bool IsConnectionError => statusCode == 0; // 서버 꺼짐, 네트워크 끊김, 타임아웃
 
         /// <summary>결과 공통 필드를 다른 결과 객체로 복사한다. (ApiResult → ApiResult&lt;T&gt; 변환용)</summary>
