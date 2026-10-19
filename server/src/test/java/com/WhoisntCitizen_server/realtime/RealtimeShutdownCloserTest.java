@@ -32,6 +32,25 @@ class RealtimeShutdownCloserTest {
     }
 
     @Test
+    void 닫기_전에_종료_중_표시를_켠다() {
+        // 연결을 닫는 순간 불리는 끊김 처리가 이 표시를 봐야 접속 상태를 바로 지우지 않는다
+        FakeConnection a = new FakeConnection("a", 1) {
+            @Override
+            public void close(int code, String reason) {
+                assertThat(closer.isShuttingDown()).isTrue();
+                super.close(code, reason);
+            }
+        };
+        registry.register(a);
+        assertThat(closer.isShuttingDown()).isFalse();
+
+        closer.stop();
+
+        assertThat(closer.isShuttingDown()).isTrue();
+        assertThat(a.closedCode).isEqualTo(RealtimeProtocol.CLOSE_GOING_AWAY);
+    }
+
+    @Test
     void 이미_닫힌_연결은_건너뛴다() {
         FakeConnection closed = connect("a", 1);
         closed.open = false;

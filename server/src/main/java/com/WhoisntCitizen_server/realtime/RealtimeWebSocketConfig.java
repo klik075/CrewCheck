@@ -3,12 +3,15 @@ package com.WhoisntCitizen_server.realtime;
 import com.WhoisntCitizen_server.common.servermode.ConditionalOnServerSetting;
 import com.WhoisntCitizen_server.common.servermode.ServerSetting;
 import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
+import com.WhoisntCitizen_server.lobby.presence.RoomPresenceService;
 import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeMessageCodec;
 import com.WhoisntCitizen_server.realtime.protocol.RealtimeProtocol;
 import com.WhoisntCitizen_server.user.service.CurrentUserResolver;
 import com.WhoisntCitizen_server.user.service.UserPresenceService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.TaskScheduler;
@@ -18,6 +21,7 @@ import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 
 import java.time.Clock;
+import java.time.Duration;
 
 /**
  * 실시간 알림 WebSocket(/ws/v1) 등록. 규칙은 Claude outputs/websocket-protocol.md.
@@ -48,11 +52,16 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
     private final TaskScheduler scheduler;
     private final UserPresenceService userPresenceService;
     private final CurrentUserResolver currentUserResolver;
+    /** 대기실 접속 기록. 로비 서비스라 설정 클래스를 만들 때가 아니라 Bean을 만들 때 꺼낸다 (순환 참조 방지) */
+    private final ObjectProvider<RoomPresenceService> roomPresenceService;
+    private final Duration shutdownPresenceGrace;
 
     public RealtimeWebSocketConfig(JwtDecoder jwtDecoder, Clock clock, LobbyRoomRepository roomRepository,
                                    PlayerActivityTracker activityTracker,
                                    @Qualifier("gamePhaseScheduler") TaskScheduler scheduler,
-                                   UserPresenceService userPresenceService, CurrentUserResolver currentUserResolver) {
+                                   UserPresenceService userPresenceService, CurrentUserResolver currentUserResolver,
+                                   ObjectProvider<RoomPresenceService> roomPresenceService,
+                                   @Value("${mafia.realtime.shutdown-presence-grace-seconds:10}") long shutdownPresenceGraceSeconds) {
         this.jwtDecoder = jwtDecoder;
         this.clock = clock;
         this.roomRepository = roomRepository;
@@ -60,6 +69,8 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
         this.scheduler = scheduler;
         this.userPresenceService = userPresenceService;
         this.currentUserResolver = currentUserResolver;
+        this.roomPresenceService = roomPresenceService;
+        this.shutdownPresenceGrace = Duration.ofSeconds(shutdownPresenceGraceSeconds);
     }
 
     @Bean
@@ -114,10 +125,10 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
         return new RealtimeConnectionMonitor(scheduler, clock);
     }
 
-    /** ping을 받으면 접속 기록(연결 끊김 판정)에 남긴다 (4-7) */
+    /** ping·방 구독을 접속 기록(연결 끊김 판정)에 남긴다. 게임 중이면 게임 기록, 대기 중이면 대기실 기록 (4-7, 멀티서버 3단계) */
     @Bean
     public RealtimeActivityRecorder realtimeActivityRecorder() {
-        return new GameActivityRecorder(roomRepository, activityTracker, clock);
+        return new GameActivityRecorder(roomRepository, activityTracker, roomPresenceService.getObject(), clock);
     }
 
     /** 연결·ping·방 구독으로 유저 접속 상태(온라인/대기실/게임 중)를 Redis에 기록한다. 친구 목록이 읽는다 */
@@ -135,7 +146,8 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
     @Bean
     public RealtimeWebSocketHandler realtimeWebSocketHandler() {
         return new RealtimeWebSocketHandler(realtimeMessageCodec(), clock, realtimeSessionRegistry(), roomMembership(),
-                realtimeConnectionMonitor(), realtimeActivityRecorder(), realtimePresenceRecorder());
+                realtimeConnectionMonitor(), realtimeActivityRecorder(), realtimePresenceRecorder(),
+                realtimeShutdownCloser()::isShuttingDown, shutdownPresenceGrace);
     }
 
     @Override
