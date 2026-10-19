@@ -302,7 +302,7 @@ Build Settings에 포함된 씬 (`ProjectSettings/EditorBuildSettings.asset` 기
 
 | 이름 | 포지션 | 담당 | GitHub |
 | --- | --- | --- | --- |
-| 박재영 (팀장) | Server / Client (채팅) | 로비·룸·게임 채팅, 채팅 탭·필터, 시스템 공지 UI, 게임 종료 시 메시지 정리, 욕설 필터·도배 방지, WebGL 한글 채팅 버그 수정, 낮 토론 넘기기, 투표 기권·결정 로직, 레드닷·입력바 공용 프리팹 | [kimdandy](https://github.com/kimdandy) |
+| 박재영 (팀장) | Server / Client (채팅) | redis pub/sub 브로드캐스트 로직 코드 구현, 로비·룸·게임 채팅, 채팅 탭·필터, 시스템 공지 UI, 게임 종료 시 메시지 정리, 욕설 필터·도배 방지, WebGL 한글 채팅 버그 수정, 낮 토론 넘기기, 투표 기권·결정 로직, 레드닷·입력바 공용 프리팹 | [kimdandy](https://github.com/kimdandy) |
 | 정원우 | Server / Realtime | 게임 상태·잠금·타이머·접속 기록 Redis 외부화, Redisson 분산 잠금, WebSocket 신호 서버(`/ws/v1`)·Unity RealtimeClient, WebGL 브라우저 WebSocket 전송층 | [klik075](https://github.com/klik075) |
 | 정지용 | Server / Client (게임 진행) | 직업 능력, 신규 직업 5종(요리사·세이렌·크라켄·유령 선장·인어), 직업 배정(추천·커스텀·랜덤), 게임씬 레이아웃, 투표·처형 컷씬, 밤 결과 연출, 토론 시간 연장, 프로필 외형 반영, 로비·룸 레이아웃 | [ST0PDragon](https://github.com/ST0PDragon) |
 | 장현교 | Server / Client (인증·소셜) | 회원가입·로그인, JWT·Refresh Token, 중복 로그인 강제 퇴장, 게스트·구글·카카오 로그인 및 연동, 프로필·친구, WebSocket 기반 접속 상태(Presence), 타이틀 씬 UI | [DoroNyong](https://github.com/DoroNyong) |
