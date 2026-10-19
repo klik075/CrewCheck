@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -48,7 +49,7 @@ class AuthServiceTest {
 		when(users.getByMemberId(MEMBER_ID)).thenReturn(user);
 
 		when(store.parseMemberId(OLD_TOKEN)).thenReturn(Optional.of(MEMBER_ID));
-		when(store.issue(anyLong())).thenReturn(NEW_TOKEN);
+		when(store.rotate(MEMBER_ID, OLD_TOKEN)).thenReturn(Optional.of(NEW_TOKEN));
 		authService = new AuthService(store, jwt, members, users);
 	}
 
@@ -60,7 +61,7 @@ class AuthServiceTest {
 
 		assertNotNull(result.getAccessToken());
 		assertEquals(NEW_TOKEN, result.getRefreshToken());
-		verify(store).issue(anyLong()); // 새 값으로 덮어써서 기존 값은 무효가 된다
+		verify(store).rotate(MEMBER_ID, OLD_TOKEN); // 비교와 교체를 한 번에 해서 기존 값은 무효가 된다
 	}
 
 	@Test
@@ -69,7 +70,17 @@ class AuthServiceTest {
 
 		assertThrows(UnauthorizedException.class, () -> authService.refresh(OLD_TOKEN));
 		verify(store, never()).revoke(MEMBER_ID); // 쫓겨난 이전 기기의 낡은 토큰이 새 로그인의 토큰을 지우면 안 된다
-		verify(store, never()).issue(anyLong());
+		verify(store, never()).rotate(anyLong(), anyString());
+	}
+
+	@Test
+	void refresh_같은_토큰으로_동시에_온_요청에서_교체에_진_쪽은_401() {
+		// 사전 확인(matches)은 둘 다 통과했지만 다른 요청이 먼저 교체해서 rotate가 비어 돌아오는 경우
+		when(store.matches(MEMBER_ID, OLD_TOKEN)).thenReturn(true);
+		when(store.rotate(MEMBER_ID, OLD_TOKEN)).thenReturn(Optional.empty());
+
+		assertThrows(UnauthorizedException.class, () -> authService.refresh(OLD_TOKEN));
+		verify(store, never()).revoke(MEMBER_ID);
 	}
 
 	@Test
