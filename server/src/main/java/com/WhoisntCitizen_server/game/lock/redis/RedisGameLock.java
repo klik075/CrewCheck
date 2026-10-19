@@ -3,6 +3,9 @@ package com.WhoisntCitizen_server.game.lock.redis;
 import com.WhoisntCitizen_server.common.exception.LockTimeoutException;
 import com.WhoisntCitizen_server.game.lock.GameLock;
 import com.WhoisntCitizen_server.game.lock.GameLockScope;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
@@ -32,6 +35,14 @@ import java.util.function.Supplier;
  * 잠금을 잃는 경우: Redis 장애 전환이나 아주 긴 멈춤(GC 등)으로 연장이 끊기면, 작업이 끝나기 전에 잠금이 풀릴 수 있다.
  * 그때 unlock은 실패하므로, 풀기 전에 아직 쥐고 있는지 확인하고 아니면 경고만 남긴다. (작업의 결과·예외를 덮지 않기 위해)
  * 이 경우까지 막으려면 저장할 때 버전을 확인하는 안전장치가 필요하다. (2-9, 선택)
+ *
+ * 지표 (부하 테스트용, /actuator/metrics 또는 /actuator/prometheus에서 확인)
+ *  - game.lock.wait{result=acquired|timeout|interrupted}: tryLock 직전부터 결과가 나올 때까지 기다린 시간
+ *    timeout은 대기 시간을 넘겨 LockTimeoutException(→ 503 LOCK_BUSY)이 난 경우다.
+ *  - game.lock.hold: 잠금을 잡은 뒤 풀 때까지 쥐고 있던 시간 (afterUnlock으로 넘긴 일은 포함하지 않는다)
+ *  - 가장 바깥 잠금만 잰다. 재진입(같은 스레드가 다시 잡음)은 기다리지도 않고, 재면 보유 시간이 두 번 찍힌다.
+ *    바깥인지는 GameLockScope(스레드 로컬)로 판단한다. lock.isHeldByCurrentThread()는 Redis에 한 번 더 묻기 때문에
+ *    재는 것만으로 잠금 경로가 느려지지 않도록 쓰지 않는다.
  */
 public class RedisGameLock implements GameLock {
 
@@ -42,9 +53,35 @@ public class RedisGameLock implements GameLock {
     private final RedissonClient redisson;
     private final Duration waitTimeout;
 
+    private final Timer waitAcquired;
+    private final Timer waitTimedOut;
+    private final Timer waitInterrupted;
+    private final Timer hold;
+
+    /** 지표를 남기지 않는 생성자 (테스트용). 지표는 버리는 저장소(SimpleMeterRegistry)에 쌓인다. */
     public RedisGameLock(RedissonClient redisson, Duration waitTimeout) {
+        this(redisson, waitTimeout, new SimpleMeterRegistry());
+    }
+
+    public RedisGameLock(RedissonClient redisson, Duration waitTimeout, MeterRegistry meters) {
         this.redisson = Objects.requireNonNull(redisson, "redisson");
         this.waitTimeout = Objects.requireNonNull(waitTimeout, "waitTimeout");
+        Objects.requireNonNull(meters, "meters");
+        this.waitAcquired = waitTimer(meters, "acquired");
+        this.waitTimedOut = waitTimer(meters, "timeout");
+        this.waitInterrupted = waitTimer(meters, "interrupted");
+        this.hold = Timer.builder("game.lock.hold")
+                .description("게임 잠금을 쥐고 있던 시간 (가장 바깥 잠금만)")
+                .publishPercentileHistogram() // Prometheus에서 p99를 계산할 수 있게 구간별로 센다
+                .register(meters);
+    }
+
+    private static Timer waitTimer(MeterRegistry meters, String result) {
+        return Timer.builder("game.lock.wait")
+                .description("게임 잠금을 잡기까지 기다린 시간 (가장 바깥 잠금만)")
+                .tag("result", result)
+                .publishPercentileHistogram()
+                .register(meters);
     }
 
     static String key(String gameId) {
@@ -55,26 +92,35 @@ public class RedisGameLock implements GameLock {
     public <T> T withLock(String gameId, Supplier<T> action) {
         Objects.requireNonNull(gameId, "gameId");
         RLock lock = redisson.getLock(key(gameId));
-        acquire(lock, gameId);
+        boolean outermost = !GameLockScope.isHeld(); // 재진입이면 재지 않는다
+        acquire(lock, gameId, outermost);
+        long heldSince = System.nanoTime();
         GameLockScope.enter();
         try {
             return action.get();
         } finally {
             try {
                 release(lock, gameId);
+                if (outermost) {
+                    hold.record(System.nanoTime() - heldSince, TimeUnit.NANOSECONDS);
+                }
             } finally {
                 GameLockScope.exit(); // 가장 바깥 잠금이 풀렸으면 afterUnlock으로 넘긴 일을 실행한다
             }
         }
     }
 
-    private void acquire(RLock lock, String gameId) {
+    private void acquire(RLock lock, String gameId, boolean outermost) {
+        long start = System.nanoTime();
         try {
             // leaseTime을 주지 않는다 → 자동 연장(watchdog)이 켜진다
             if (!lock.tryLock(waitTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                if (outermost) waitTimedOut.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
                 throw new LockTimeoutException("게임", gameId, waitTimeout);
             }
+            if (outermost) waitAcquired.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
+            if (outermost) waitInterrupted.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
             Thread.currentThread().interrupt(); // 인터럽트 표시를 되살려 호출한 쪽이 알 수 있게 한다
             throw new IllegalStateException("게임 잠금을 기다리다 인터럽트되었습니다. (gameId=" + gameId + ")", e);
         }
