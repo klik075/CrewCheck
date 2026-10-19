@@ -5,6 +5,8 @@
 > 해적과 선원이 한 배를 타고 채팅으로 속고 속이는 **실시간 웹 마피아 게임 "CrewCheck"** 의 Unity 클라이언트입니다.
 > 설치 없이 브라우저에서 링크 하나로 플레이할 수 있도록 **WebGL** 로 빌드해 itch.io에 배포합니다.
 
+</br>
+
 - 🎮 플레이 (WebGL, PC 크롬 권장): https://youjin-43.itch.io/crewcheck
 - ▶️ 플레이 영상: https://youtube.com/shorts/5H5USoOzqMk · 기능 소개 영상: https://youtu.be/92MvCmUjpVk
 - 🌐 API 서버: https://3-38-222-51.sslip.io
@@ -14,6 +16,7 @@
 ![CrewCheck](Docs/images/Crew_Check_main_Image.png)
 
 </br>
+
 ## 목차
 
 1. [게임 소개](#1-게임-소개)
@@ -31,6 +34,7 @@
 
 ---
 </br>
+
 ## 1. 게임 소개
 
 배 위에서 펼쳐지는 채팅 기반 **온라인 마피아 게임(소셜 추리 게임)** 입니다.
