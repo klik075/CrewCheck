@@ -72,11 +72,12 @@ class ChatGameLockTest {
         }
     }
 
-    /** Redis처럼 복사본을 돌려주고, 잠금 밖에서 읽으면 기록한다. */
+    /** Redis처럼 복사본을 돌려주고, 잠금 밖에서 읽으면 기록한다. snapshots=false면 메모리 저장소처럼 행동한다고 알린다. */
     private static final class LockCheckingGameRepository implements GameRepository {
         private final CopyingGameRepository delegate = new CopyingGameRepository();
         private final CountingGameLock lock;
         int readsOutsideLock;
+        boolean snapshots = true;
 
         LockCheckingGameRepository(CountingGameLock lock) {
             this.lock = lock;
@@ -103,6 +104,11 @@ class ChatGameLockTest {
         @Override
         public void delete(String gameId) {
             delegate.delete(gameId);
+        }
+
+        @Override
+        public boolean returnsSnapshots() {
+            return snapshots;
         }
     }
 
@@ -154,6 +160,19 @@ class ChatGameLockTest {
         // 채팅 전송은 투표·페이즈 전환과 같은 잠금 줄에 서지 않는다 (스냅숏 읽기 1번)
         assertThat(lock.acquired).isZero();
         assertThat(games.readsOutsideLock).isEqualTo(1);
+    }
+
+    @Test
+    void 메모리_저장소면_전송할_때도_게임을_잠금_안에서_한_번만_읽는다() {
+        games.snapshots = false; // single 모드: 저장소가 살아 있는 객체를 돌려준다
+        startGame(GamePhase.DAY);
+        lock.acquired = 0;
+        games.readsOutsideLock = 0;
+
+        service.send(ROOM_ID, SAILOR_MEMBER, "안녕");
+
+        assertThat(games.readsOutsideLock).isZero();
+        assertThat(lock.acquired).isEqualTo(1);
     }
 
     @Test
