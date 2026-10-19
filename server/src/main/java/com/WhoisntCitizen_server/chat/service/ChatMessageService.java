@@ -195,9 +195,9 @@ public class ChatMessageService {
                 .findFirst()
                 .orElseThrow(() -> new ForbiddenException("현재 채팅할 수 없는 플레이어입니다. (방 참가자가 아님)"));
 
-        // 게임 잠금 안에서 게임을 읽고 규칙까지 정한다. 메시지 저장은 잠금 밖에서 한다
-        // 볼 수 있는 사람(audience)도 같은 잠금 안에서 정한다. (실시간 알림을 볼 수 있는 사람에게만 보내기 위해)
-        SendRule decided = withActiveGame(room, game -> {
+        // 게임을 잠금 없이 한 번 읽어(스냅숏) 규칙과 볼 사람(audience)을 정한다. 메시지 저장도 잠금 밖에서 한다
+        // 채팅이 투표·페이즈 전환과 같은 게임 잠금 줄에 서지 않게 하기 위해서다. (readActiveGame 참고)
+        SendRule decided = readActiveGame(room, game -> {
             if (game == null) return new SendRule(Rule.PUBLIC, null, null);
             Rule decidedRule = ruleOf(game, player.getUserId());
             return new SendRule(decidedRule, game.getGameId(), audienceOf(game, decidedRule));
@@ -416,8 +416,23 @@ public class ChatMessageService {
     }
 
     /**
+     * 방에서 진행 중인 게임을 잠금 없이 한 번 읽어 action에 넘깁니다. (채팅 전송 규칙 판단용) 대기 중이거나 끝난 게임이면 null.
+     *
+     * Redis 저장소는 읽을 때마다 JSON 한 덩어리(GET 한 번)에서 새 복사본을 만들므로, 잠금 없이 읽어도
+     * "어느 한 순간의 저장된 게임 상태"를 통째로 얻습니다. 다만 그 직후 페이즈가 바뀔 수 있어서,
+     * 밤이 시작되는(또는 플레이어가 죽는) 순간과 겹친 전송 한두 건은 직전 규칙으로 판단될 수 있습니다.
+     * (예: 밤 전환 수 ms 안에 보낸 선원 채팅이 공개 채팅으로 저장됨) 이 허용 범위는 클라이언트 입력 차단과 같은 수준입니다.
+     * 서버 메모리 저장소(single 모드)는 살아 있는 객체를 돌려주므로, 판단은 action 안에서 끝내고 결과 값만 가지고 나갑니다.
+     */
+    private <T> T readActiveGame(Room room, Function<Game, T> action) {
+        String gameId = room.getGameId();
+        if (!room.isInGame() || gameId == null) return action.apply(null);
+        return action.apply(gameRepository.findById(gameId).filter(game -> !game.isEnded()).orElse(null));
+    }
+
+    /**
      * 전송 규칙, 그 규칙을 정한 게임 id, 볼 수 있는 사용자(모두에게 보이면 null).
-     * 게임 잠금 안에서 정해 잠금 밖으로 가지고 나옵니다.
+     * 잠금 없이 읽은 게임 스냅숏에서 정해 가지고 나옵니다.
      */
     private record SendRule(Rule rule, String gameId, Set<Long> audience) {
     }
@@ -427,7 +442,7 @@ public class ChatMessageService {
      *  - 사망자 채팅: 그 게임의 사망자 (사망한 뒤에 보낸 메시지이므로 지금 사망자는 모두 볼 수 있다)
      *  - 밤 해적 채팅·해적 안내: 지금 해적으로 취급되는 사람 (해적·요리사, 접선한 앵무새. 사망한 해적 포함)
      *  - 세이렌 채팅: 지금 세이렌 팀인 사람 (세이렌, 유혹당한 팀원. 사망한 팀원 포함)
-     * withActiveGame 안(게임 잠금 안)에서만 부릅니다.
+     * 게임 잠금 안(withActiveGame) 또는 잠금 없이 읽은 스냅숏(readActiveGame)에서 부릅니다.
      */
     private static Set<Long> audienceOf(Game game, Rule rule) {
         Predicate<GamePlayer> canRead = switch (rule) {
@@ -449,7 +464,7 @@ public class ChatMessageService {
      *  - 사망자 → DEAD (밤에도 가능)
      *  - 밤: 해적 → NIGHT_PIRATE, 세이렌 → NIGHT_SIREN, 그 밖(유혹당한 팀원, 게임 참가자가 아닌 사람 포함) → NIGHT_BLOCKED
      *  - 그 밖 → PUBLIC
-     * withActiveGame 안(게임 잠금 안)에서만 부릅니다.
+     * 게임 잠금 안(withActiveGame) 또는 잠금 없이 읽은 스냅숏(readActiveGame)에서 부릅니다.
      */
     private static Rule ruleOf(Game game, Long userId) {
         GamePlayer p = findPlayer(game, userId);
