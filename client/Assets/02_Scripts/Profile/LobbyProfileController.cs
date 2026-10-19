@@ -353,7 +353,11 @@ namespace WhoisntCitizen.Profile
                 if (!result.success)
                 {
                     SetChanging(false);
-                    statusMessage?.ShowError(result.message); // 중복 닉네임(409) 등 서버 메시지
+                    // 욕설·금칙어(400 NICKNAME_NOT_ALLOWED)는 경고로 알리고 닉네임은 바뀌지 않는다. 입력칸은 그대로 둬 고쳐 쓸 수 있다.
+                    string warning = result.IsNicknameNotAllowed
+                        ? "사용할 수 없는 닉네임입니다. 욕설이나 부적절한 단어가 포함되어 있습니다."
+                        : result.message; // 중복 닉네임(409) 등 서버 메시지
+                    statusMessage?.ShowError(warning);
                     return;
                 }
 

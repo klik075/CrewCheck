@@ -333,7 +333,12 @@ namespace WhoisntCitizen.Title
 
             if (!result.success)
             {
-                SetMessage(registerMessageText, result.message, errorColor);
+                // 욕설·금칙어 닉네임(400 NICKNAME_NOT_ALLOWED): 가입되지 않았음을 경고로 알린다. 닉네임 입력칸은 그대로 둔다.
+                string warning = result.IsNicknameNotAllowed
+                    ? "사용할 수 없는 닉네임입니다. 욕설이나 부적절한 단어가 포함되어 있습니다."
+                    : result.message;
+                SetMessage(registerMessageText, warning, errorColor);
+                if (result.IsNicknameNotAllowed) ChatNotice.Post(warning, false);
                 return;
             }
 
