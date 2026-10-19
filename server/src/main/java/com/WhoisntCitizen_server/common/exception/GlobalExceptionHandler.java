@@ -36,6 +36,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(new ErrorResponse("BAD_REQUEST", e.getMessage()));
     }
 
+    /** 닉네임에 욕설·금칙어 포함: 400, code = NICKNAME_NOT_ALLOWED (회원가입, 닉네임 변경) */
+    @ExceptionHandler(NicknameNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleNicknameNotAllowed(NicknameNotAllowedException e) {
+        return ResponseEntity.badRequest().body(new ErrorResponse(NicknameNotAllowedException.CODE, e.getMessage()));
+    }
+
     /** 존재하지 않는 방/유저, 잘못된 입력 등: 400 */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException e) {
