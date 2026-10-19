@@ -5,6 +5,8 @@
 > 해적과 선원이 한 배를 타고 채팅으로 속고 속이는 **실시간 웹 마피아 게임 "CrewCheck"** 의 Unity 클라이언트입니다.
 > 설치 없이 브라우저에서 링크 하나로 플레이할 수 있도록 **WebGL** 로 빌드해 itch.io에 배포합니다.
 
+</br>
+
 - 🎮 플레이 (WebGL, PC 크롬 권장): https://youjin-43.itch.io/crewcheck
 - ▶️ 플레이 영상: https://youtube.com/shorts/5H5USoOzqMk · 기능 소개 영상: https://youtu.be/92MvCmUjpVk
 - 🌐 API 서버: https://3-38-222-51.sslip.io
@@ -13,6 +15,8 @@
 
 ![CrewCheck](Docs/images/Crew_Check_main_Image.png)
 
+</br>
+
 ## 목차
 
 1. [게임 소개](#1-게임-소개)
@@ -20,7 +24,7 @@
 3. [핵심 기능과 주요 화면](#3-핵심-기능과-주요-화면)
 4. [기술 구성](#4-기술-구성)
 5. [프로젝트 구조](#5-프로젝트-구조)
-6. [실행 방법 및 개발 환경](#6-실행-방법-및-개발-환경)
+6. [개발 환경](#6-개발-환경)
 7. [ERD 및 API 명세](#7-erd-및-api-명세)
 8. [핵심 사용자 시나리오와 검증 결과](#8-핵심-사용자-시나리오와-검증-결과)
 9. [기술적 의사결정](#9-기술적-의사결정)
@@ -29,6 +33,7 @@
 12. [팀원별 역할 분담](#12-팀원별-역할-분담)
 
 ---
+</br>
 
 ## 1. 게임 소개
 
@@ -40,6 +45,8 @@
 
 - 직업 대사는 팀원이 직접 녹음했고, 밤 결과와 처형은 컷씬으로 보여 줍니다.
 - 구조의 핵심: **서버가 판정하고, 클라이언트는 보여주기만 합니다.** Unity는 투표나 능력을 서버에 요청하고, 서버가 내려주는 상태를 그립니다.
+
+</br>
 
 ### 진영과 직업 (3개 진영, 14개 직업)
 
@@ -62,6 +69,9 @@
 
 **승리 조건**: 선원은 해적을 모두 찾아내고, 해적은 선원을 모두 제거하며, 중립은 각자의 목표를 달성하면 이깁니다. 판정 순서는 [서버 README](https://github.com/IamREALcitizen/project_server#승리-조건)에 있습니다.
 
+
+</br>
+
 ## 2. 플레이 방법
 
 1. **접속**: [itch.io 링크](https://youjin-43.itch.io/crewcheck)를 PC 크롬에서 엽니다. 설치는 필요 없습니다.
@@ -75,6 +85,8 @@
    - 죽은 사람은 유령 채팅으로 계속 대화할 수 있습니다.
 6. **종료**: 결과 화면을 본 뒤 모두 대기실로 돌아갑니다. 전적은 프로필에서 확인할 수 있습니다.
 
+</br>
+
 ## 3. 핵심 기능과 주요 화면
 
 | 영역 | 내용 |
@@ -86,6 +98,9 @@
 | 채팅 | 전체 / 해적 / 유령 / 세이렌 채팅, 채팅 탭·필터(일반·시스템·특정 유저), 서버 욕설 필터·도배 방지 안내 |
 | 사운드·설정 | BGM, 효과음, 직업별 고유 대사(직접 녹음), 모든 씬에서 볼륨·해상도 설정 |
 | 실시간 | WebSocket "변경 신호" 수신 → REST 재조회, 연결이 끊기면 폴링으로 전환 후 지수 백오프로 자동 재연결 |
+
+
+</br>
 
 ### 주요 화면
 
@@ -111,11 +126,14 @@
 | :---: | :---: | :---: |
 | ![](Docs/images/20.gif) | ![](Docs/images/21.gif) | ![](Docs/images/22.gif) |
 
+
 #### 채팅
 
 | 대기실 채팅 | 채팅으로 토론 |
 | :---: | :---: |
 | ![](Docs/images/12.gif) | ![](Docs/images/17.gif) |
+
+</br>
 
 ## 4. 기술 구성
 
@@ -133,7 +151,12 @@
 
 REST는 조회·행동, WebSocket은 "상태가 바뀌었다"는 신호만 받는 구조입니다. 신호를 받으면 REST로 다시 조회합니다. 브라우저에서는 Unity 기본 WebSocket을 쓸 수 없어서 송수신(transport) 부분만 웹용(`BrowserWebSocketTransport`, `RealtimeWebSocket.jslib`)으로 분리했습니다.
 
+</br>
+
 ## 5. 프로젝트 구조
+![](Docs/images/diagram.png)
+
+
 
 ```text
 Assets/
@@ -167,7 +190,9 @@ Build Settings에 포함된 씬 (`ProjectSettings/EditorBuildSettings.asset` 기
 
 `AuthTestScene`, `LobbyTestScene`, `Title_test`, `Vote_test`, `GameScene2/4` 등은 개발·실험용입니다.
 
-## 6. 실행 방법 및 개발 환경
+</br>
+
+## 6. 개발 환경
 
 ### 개발 환경
 
@@ -176,59 +201,10 @@ Build Settings에 포함된 씬 (`ProjectSettings/EditorBuildSettings.asset` 기
 | Unity | 6000.3.11f1 (WebGL Build Support 모듈 포함) |
 | Git | UPM Git 패키지(WebGLInput) 설치에 필요 |
 | 브라우저 | 크롬 (WebGL 실행·테스트) |
-| 서버(로컬 테스트 시) | JDK 21, Docker — [서버 README](https://github.com/IamREALcitizen/project_server) 참고 |
+| 서버 | JDK 21, Docker — [서버 README](https://github.com/IamREALcitizen/project_server) 참고 |
 
-### 시작하기
 
-1. **Unity Hub** 에서 **Unity 6000.3.11f1** (WebGL Build Support 모듈 포함)을 설치합니다.
-2. 이 저장소를 clone한 뒤 Unity Hub에서 `project_client` 폴더를 프로젝트로 추가해 엽니다. 처음 열 때 UPM 패키지(WebGLInput 등)를 Git에서 내려받습니다.
-3. `Assets/01_Scenes/Title.unity` 를 열고 Play 하면 기본적으로 **배포 서버**에 접속합니다.
-
-### 서버 주소 설정
-
-서버 주소는 `Assets/02_Scripts/Network/ApiConfig.cs` 의 `ApiConfig.DefaultBaseUrl` 에 모여 있습니다.
-
-```csharp
-public const string DefaultBaseUrl = "https://3-38-222-51.sslip.io";
-public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값을 사용
-```
-
-**로컬 서버로 테스트하기**
-
-- WebGL: 게임 주소 뒤에 `?api=http://localhost:8080` 을 붙여 엽니다(`ApiBaseUrlOverride`). 예) `http://localhost:8000/?api=http://localhost:8080`
-  보안상 **`localhost` / `127.0.0.1` 주소만** 받아들이고 그 밖의 값은 무시합니다.
-- Unity 에디터: `ApiConfig.DefaultBaseUrl` 을 `http://localhost:8080` 으로 바꿔 실행합니다. (커밋하지 마세요)
-
-### 소셜 로그인 설정
-
-웹(WebGL)에서는 구글·카카오 로그인 팝업에서 **인가 코드**를 받아 서버(`/api/members/login/{google,kakao}/code`)에 보내고, 서버가 토큰으로 교환합니다. 설정은 `Assets/02_Scripts/Auth/SocialAuthConfig.cs` 에 있습니다.
-
-| 항목 | 설명 |
-| --- | --- |
-| `GoogleWebClientId` | 구글 "웹 애플리케이션" OAuth 클라이언트 ID. 서버의 `GOOGLE_CLIENT_ID` 와 같은 값. Google Cloud Console의 "승인된 JavaScript 원본"에 게임 도메인(로컬은 `http://localhost:8000`)을 등록해야 함 |
-| `KakaoRestApiKey` | 카카오 REST API 키. 서버의 `KAKAO_REST_API_KEY` 와 같은 앱의 키 |
-| `KakaoCallbackPath` | `/kakao-callback.html` — **서버**가 서비스하는 콜백 페이지. `ApiConfig.BaseUrl + 경로` 가 카카오 콘솔 Redirect URI와 서버 `KAKAO_ALLOWED_REDIRECT_URIS` 에 똑같이 등록되어 있어야 함 |
-
-- 위 값은 브라우저에도 드러나는 **공개 값**이라 클라이언트에 둬도 됩니다. **클라이언트 시크릿은 절대 클라이언트에 넣지 마세요.**
-- 코드 흐름: `WebGLSocialAuthProvider` ↔ `Plugins/WebGL/SocialAuthWeb.jslib`. 에디터에서는 `MockSocialAuthProvider` 가 쓰입니다.
-
-### WebGL 빌드와 itch.io 배포
-
-1. `File > Build Profiles` 에서 **Web** 플랫폼을 선택하고 Scenes 목록을 확인합니다.
-2. 압축은 **Gzip + Decompression Fallback**, **Run In Background** 켜짐 상태입니다(`Player Settings`).
-3. Build 하면 `index.html`, `Build/`, `TemplateData/` 가 만들어집니다.
-4. 빌드 폴더 내용을 zip으로 묶고(`index.html` 이 zip 루트에 오도록), itch.io에 **HTML 프로젝트(Play in browser)** 로 업로드합니다.
-5. itch.io는 HTTPS이므로 API/WebSocket도 HTTPS/WSS 여야 합니다(`ApiConfig.DefaultBaseUrl` 이 `https://`).
-6. 배포 전 체크리스트: 서버 주소가 배포 서버인지, 소셜 로그인 승인 도메인에 itch.io 도메인이 등록됐는지 확인
-
-### 테스트
-
-- 규칙·네트워크 로직은 Unity에 의존하지 않는 순수 C# asmdef로 분리해 EditMode 테스트를 붙였습니다.
-  - `Game.Core.Tests` (`Assets/02_Scripts/Game/Core/Tests`), `Realtime.Core.Tests` (`Assets/02_Scripts/Network/Realtime/Tests`)
-- 실행: Unity 에디터 `Window > General > Test Runner > EditMode > Run All`
-- `FakeGameApi` 와 테스트용 시계를 주입하면 서버 없이 게임 흐름을 검증할 수 있습니다.
-
-<!-- 📷 (선택) Test Runner 실행 결과 캡처 → Docs/images/test-runner.png -->
+</br>
 
 ## 7. ERD 및 API 명세
 
@@ -238,6 +214,8 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
 - **API 명세**: [서버 README — API 명세](https://github.com/IamREALcitizen/project_server#7-api-명세), Postman 컬렉션 `postman/mafia-game.postman_collection.json`
 - **WebSocket 프로토콜**: 서버 저장소 `Claude outputs/websocket-protocol.md`
 - 클라이언트 쪽 API 호출은 `Assets/02_Scripts/Network/ApiClient` 와 `Game/Core` 의 `IGameApi` 에 모여 있고, 응답 JSON 형식은 `GameDtoParseTests` 로 고정해 두었습니다.
+
+</br>
 
 ## 8. 핵심 사용자 시나리오와 검증 결과
 
@@ -251,11 +229,12 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
 | 6 | 서버 없이도 게임 흐름이 이어진다 | `FakeGameApi` 로 페이즈 전환·폴링 검증 | `GameSessionTests`, `GameSessionPollingTests`, `FakeGameApiTests` |
 | 7 | WebSocket이 끊겨도 게임이 멈추지 않는다 | 끊기면 폴링 전환, 지수 백오프 + 지터로 재연결, 신호 중복·순서 필터 | `ReconnectBackoffTests`, `RealtimePollingTests`, `RealtimeFailurePolicyTests`, `RealtimeSignalFilterTests` |
 | 8 | 브라우저(WebGL)에서도 실시간 신호를 받는다 | 브라우저 WebSocket 전송층 분리 | `BrowserWebSocketTransportTests`, `RealtimeTransportInboxTests`, `RealtimeProtocolTests` |
-| 9 | 맥에서도 한글 채팅이 Enter 한 번에 전송된다 | macOS IME 조합 중 Enter 보정 | WebGL 빌드에서 macOS·Windows 크롬 수동 확인 |
-| 10 | itch.io에서 바로 실행된다 | 업로드 제한 안의 빌드 용량 | 압축 빌드 470MB → **130MB** ([트러블슈팅 1](#1-webgl-빌드-용량-최적화)) |
+| 9 | itch.io에서 바로 실행된다 | 업로드 제한 안의 빌드 용량 | 압축 빌드 470MB → **130MB** ([트러블슈팅 1](#1-webgl-빌드-용량-최적화)) |
 
 - EditMode 테스트 클래스 21개 (`Game.Core.Tests`, `Realtime.Core.Tests`)
 - UI·연출은 플레이 테스트와 버전별 WebGL 빌드로 검증했습니다.
+
+</br>
 
 ## 9. 기술적 의사결정
 
@@ -286,6 +265,8 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
 - itch.io는 HTTPS만 허용해 서버를 EC2 nginx로 HTTPS/WSS 제공합니다.
 - 압축은 Brotli 대신 **Gzip + Decompression Fallback** 을 써서 서버 헤더 설정 없이도 열리게 했고, 탭을 바꿔도 ping이 끊기지 않도록 **Run In Background** 를 켰습니다.
 
+</br>
+
 ## 10. 트러블슈팅
 
 ### 1. WebGL 빌드 용량 최적화
@@ -302,21 +283,7 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
   - 쓰지 않는 씬을 빼고, 1~3px 패딩으로 크기를 4의 배수로 맞췄습니다.
 - **결과 (압축 빌드)**: 470MB → 447 → 355 → 353 → 349 → **130MB** (약 72% 감소)
 
-### 2. macOS에서 한글 입력 중 Enter로 채팅이 전송되지 않음
-
-- **문제**: 맥 크롬에서 한글을 입력하고 Enter를 누르면 글자만 확정되고 전송되지 않았습니다. 영문이거나 Enter를 두 번 누르면 전송됐습니다.
-- **원인**: WebGLInput 패키지는 숨은 `<input>` 의 keydown에서 keyCode 13일 때만 Enter를 처리합니다. Windows IME는 조합 중 Enter에서 keydown(229)과 keydown(13)을 두 번 보내지만, macOS IME는 keydown(229) 한 번만 보냅니다.
-- **해결**: `ImeEnterFix.jslib` 가 "조합 중 Enter 뒤에 정상 Enter 없이 keyup이 온 경우"를 감지해 C#으로 알리고, `WebGLImeEnterFix.cs` 가 선택된 한 줄 입력칸의 `onSubmit` 을 대신 호출합니다. 채팅·검색 등 모든 입력칸에 자동으로 적용되고, Windows에서는 두 번째 keydown이 플래그를 해제하므로 중복 전송이 없습니다.
-
-### 3. Unity가 득표 결과를 읽지 못함
-
-- **원인**: `JsonUtility` 가 `Map<Long, Integer>` 형태의 JSON을 처리하지 못했습니다.
-- **해결**: 서버에 정렬된 리스트 `votes` 를 추가하고(기존 필드는 호환용 유지), 서버 JSON 계약 테스트와 클라이언트 파싱 테스트(`GameDtoParseTests`)로 양쪽 형식을 고정했습니다.
-
-### 4. 남은 시간이 기기마다 어긋남
-
-- **원인**: 기기 시계 설정과 늦게 도착한 응답의 영향을 받았습니다.
-- **해결**: 서버가 주는 `serverTime` 과 `phaseEndsAt` 으로 남은 시간을 구하고, 단조 증가 시간으로 카운트다운합니다. `phaseVersion` 이 낮은 응답은 무시하고, 낮 시간 연장도 따로 반영합니다. 이 로직은 순수 C# 테스트(`PhaseClockTests`)로 분리했습니다.
+</br>
 
 ## 11. 알려진 한계
 
@@ -324,6 +291,8 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
 - 브라우저 탭을 오래 숨기면 ping이 끊겨 탈락할 수 있습니다.
 - 직업 튜토리얼이 없습니다.
 - 이미지·사운드 지연 로딩은 개선 과제입니다.
+
+</br>
 
 ## 12. 팀원별 역할 분담
 
@@ -338,7 +307,3 @@ public static string BaseUrl = DefaultBaseUrl;   // 모든 API 호출이 이 값
 | 정지용 | Server / Client (게임 진행) | 직업 능력, 신규 직업 5종(요리사·세이렌·크라켄·유령 선장·인어), 직업 배정(추천·커스텀·랜덤), 게임씬 레이아웃, 투표·처형 컷씬, 밤 결과 연출, 토론 시간 연장, 프로필 외형 반영, 로비·룸 레이아웃 | [ST0PDragon](https://github.com/ST0PDragon) |
 | 장현교 | Server / Client (인증·소셜) | 회원가입·로그인, JWT·Refresh Token, 중복 로그인 강제 퇴장, 게스트·구글·카카오 로그인 및 연동, 프로필·친구, WebSocket 기반 접속 상태(Presence), 타이틀 씬 UI | [DoroNyong](https://github.com/DoroNyong) |
 | 김유진 | Server / Client (로비·룸·사운드) | 방 생성·참가, 비밀방, 제목 검색, 준비, 방장 위임·추방, 방 설정 변경, 대기실 접속 기록, 사운드 시스템(BGM·효과음·직업별 대사), 볼륨·해상도 설정, WebGL 빌드 설정·용량 최적화 | [youjin-43](https://github.com/youjin-43) |
-
-## 라이선스
-
-TODO — 사용한 외부 에셋(Artsystack GUI 등)의 라이선스 확인 필요
