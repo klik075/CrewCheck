@@ -187,6 +187,8 @@ Build Settings에 포함된 씬 (`ProjectSettings/EditorBuildSettings.asset` 기
 
 `AuthTestScene`, `LobbyTestScene`, `Title_test`, `Vote_test`, `GameScene2/4` 등은 개발·실험용입니다.
 
+</br>
+
 ## 6. 개발 환경
 
 ### 개발 환경
@@ -224,8 +226,7 @@ Build Settings에 포함된 씬 (`ProjectSettings/EditorBuildSettings.asset` 기
 | 6 | 서버 없이도 게임 흐름이 이어진다 | `FakeGameApi` 로 페이즈 전환·폴링 검증 | `GameSessionTests`, `GameSessionPollingTests`, `FakeGameApiTests` |
 | 7 | WebSocket이 끊겨도 게임이 멈추지 않는다 | 끊기면 폴링 전환, 지수 백오프 + 지터로 재연결, 신호 중복·순서 필터 | `ReconnectBackoffTests`, `RealtimePollingTests`, `RealtimeFailurePolicyTests`, `RealtimeSignalFilterTests` |
 | 8 | 브라우저(WebGL)에서도 실시간 신호를 받는다 | 브라우저 WebSocket 전송층 분리 | `BrowserWebSocketTransportTests`, `RealtimeTransportInboxTests`, `RealtimeProtocolTests` |
-| 9 | 맥에서도 한글 채팅이 Enter 한 번에 전송된다 | macOS IME 조합 중 Enter 보정 | WebGL 빌드에서 macOS·Windows 크롬 수동 확인 |
-| 10 | itch.io에서 바로 실행된다 | 업로드 제한 안의 빌드 용량 | 압축 빌드 470MB → **130MB** ([트러블슈팅 1](#1-webgl-빌드-용량-최적화)) |
+| 9 | itch.io에서 바로 실행된다 | 업로드 제한 안의 빌드 용량 | 압축 빌드 470MB → **130MB** ([트러블슈팅 1](#1-webgl-빌드-용량-최적화)) |
 
 - EditMode 테스트 클래스 21개 (`Game.Core.Tests`, `Realtime.Core.Tests`)
 - UI·연출은 플레이 테스트와 버전별 WebGL 빌드로 검증했습니다.
