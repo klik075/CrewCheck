@@ -1,0 +1,11 @@
+# 1초마다 서버 지표를 긁어 간다. 부하 테스트는 몇 분 단위라 기본값(15초)으로는 순간 고갈이 안 보인다
+global:
+  scrape_interval: 1s
+  evaluation_interval: 1s
+
+scrape_configs:
+  - job_name: mafia-server
+    metrics_path: /actuator/prometheus
+    static_configs:
+      # 서버는 Windows에서 실행 중이므로 컨테이너 밖의 localhost를 가리킨다
+      - targets: ["host.docker.internal:8080"]

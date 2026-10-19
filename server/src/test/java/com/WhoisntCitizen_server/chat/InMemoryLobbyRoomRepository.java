@@ -3,7 +3,10 @@ package com.WhoisntCitizen_server.chat;
 import com.WhoisntCitizen_server.lobby.domain.room.Room;
 import com.WhoisntCitizen_server.lobby.repository.LobbyRoomRepository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -28,6 +31,11 @@ public class InMemoryLobbyRoomRepository extends LobbyRoomRepository {
     @Override
     public Room findById(Long roomId) {
         return rooms.get(roomId);
+    }
+
+    @Override
+    public List<Room> findAllByIds(Collection<Long> roomIds) {
+        return roomIds.stream().map(rooms::get).filter(Objects::nonNull).toList();
     }
 
     @Override

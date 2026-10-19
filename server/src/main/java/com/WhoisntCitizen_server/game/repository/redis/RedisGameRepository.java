@@ -94,6 +94,12 @@ public class RedisGameRepository implements GameRepository {
         return Optional.ofNullable(json).map(codec::decode);
     }
 
+    /** 읽을 때마다 JSON에서 새 Game을 만들므로 복사본이다. (GameRepository.returnsSnapshots) */
+    @Override
+    public boolean returnsSnapshots() {
+        return true;
+    }
+
     /** 만료 시각이 아직 지나지 않은 게임 id만 돌려준다. (만료된 id가 목록에 남아 있어도 나오지 않는다) */
     @Override
     public List<String> findActiveIds() {

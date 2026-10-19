@@ -5,6 +5,7 @@ import com.WhoisntCitizen_server.common.exception.GameRuleException;
 import com.WhoisntCitizen_server.game.entity.Game;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
 import com.WhoisntCitizen_server.game.lock.GameLock;
+import com.WhoisntCitizen_server.game.lock.SnapshotRead;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
 import com.WhoisntCitizen_server.jobs.domain.ActionCode;
@@ -76,9 +77,9 @@ public class NightService {
         });
     }
 
-    /** 4. 가장 최근 밤 결과. 개인 결과(reports)는 요청자 본인 것만 포함한다. */
+    /** 4. 가장 최근 밤 결과. 개인 결과(reports)는 요청자 본인 것만 포함한다. 보여 주기만 하므로 SnapshotRead로 읽는다. */
     public NightResultResponse getNightResult(String gameId, Long requesterId) {
-        return gameLock.withLock(gameId, () -> {
+        return SnapshotRead.of(gameRepository, gameLock, gameId, () -> {
             Game game = findGame(gameId);
             GamePlayer requester = game.getPlayer(requesterId);
             NightResult nightResult = game.getLastNightResult();

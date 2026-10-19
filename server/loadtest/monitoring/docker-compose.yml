@@ -1,0 +1,20 @@
+# 부하테스트 관측용 Prometheus + Grafana
+#   실행: docker compose -f loadtest/monitoring/docker-compose.yml up -d
+#   Grafana: http://localhost:3000 (admin / admin) → Data source: http://prometheus:9090
+#   추천 대시보드 ID: 4701 (JVM Micrometer), 12900 (Spring Boot), k6는 결과 JSON으로 비교
+# 서버에 micrometer-registry-prometheus 의존성 + /actuator/prometheus 노출이 필요하다 (README 2단계)
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  grafana:
+    image: grafana/grafana:11.1.0
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus

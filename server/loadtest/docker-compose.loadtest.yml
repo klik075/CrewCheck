@@ -1,0 +1,61 @@
+# 부하 테스트용 관측 도구: Prometheus(지표 수집) + Grafana(그래프)
+# 실행: docker compose -f docker-compose.loadtest.yml up -d   (loadtest 폴더에서)
+# 종료: docker compose -f docker-compose.loadtest.yml down     (수집한 데이터까지 지우려면 down -v)
+#
+# 서버는 Windows에서 직접 실행하고(프로필 local,loadtest), 이 도구들만 Docker에서 돌린다.
+#  - Prometheus: http://localhost:9090  (1초마다 서버의 /actuator/prometheus를 긁어 간다)
+#  - Grafana:    http://localhost:3000  (로그인 없이 열린다. 대시보드 "Lock Contention"이 자동으로 들어 있다)
+#  - Toxiproxy:  localhost:26379 → Redis (게임 Redis 지연 주입용, 관리 API localhost:8474)
+services:
+  prometheus:
+    image: prom/prometheus:v3.4.0
+    container_name: loadtest-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # 컨테이너 안에서 Windows의 서버(localhost:8080)에 닿는 주소. Docker Desktop은 기본으로 있고, Linux용으로 한 줄 더 둔다
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:12.0.0
+    container_name: loadtest-grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      # 로컬 전용: 로그인 없이 관리자 권한으로 연다
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+
+  # Redis 지연 주입용 프록시 (4-2단계). 게임용 Redis 연결만 이 프록시를 거치게 한다.
+  #  - 서버를 GAME_REDIS_PORT=26379로 켜면 게임 상태·게임 잠금이 localhost:26379 → 이 프록시 → Redis(6379)로 간다.
+  #    로비 방·채팅은 그대로 6379로 직접 가므로, 게임 잠금 경로만 느려진다.
+  #  - 지연이 없을 때는 그냥 통과시킨다. 지연은 redis-latency.ps1로 켜고 끈다. (관리 API: localhost:8474)
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    container_name: loadtest-toxiproxy
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    ports:
+      - "8474:8474"
+      - "26379:26379"
+    volumes:
+      - ./toxiproxy/toxiproxy.json:/config/toxiproxy.json:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+# 실행 기록(개선 전/후 비교용)이 docker compose down 뒤에도 남도록 이름 붙은 볼륨에 둔다
+volumes:
+  prometheus-data:
+  grafana-data:
