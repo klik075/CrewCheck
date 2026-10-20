@@ -59,6 +59,7 @@ public record GameSnapshot(
         List<VoteEntry> votes,           // 투표 순서
         List<Long> confirmedVoters,      // "투표 완료"를 누른 플레이어
         List<Long> daySkippers,          // 이번 낮 토론을 넘긴 플레이어 (낮에 들어가면 비워짐)
+        List<Long> dayExtenders,         // 이번 낮 토론 시간을 늘린 플레이어 (낮에 들어가면 비워짐)
         List<Long> voteBanned,           // 요리사 때문에 오늘 투표를 못 하는 플레이어
 
         // 사망자 없는 날 세기
@@ -96,6 +97,7 @@ public record GameSnapshot(
         votes = copy(votes);
         confirmedVoters = sortedCopy(confirmedVoters);
         daySkippers = sortedCopy(daySkippers);
+        dayExtenders = sortedCopy(dayExtenders); // 이 칸이 생기기 전에 저장된 게임은 null → 빈 목록
         voteBanned = sortedCopy(voteBanned);
         winnerIds = copy(winnerIds);
     }

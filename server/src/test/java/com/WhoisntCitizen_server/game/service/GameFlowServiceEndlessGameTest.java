@@ -53,7 +53,7 @@ class GameFlowServiceEndlessGameTest {
     private static final Instant NOW = Instant.parse("2026-10-01T12:00:00Z");
 
     // 밤 30, 결과 5, 낮 60, 투표 30, 처형 5 → 하루 130초. 종료 후 60초 보관, 10초 동안 요청이 없으면 이탈, 10일 무사망 시 취소
-    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 10, 5, 10);
+    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 10, 5, 10, 10);
     private static final int DAY_SECONDS = 130;
     private static final int UNTIL_VOTE_ENDS = 125; // 그날 밤 시작부터 투표가 끝날 때까지
 
@@ -322,7 +322,7 @@ class GameFlowServiceEndlessGameTest {
 
     @Test
     void 연결_끊김_검사는_설정이_0이면_하지_않는다() {
-        GamePhaseProperties off = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10);
+        GamePhaseProperties off = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10, 10);
         GameFlowService noCheck = TestGameFlows.create(repository, new NightActionResolver(new Random(0)),
                 new VoteResolver(), new WinConditionChecker(), scheduler, off, clock, events::add, tracker);
         noCheck.begin(game.getGameId());

@@ -34,6 +34,13 @@ public final class RealtimeProtocol {
     public static final int CLOSE_IDLE_TIMEOUT = 4408;
     /** 연결 중 토큰이 만료됨. 클라이언트는 다시 로그인(토큰 갱신)한 뒤 연결한다 */
     public static final int CLOSE_TOKEN_EXPIRED = 4401;
+    /** 같은 계정으로 다른 곳에서 새로 로그인함. 클라이언트는 다시 연결하지 않고 로그아웃 처리한다 */
+    public static final int CLOSE_DUPLICATE_LOGIN = 4409;
+    /**
+     * 서버가 꺼진다(배포·재시작). WebSocket 표준 코드 1001(going away). (RealtimeShutdownCloser)
+     * 클라이언트는 잠시 뒤 다시 연결한다. 서버가 여러 대면 nginx가 살아 있는 다른 서버로 붙인다.
+     */
+    public static final int CLOSE_GOING_AWAY = 1001;
 
     private RealtimeProtocol() {
     }

@@ -34,7 +34,7 @@ class GameSnapshotJsonTest {
 
     private static PlayerSnapshot player(long id, String nickname, RoleSnapshot role, RoleSnapshot shownRole) {
         return new PlayerSnapshot(id, nickname, role, shownRole, Team.CREW, true, null, null,
-                Map.of(), null, null, null, null, List.of(), Map.of(), Map.of(), null, null, false);
+                Map.of(), null, null, null, null, List.of(), Map.of(), Map.of(), null, null, false, 13);
     }
 
     private static GameSnapshot fullSnapshot() {
@@ -48,13 +48,13 @@ class GameSnapshotJsonTest {
                 NOW.minusSeconds(100), DeathCause.ATTACK,
                 Map.of(ActionCode.READ_CORPSE_ROLE, 1), 2, 1, 4L, null,
                 List.of(5L, 4L), Map.of(1L, Faction.PIRATE), Map.of(4L, captain),
-                null, null, false);
+                null, null, false, 19);
         PlayerSnapshot contactedParrot = new PlayerSnapshot(2L, "앵무새", parrot, parrot, Team.PIRATE, true,
                 null, null, Map.of(), null, null, null, null, List.of(), Map.of(), Map.of(),
-                NOW.minusSeconds(30), null, false);
+                NOW.minusSeconds(30), null, false, 0);
         PlayerSnapshot departed = new PlayerSnapshot(4L, "선장", captain, captain, Team.CREW, false,
                 NOW.minusSeconds(10), DeathCause.DISCONNECT, Map.of(), null, null, null, null,
-                List.of(), Map.of(), Map.of(), null, null, true);
+                List.of(), Map.of(), Map.of(), null, null, true, 4);
 
         Map<Long, List<PrivateReport>> reports = new LinkedHashMap<>();
         reports.put(2L, List.of(PrivateReport.actions(1L,
@@ -76,10 +76,20 @@ class GameSnapshotJsonTest {
                         new NightAction(9L, ActionCode.KRAKEN_STRIKE, null)),
                 List.of(2L), List.of(5L, 1L),
                 List.of(new GameSnapshot.VoteEntry(2L, 1L), new GameSnapshot.VoteEntry(1L, 5L)),
-                List.of(2L), List.of(), List.of(5L),
+                List.of(2L), List.of(), List.of(1L), List.of(5L),
                 2,
                 nightResult, executionResult,
                 null, List.of(), null);
+    }
+
+    @Test
+    void 프로필_번호가_없는_이전_저장_데이터는_기본_스킨으로_복원된다() {
+        String json = jsonMapper.writeValueAsString(fullSnapshot())
+                .replaceAll(",\"profileImageId\":\\d+", "");
+
+        GameSnapshot restored = jsonMapper.readValue(json, GameSnapshot.class);
+
+        assertThat(restored.players()).allSatisfy(p -> assertThat(p.profileImageId()).isZero());
     }
 
     @Test
@@ -99,7 +109,7 @@ class GameSnapshotJsonTest {
     void 끝난_게임도_왕복된다() {
         GameSnapshot ended = new GameSnapshot(GameSnapshot.CURRENT_SCHEMA_VERSION,
                 "game-2", "7", false, NOW, GamePhase.ENDED, 3, 12L, null,
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
                 3, null, null, Winner.CREW, List.of(2L, 3L), GameEndReason.WIN);
 
         String json = jsonMapper.writeValueAsString(ended);
@@ -120,14 +130,30 @@ class GameSnapshotJsonTest {
     void 집합은_정렬되고_null_목록은_빈_목록이_된다() {
         GameSnapshot snapshot = new GameSnapshot(GameSnapshot.CURRENT_SCHEMA_VERSION,
                 "game-3", "7", true, NOW, GamePhase.NIGHT, 1, 1L, NOW,
-                null, null, List.of(3L, 1L, 2L), null, null, List.of(9L, 4L), List.of(7L, 2L), null,
+                null, null, List.of(3L, 1L, 2L), null, null, List.of(9L, 4L), List.of(7L, 2L), List.of(8L, 6L), null,
                 0, null, null, null, null, null);
 
         assertThat(snapshot.lockedActors()).containsExactly(1L, 2L, 3L);
         assertThat(snapshot.confirmedVoters()).containsExactly(4L, 9L);
         assertThat(snapshot.daySkippers()).containsExactly(2L, 7L);
+        assertThat(snapshot.dayExtenders()).containsExactly(6L, 8L);
+        assertThat(snapshot.voteBanned()).isEmpty();
         assertThat(snapshot.players()).isEmpty();
         assertThat(snapshot.votes()).isEmpty();
         assertThat(snapshot.winnerIds()).isEmpty();
+    }
+
+    @Test
+    void 연장한_사람_칸이_생기기_전에_저장된_게임도_읽는다() {
+        GameSnapshot current = fullSnapshot();
+        // 칸을 지워 옛 형식을 만든다. 같은 schemaVersion으로 읽혀야 한다 (칸 추가는 호환되는 변경)
+        String oldJson = jsonMapper.writeValueAsString(current).replaceAll("\"dayExtenders\":\\[[^\\]]*\\],?", "");
+        assertThat(oldJson).doesNotContain("dayExtenders");
+
+        GameSnapshot restored = jsonMapper.readValue(oldJson, GameSnapshot.class);
+
+        assertThat(restored.dayExtenders()).isEmpty();
+        assertThat(restored.daySkippers()).isEqualTo(current.daySkippers());
+        assertThat(restored.voteBanned()).isEqualTo(current.voteBanned());
     }
 }

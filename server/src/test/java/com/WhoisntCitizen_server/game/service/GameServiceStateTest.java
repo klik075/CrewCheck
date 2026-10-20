@@ -69,4 +69,63 @@ class GameServiceStateTest {
         assertThat(game.inactivePlayers(tracker.lastSeen(game.getGameId()), NOW.minusSeconds(60)))
                 .extracting(GamePlayer::getPlayerId).containsExactly(1L);
     }
+
+    // ---------- 낮 토론 넘기기 인원 ----------
+
+    private GameService newService(InMemoryGameRepository repository) {
+        return new GameService(repository, mock(RoleAssigner.class), mock(GameFlowService.class),
+                new LocalGameLock(), new LocalPlayerActivityTracker(), Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    private Game newDayGame(InMemoryGameRepository repository) {
+        Game game = new Game("room-1", List.of(
+                new GamePlayer(1L, "p1", RAIDER),
+                new GamePlayer(2L, "p2", SAILOR),
+                new GamePlayer(3L, "p3", SAILOR),
+                new GamePlayer(4L, "p4", SAILOR)));
+        game.changePhase(GamePhase.DAY, NOW.plusSeconds(60));
+        repository.save(game);
+        return game;
+    }
+
+    @Test
+    void 낮에는_다른_사람이_토론을_넘길_때마다_상태의_넘긴_인원이_늘어난다() {
+        InMemoryGameRepository repository = new InMemoryGameRepository();
+        GameService gameService = newService(repository);
+        Game game = newDayGame(repository);
+        game.skipDay(1L);
+        long version = gameService.getState(game.getGameId()).phaseVersion();
+
+        game.skipDay(2L); // 페이즈는 그대로라 phaseVersion이 바뀌지 않는다
+
+        GameStateResponse state = gameService.getState(game.getGameId());
+        assertThat(state.phaseVersion()).isEqualTo(version);
+        assertThat(state.daySkipCount()).isEqualTo(2);
+    }
+
+    @Test
+    void 토론을_넘긴_뒤_죽은_사람은_넘긴_인원에서_빠진다() {
+        InMemoryGameRepository repository = new InMemoryGameRepository();
+        GameService gameService = newService(repository);
+        Game game = newDayGame(repository);
+        game.skipDay(1L);
+        game.skipDay(3L);
+
+        game.getPlayer(3L).kill();
+
+        assertThat(gameService.getState(game.getGameId()).daySkipCount()).isEqualTo(1);
+    }
+
+    @Test
+    void 낮이_아니면_넘긴_인원은_0이다() {
+        InMemoryGameRepository repository = new InMemoryGameRepository();
+        GameService gameService = newService(repository);
+        Game game = newDayGame(repository);
+        game.skipDay(1L);
+        game.skipDay(2L);
+
+        game.changePhase(GamePhase.VOTE, NOW.plusSeconds(90)); // 지난 낮의 넘긴 사람은 다음 낮이 될 때 비운다
+
+        assertThat(gameService.getState(game.getGameId()).daySkipCount()).isZero();
+    }
 }

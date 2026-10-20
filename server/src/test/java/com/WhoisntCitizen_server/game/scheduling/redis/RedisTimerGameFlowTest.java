@@ -10,6 +10,7 @@ import com.WhoisntCitizen_server.game.repository.redis.GameRedis;
 import com.WhoisntCitizen_server.game.repository.redis.GameRedisProperties;
 import com.WhoisntCitizen_server.game.repository.redis.RedisGameRepository;
 import com.WhoisntCitizen_server.game.repository.snapshot.GameSnapshotCodec;
+import com.WhoisntCitizen_server.game.result.GameResultRecorder;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
 import com.WhoisntCitizen_server.game.scheduling.TimerKeys;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
@@ -59,7 +60,7 @@ class RedisTimerGameFlowTest {
 
     private static final Instant NOW = Instant.parse("2026-10-11T12:00:00Z");
     // 밤 30, 결과 5, 낮 60, 투표 30, 처형 5. 종료 후 60초 보관, 연결 끊김 검사 끔, 10일 무사망 시 취소
-    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10);
+    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10, 10);
     private static final String TIMERS_KEY = "game:v1:timers";
 
     private static GenericContainer<?> redisContainer;
@@ -122,7 +123,7 @@ class RedisTimerGameFlowTest {
         ManualTaskScheduler scheduler = new ManualTaskScheduler(new MutableClock(NOW)); // 지연 이벤트(로비·전적)는 여기서 다루지 않음
         flow[0] = new GameFlowService(repository, new NightActionResolver(new Random(0)), new VoteResolver(),
                 new WinConditionChecker(), timer, new SchedulerDeferredEventPublisher(scheduler, serverClock, event -> { }),
-                new LocalGameLock(), new LocalPlayerActivityTracker(), props, serverClock, event -> { });
+                new LocalGameLock(), new LocalPlayerActivityTracker(), props, serverClock, event -> { }, GameResultRecorder.NONE);
         return new Server(repository, timer, flow[0]);
     }
 
@@ -204,7 +205,8 @@ class RedisTimerGameFlowTest {
     void 전원_제출처럼_먼저_넘어가면_남은_옛_타이머는_버전이_달라_무시되고_지워진다() {
         Server server = server();
         server.flow().begin(gameId);
-        server.flow().onPhaseTimeout(gameId, 1);                   // 시간 전에 밤이 끝남 (전원 제출과 같은 효과)
+        // 시간 전에 밤이 끝남 (전원 제출과 같은 경로). 마감 전의 onPhaseTimeout은 넘기지 않고 다시 예약하므로 판정을 직접 부른다
+        server.flow().resolveNight(server.repository().findById(gameId).orElseThrow());
 
         assertPhase(GamePhase.NIGHT_RESULT, 1, 2);
         assertThat(timers()).as("옛 밤 타이머(:1)는 아직 남아 있다")
@@ -283,7 +285,7 @@ class RedisTimerGameFlowTest {
     @Test
     void 게임이_끝나면_정리_타이머가_예약되고_시간이_지나면_상태와_타이머가_모두_지워진다() {
         // 하루 동안 아무도 죽지 않으면 취소되게 해서 첫 투표가 끝날 때 게임을 끝낸다
-        GamePhaseProperties endAfterOneDay = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 1);
+        GamePhaseProperties endAfterOneDay = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 1, 10);
         Server server = server(endAfterOneDay, clock);
         server.flow().begin(gameId);
         advance(server, 30);
@@ -309,7 +311,7 @@ class RedisTimerGameFlowTest {
     @Test
     void 실제_확인_작업과_작업_스레드로도_페이즈가_넘어간다() throws Exception {
         // 서버에서처럼 RedisTimerPoller(주기 확인) → RedisTimerDispatcher(작업 스레드)로 돈다. 시계는 실제 시계, 페이즈는 1초씩
-        GamePhaseProperties oneSecondPhases = new GamePhaseProperties(1, 1, 1, 1, 1, 60, 0, 5, 10);
+        GamePhaseProperties oneSecondPhases = new GamePhaseProperties(1, 1, 1, 1, 1, 60, 0, 5, 10, 10);
         Clock realClock = Clock.systemUTC();
         Server server = server(oneSecondPhases, realClock);
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();

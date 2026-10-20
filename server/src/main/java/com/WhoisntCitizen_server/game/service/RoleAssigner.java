@@ -26,7 +26,9 @@ import java.util.stream.IntStream;
  * 방의 직업 배정 설정(RoleSetup)에 따라 세 가지 방식으로 구성을 만든다.
  *  - RECOMMENDED: 인원수별 추천 구성표(RECOMMENDED). 해적 진영은 max(1, 인원/3)명이다.
  *  - CUSTOM: 방장이 편집한 인원수별 구성표. 편집하지 않은 인원수는 추천 구성을 쓴다.
- *  - RANDOM: 진영 수는 추천 구성과 같고, 각 진영 안의 직업을 후보 중에서 무작위로 뽑는다. 제3 세력은 후보가 될 수 없다.
+ *  - RANDOM: 진영 수는 추천 구성과 같고, 각 진영 안의 직업을 후보 중에서 무작위로 뽑는다.
+ *            제3 세력은 해적 진영이 아니므로 선원 진영 자리에 섞여 나오고, 한 판에 MAX_RANDOM_NEUTRALS명까지,
+ *            MIN_PLAYERS_FOR_RANDOM_NEUTRAL명 이상일 때만 나온다.
  * 어떤 방식이든 인원수와 개수가 같고, 공격할 수 있는 해적이 있고, 해적 진영이 선원 진영보다 적어야 하고,
  * 원숭이가 있으면 원숭이가 위장할 직업도 1개 이상 있어야 한다.
  * 추천 구성표는 서버 시작 시, 커스텀 구성은 방장이 저장할 때와 게임 시작 때 이 규칙으로 검증한다.
@@ -36,6 +38,14 @@ public class RoleAssigner {
 
     public static final int MIN_PLAYERS = 4;
     public static final int MAX_PLAYERS = 12;
+
+    /**
+     * 랜덤 구성 한 판에 나오는 제3 세력의 최대 수. 선원 진영 자리는 최소 3개(4인)라 1명까지면
+     * 원숭이가 나와도 원숭이 말고 선원 진영이 1명 이상 남아 위장할 직업이 항상 있다.
+     */
+    public static final int MAX_RANDOM_NEUTRALS = 1;
+    /** 랜덤 구성에 제3 세력이 나오는 최소 인원. 크라켄은 해적을 뺀 생존자가 2명 이하면 이기므로 4~5인에서는 너무 빨리 이긴다. */
+    public static final int MIN_PLAYERS_FOR_RANDOM_NEUTRAL = 6;
 
     // roles.code 값 (V2__insert_roles.sql, V4__add_roles.sql)
     public static final String MAFIA_ROLE = "PIRATE_RAIDER";
@@ -76,7 +86,7 @@ public class RoleAssigner {
     private final RoleDefinition raider;
     private final RoleDefinition sailor;
     private final Map<Integer, List<RoleDefinition>> recommended;
-    // 고를 수 있는 직업 전체와 그중 랜덤 후보가 될 수 있는 특수 직업(해적·선원 제외). 둘 다 화면 표시 순서다.
+    // 고를 수 있는 직업 전체와 그중 랜덤 후보가 될 수 있는 특수 직업(해적·선원 제외, 제3 세력 포함). 둘 다 화면 표시 순서다.
     private final List<RoleDefinition> roles;
     private final List<String> specialRoleCodes;
 
@@ -88,9 +98,8 @@ public class RoleAssigner {
         this.sailor = roleCatalog.get(CITIZEN_ROLE);
         this.recommended = resolveRecommended(roleCatalog);
         this.roles = roleCatalog.all().stream().sorted(displayOrder()).toList();
-        // 제3 세력(크라켄·세이렌 등)은 인원 구성을 정할 때까지 랜덤 후보에서 빼고 커스텀 구성에서만 고른다.
         this.specialRoleCodes = roles.stream()
-                .filter(role -> !isBaseRole(role) && !role.isNeutral())
+                .filter(role -> !isBaseRole(role))
                 .map(RoleDefinition::code)
                 .toList();
     }
@@ -111,7 +120,8 @@ public class RoleAssigner {
                 .distinct()
                 .toList();
         if (disguises.isEmpty()) {
-            // 구성 규칙(problemOf)이 막으므로 오지 않는다. 랜덤 구성은 선원 진영 자리가 2개 이상이라 항상 후보가 있다.
+            // 구성 규칙(problemOf)이 막으므로 오지 않는다. 랜덤 구성은 선원 진영 자리가 3개 이상이고
+            // 제3 세력은 MAX_RANDOM_NEUTRALS(1)명까지라 원숭이 말고도 선원 진영이 남아 항상 후보가 있다.
             throw new IllegalStateException("원숭이가 위장할 직업이 구성에 없습니다: " + composition);
         }
         return disguises.get(random.nextInt(disguises.size()));
@@ -147,7 +157,7 @@ public class RoleAssigner {
 
     // ---------- 방 설정 ----------
 
-    /** 새 방의 설정: 추천 구성. 커스텀 표는 비어 있고(전부 추천 구성), 랜덤 후보는 특수 직업 전부다. */
+    /** 새 방의 설정: 추천 구성. 커스텀 표는 비어 있고(전부 추천 구성), 랜덤 후보는 특수 직업 전부(제3 세력 포함)다. */
     public RoleSetup defaultSetup() {
         return new RoleSetup(RoleSetupMode.RECOMMENDED, List.of(), specialRoleCodes);
     }
@@ -156,7 +166,7 @@ public class RoleAssigner {
      * 방장이 보낸 설정을 검증하고 저장할 형태로 정리한다. 규칙에 맞지 않으면 IllegalArgumentException(400).
      * 지금 고른 모드가 아니어도 저장되는 값은 모두 검증한다. (나중에 모드만 바꿔도 바로 쓸 수 있도록)
      *  - 커스텀 표: 인원수 순으로 정렬. 인원수마다 개수·직업·해적 규칙을 검사한다.
-     *  - 랜덤 후보: 화면 표시 순서로 정렬하고 중복과 해적·선원(항상 후보)을 뺀다. null이면 특수 직업 전부.
+     *  - 랜덤 후보: 화면 표시 순서로 정렬하고 중복과 해적·선원(항상 후보)을 뺀다. null이면 특수 직업 전부(제3 세력 포함).
      */
     public RoleSetup normalize(RoleSetup setup) {
         if (setup == null || setup.mode() == null) {
@@ -216,7 +226,10 @@ public class RoleAssigner {
         return roles;
     }
 
-    /** 랜덤 후보로 고를 수 있는 특수 직업. 해적과 선원은 항상 후보라 빠지고, 제3 세력은 후보가 될 수 없다. */
+    /**
+     * 랜덤 후보로 고를 수 있는 특수 직업. 해적과 선원은 항상 후보라 빠진다.
+     * 제3 세력도 들어 있지만 MIN_PLAYERS_FOR_RANDOM_NEUTRAL명 이상일 때 한 판에 MAX_RANDOM_NEUTRALS명까지만 나온다.
+     */
     public List<String> specialRoleCodes() {
         return specialRoleCodes;
     }
@@ -250,17 +263,23 @@ public class RoleAssigner {
     /**
      * 해적 진영 수는 추천 구성과 같다. 해적 1명은 항상 넣고(공격할 해적 보장),
      * 남은 해적 진영 자리는 해적(중복 가능)과 아직 안 뽑힌 해적 진영 후보 중에서 같은 확률로 고른다.
-     * 선원 진영 자리는 선원 진영 후보를 섞어 앞에서부터 채우고, 후보가 모자라면 선원으로 채운다.
+     * 선원 진영 자리는 선원 진영 후보와 제3 세력 후보를 함께 섞어 앞에서부터 채우고, 후보가 모자라면 선원으로 채운다.
+     * 제3 세력은 MIN_PLAYERS_FOR_RANDOM_NEUTRAL명 이상일 때만 후보가 되고, MAX_RANDOM_NEUTRALS명을 채우면 나머지는 건너뛴다.
      * 특수 직업은 한 게임에 한 명씩만 나온다.
      */
     private List<RoleDefinition> randomComposition(int playerCount, List<String> candidateCodes) {
         List<RoleDefinition> pirateCandidates = new ArrayList<>();
         List<RoleDefinition> crewCandidates = new ArrayList<>();
         Set<String> picked = candidateCodes == null ? Set.copyOf(specialRoleCodes) : Set.copyOf(candidateCodes);
+        boolean neutralAllowed = playerCount >= MIN_PLAYERS_FOR_RANDOM_NEUTRAL;
         for (String code : specialRoleCodes) {
             if (picked.contains(code)) {
                 RoleDefinition role = roleCatalog.get(code);
-                (role.isPirate() ? pirateCandidates : crewCandidates).add(role);
+                if (role.isPirate()) {
+                    pirateCandidates.add(role);
+                } else if (!role.isNeutral() || neutralAllowed) {
+                    crewCandidates.add(role);
+                }
             }
         }
 
@@ -273,8 +292,21 @@ public class RoleAssigner {
         }
 
         Collections.shuffle(crewCandidates, random);
-        for (int i = 0; i < playerCount - pirateSlots; i++) {
-            assigned.add(i < crewCandidates.size() ? crewCandidates.get(i) : sailor);
+        int neutrals = 0;
+        for (RoleDefinition role : crewCandidates) {
+            if (assigned.size() == playerCount) {
+                break;
+            }
+            if (role.isNeutral()) {
+                if (neutrals == MAX_RANDOM_NEUTRALS) {
+                    continue;
+                }
+                neutrals++;
+            }
+            assigned.add(role);
+        }
+        while (assigned.size() < playerCount) {
+            assigned.add(sailor);
         }
         return assigned;
     }

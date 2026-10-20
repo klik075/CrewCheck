@@ -24,4 +24,15 @@ public interface GameRepository {
     List<String> findActiveIds();
 
     void delete(String gameId);
+
+    /**
+     * findById가 저장된 상태의 "복사본"을 돌려주는지.
+     *  - true (Redis): 읽을 때마다 JSON에서 새 Game을 만든다. 다른 스레드가 같은 게임을 바꿔도 받은 객체는 바뀌지 않는다.
+     *    그래서 화면에 보여 주기만 하는 읽기는 게임 잠금 없이 해도 반쯤 바뀐 상태를 보지 않는다. (SnapshotRead)
+     *  - false (메모리): 저장소가 들고 있는 바로 그 객체를 돌려준다. 잠금 없이 읽으면 다른 스레드가 바꾸는 도중의 상태를 볼 수 있다.
+     * 모르면 false(안전한 쪽)로 둔다.
+     */
+    default boolean returnsSnapshots() {
+        return false;
+    }
 }

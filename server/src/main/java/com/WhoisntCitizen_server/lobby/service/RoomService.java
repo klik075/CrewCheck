@@ -16,6 +16,7 @@ import com.WhoisntCitizen_server.lobby.dto.RoomDetailResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomPlayerResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.RoomResponseDto;
 import com.WhoisntCitizen_server.lobby.dto.UpdateRoomSettingsRequestDto;
+import com.WhoisntCitizen_server.lobby.event.RoomCreatedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomDeletedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomGameFinishedEvent;
 import com.WhoisntCitizen_server.lobby.event.RoomGameStartingEvent;
@@ -36,9 +37,11 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -71,7 +74,7 @@ public class RoomService {
      */
 
     private final LobbyRoomRepository roomRepository;
-    // 닉네임이 필요한 방 생성·입장에서만 User(프로필)를 조회한다. (findUser 참고)
+    // 방 생성·입장의 닉네임과 게임 시작 시 선택한 프로필 이미지를 조회한다.
     private final UserRepository userRepository;
     private final RoomLock roomLock; // 방 단위 잠금. 잠금 순서: 방 잠금 → 게임 잠금
     private final GameService gameService;
@@ -93,6 +96,7 @@ public class RoomService {
      *
      * 닉네임이 필요한 곳
      *   - 방 생성·입장: 방 참가자 목록과 입장 알림에 닉네임이 들어가므로 findUser(userId)로 User를 조회한다.
+     *     대기실 초상화에 쓸 프로필 이미지 번호도 이때 같이 저장한다.
      *   - 나가기: 퇴장 알림 닉네임은 DB가 아니라 방 참가자 정보(RoomPlayer)에서 꺼낸다. 입장할 때 저장해 둔 값이다.
      */
 
@@ -115,10 +119,11 @@ public class RoomService {
                 privateRoom, request.getPassword());
 
         // 방을 만든 사람은 자동으로 해당 방에 입장 (비밀방이어도 방장은 비밀번호를 입력하지 않는다)
-        room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
+        room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false, user.getProfileImageId()));
 
         roomRepository.save(room);
         eventPublisher.publishEvent(new RoomPlayerJoinedEvent(roomId, user.getId(), user.getNickname()));
+        eventPublisher.publishEvent(new RoomCreatedEvent(roomId, user.getId())); // 로비 새로고침 버튼 RedDot
         return RoomResponseDto.from(room);
     }
 
@@ -153,7 +158,7 @@ public class RoomService {
             if (!room.matchesPassword(password)) throw new RoomPasswordException();
             if (room.isFull()) throw new IllegalStateException("방이 가득 찼습니다.");
 
-            room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false));
+            room.addPlayer(new RoomPlayer(user.getId(), user.getNickname(), false, user.getProfileImageId()));
 
             roomRepository.save(room);
             return RoomResponseDto.from(room);
@@ -508,9 +513,13 @@ public class RoomService {
             if (room.getPlayers().size() < MIN_PLAYERS) throw new IllegalStateException("게임을 시작하려면 최소 " + MIN_PLAYERS + "명이 필요합니다.");
             if (!room.allGuestsReady()) throw new IllegalStateException("모든 참가자가 준비해야 게임을 시작할 수 있습니다.");
 
-            // Room 참가자(userId = User.id)를 그대로 게임 참가자(playerId)로 넘긴다.
+            // 시작할 때 최신 프로필을 한 번에 조회한다. 게임 상태 폴링은 DB를 다시 읽지 않는다.
+            List<Long> playerIds = room.getPlayers().stream().map(RoomPlayer::getUserId).toList();
+            Map<Long, Integer> profileImages = userRepository.findAllById(playerIds).stream()
+                    .collect(Collectors.toMap(User::getId, User::getProfileImageId));
             List<GameParticipant> participants = room.getPlayers().stream()
-                    .map(p -> new GameParticipant(p.getUserId(), p.getNickname()))
+                    .map(p -> new GameParticipant(p.getUserId(), p.getNickname(),
+                            profileImages.getOrDefault(p.getUserId(), 0)))
                     .toList();
 
             // 채팅: 여기부터 게임 중 메시지. 게임 생성이 곧바로 안내(역할 배정, 첫 밤)를 남기므로 그보다 먼저 알린다.
@@ -581,6 +590,7 @@ public class RoomService {
      *   - keyword가 MAX_SEARCH_KEYWORD_LENGTH자를 넘으면 400
      *
      * Redis에 제목 인덱스는 없다. 원래 목록 조회가 방 전체를 읽는 구조라 메모리에서 필터만 추가한다.
+     * 방 읽기는 MGET 한 번으로 한다. (loadtest/README.md 시나리오 B 참고)
      */
     public List<RoomResponseDto> getRooms(String keyword) {
         String normalizedKeyword = normalizeSearchText(keyword);
@@ -592,10 +602,9 @@ public class RoomService {
 
         if (roomIds == null || roomIds.isEmpty()) return List.of();
 
-        return roomIds.stream()
-                .map(Long::valueOf) //String을 Long으로 바꿈
-                .map(roomRepository::findById)// 각 id를 room으로 바꿈 Stream<String>에서 -> Stream<Room>이 됨
-                .filter(Objects::nonNull)
+        // 방 ID → 방을 한 번에 읽는다 (MGET, Redis 왕복 1번). 방마다 findById를 부르면 방 N개에 N번 왕복한다.
+        List<Long> ids = roomIds.stream().map(Long::valueOf).toList(); // String을 Long으로 바꿈
+        return roomRepository.findAllByIds(ids).stream() // 그 사이 지워진 방은 이미 빠져 있다
                 // 제목 검색은 복구보다 먼저: 복구는 잠금을 잡을 수 있는데, 검색에서 빠질 방까지 복구할 필요는 없다 (복구해도 제목은 그대로)
                 .filter(room -> titleMatches(room, normalizedKeyword))
                 .map(this::recoverInListIfOrphaned) // 서버 재시작 등으로 게임이 사라진 방은 WAITING으로 복구해서 보여준다

@@ -10,6 +10,7 @@ import com.WhoisntCitizen_server.game.repository.redis.GameRedis;
 import com.WhoisntCitizen_server.game.repository.redis.GameRedisProperties;
 import com.WhoisntCitizen_server.game.repository.redis.RedisGameRepository;
 import com.WhoisntCitizen_server.game.repository.snapshot.GameSnapshotCodec;
+import com.WhoisntCitizen_server.game.result.GameResultRecorder;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
 import com.WhoisntCitizen_server.game.scheduling.TimerKeys;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
@@ -45,7 +46,7 @@ class StuckGameWatchdogTest {
 
     private static final Instant NOW = Instant.parse("2026-10-11T12:00:00Z");
     // 밤 30, 결과 5, 낮 60, 투표 30, 처형 5. 종료 후 60초 보관, 연결 끊김 검사 끔, 10일 무사망 시 취소
-    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10);
+    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10, 10);
     private static final String TIMERS_KEY = "game:v1:timers";
 
     private static GenericContainer<?> redisContainer;
@@ -90,7 +91,7 @@ class StuckGameWatchdogTest {
         holder[0] = new GameFlowService(repository, new NightActionResolver(new Random(0)), new VoteResolver(),
                 new WinConditionChecker(), timer,
                 new SchedulerDeferredEventPublisher(new ManualTaskScheduler(new MutableClock(NOW)), clock, event -> { }),
-                new LocalGameLock(), new LocalPlayerActivityTracker(), PROPS, clock, event -> { });
+                new LocalGameLock(), new LocalPlayerActivityTracker(), PROPS, clock, event -> { }, GameResultRecorder.NONE);
         flow = holder[0];
         watchdog = new StuckGameWatchdog(repository, timer, new ManualTaskScheduler(clock), clock);
         gameId = repository.save(newGame()).getGameId();

@@ -12,6 +12,7 @@ import com.WhoisntCitizen_server.game.repository.redis.GameRedis;
 import com.WhoisntCitizen_server.game.repository.redis.GameRedisProperties;
 import com.WhoisntCitizen_server.game.repository.redis.RedisGameRepository;
 import com.WhoisntCitizen_server.game.repository.snapshot.GameSnapshotCodec;
+import com.WhoisntCitizen_server.game.result.GameResultRecorder;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
 import com.WhoisntCitizen_server.game.scheduling.redis.RedisGameTimer;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
@@ -55,7 +56,7 @@ class RedisActivityMultiServerTest {
 
     private static final Instant NOW = Instant.parse("2026-10-11T12:00:00Z");
     // 밤 30, 결과 5, 낮 60, 투표 30, 처형 5. 종료 후 60초 보관, 60초 동안 요청이 없으면 연결 끊김, 5초마다 검사, 10일 무사망 시 취소
-    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 60, 5, 10);
+    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 60, 5, 10, 10);
     private static final List<Long> EVERYONE = List.of(1L, 2L, 3L, 4L, 5L);
 
     private static GenericContainer<?> redisContainer;
@@ -131,7 +132,7 @@ class RedisActivityMultiServerTest {
         ManualTaskScheduler scheduler = new ManualTaskScheduler(new MutableClock(NOW)); // 지연 이벤트(로비·전적)는 여기서 다루지 않음
         flow[0] = new GameFlowService(repository, new NightActionResolver(new Random(0)), new VoteResolver(),
                 new WinConditionChecker(), timer, new SchedulerDeferredEventPublisher(scheduler, serverClock, event -> { }),
-                lock, activity, PROPS, serverClock, event -> { });
+                lock, activity, PROPS, serverClock, event -> { }, GameResultRecorder.NONE);
         GameService games = new GameService(repository, TestRoles.assigner(7), flow[0], lock, activity, serverClock);
         return new Server(repository, timer, flow[0], games, activity);
     }

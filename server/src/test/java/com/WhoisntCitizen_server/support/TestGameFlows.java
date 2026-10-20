@@ -5,6 +5,7 @@ import com.WhoisntCitizen_server.game.activity.LocalPlayerActivityTracker;
 import com.WhoisntCitizen_server.game.activity.PlayerActivityTracker;
 import com.WhoisntCitizen_server.game.lock.LocalGameLock;
 import com.WhoisntCitizen_server.game.repository.GameRepository;
+import com.WhoisntCitizen_server.game.result.GameResultRecorder;
 import com.WhoisntCitizen_server.game.scheduling.LocalGameTimer;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
 import com.WhoisntCitizen_server.game.service.GameFlowService;
@@ -48,13 +49,28 @@ public final class TestGameFlows {
                                          Clock clock,
                                          ApplicationEventPublisher eventPublisher,
                                          PlayerActivityTracker activityTracker) {
+        return create(repository, nightActionResolver, voteResolver, winConditionChecker, scheduler, props, clock,
+                eventPublisher, activityTracker, GameResultRecorder.NONE);
+    }
+
+    /** 게임 결과 기록(DB 대신)을 테스트에서 확인해야 할 때 recorder를 넘긴다. */
+    public static GameFlowService create(GameRepository repository,
+                                         NightActionResolver nightActionResolver,
+                                         VoteResolver voteResolver,
+                                         WinConditionChecker winConditionChecker,
+                                         TaskScheduler scheduler,
+                                         GamePhaseProperties props,
+                                         Clock clock,
+                                         ApplicationEventPublisher eventPublisher,
+                                         PlayerActivityTracker activityTracker,
+                                         GameResultRecorder resultRecorder) {
         // 타이머가 호출할 대상(GameFlowService)은 아래에서 만들어지므로 배열로 나중에 채운다.
         GameFlowService[] flow = new GameFlowService[1];
         flow[0] = new GameFlowService(repository, nightActionResolver, voteResolver, winConditionChecker,
                 new LocalGameTimer(scheduler, () -> flow[0]),
                 new SchedulerDeferredEventPublisher(scheduler, clock, eventPublisher),
                 new LocalGameLock(), activityTracker,
-                props, clock, eventPublisher);
+                props, clock, eventPublisher, resultRecorder);
         return flow[0];
     }
 }

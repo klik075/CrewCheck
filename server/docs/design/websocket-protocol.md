@@ -20,8 +20,10 @@ ws://{서버}:8080/ws/v1?token={JWT}                                            
 ```
 
 - JWT는 로그인 때 받은 REST용 토큰과 같습니다.
-- 둘 다 있으면 헤더를 씁니다. Bearer가 아닌 Authorization 헤더는 거절합니다.
-- 토큰이 없거나 틀리면 연결 자체를 거절합니다(HTTP 401, WebSocket이 열리지 않음).
+- 둘 다 있으면 헤더를 씁니다. Bearer가 아닌 Authorization 헤더는 토큰이 없는 것으로 봅니다.
+- 토큰이 없거나 틀리거나 만료됐으면, 연결은 열리지만 서버가 아무 메시지도 보내지 않고 **바로 close code `4401`로 닫습니다.**
+  - HTTP 401로 거절하지 않는 이유: Unity(데스크톱 `ClientWebSocket`)와 브라우저(WebGL) 모두 HTTP 401을 "연결 실패"로만 알려 줘서 토큰 문제인지 알 수 없습니다. `4401`은 두 플랫폼 모두 그대로 전달됩니다.
+  - 클라이언트는 `4401`을 받으면 재연결을 멈추고 다시 로그인합니다. (연결 중 토큰 만료와 같은 처리)
 - 연결되면 서버가 먼저 `connected`를 보냅니다.
 
 ## 3. 메시지 모양
@@ -37,6 +39,7 @@ ws://{서버}:8080/ws/v1?token={JWT}                                            
 | `subscribed` | `roomId` | 구독 완료. 이때 방·게임·채팅을 GET으로 한 번 가져옴 (구독 전 변경 보충) |
 | `game.changed` | `gameId`, `phaseVersion` | `GET /api/v1/games/{gameId}` (phaseVersion은 참고용, 항상 다시 조회) |
 | `room.changed` | `roomId` | `GET /api/v1/rooms/{roomId}` |
+| `room.created` | `roomId` | (로비) 새로고침 버튼의 RedDot만 켬. 목록은 자동으로 바꾸지 않음. **방을 구독하지 않은 연결(로비)에만** 가고 만든 사람은 받지 않음. 인원·상태 변경·삭제는 이 신호를 보내지 않음 |
 | `chat.changed` | `roomId`, `lastMessageId` | 이미 받은 id보다 크면 `GET /api/v1/rooms/{roomId}/messages?afterId=...` (사망자·해적·세이렌 전용 메시지는 볼 수 있는 사람에게만 옴) |
 | `error` | `code`, `message` | 로그. 연결은 유지됨 |
 
@@ -45,6 +48,7 @@ ws://{서버}:8080/ws/v1?token={JWT}                                            
 {"type":"subscribed","roomId":3}
 {"type":"game.changed","gameId":"abc","phaseVersion":7}
 {"type":"room.changed","roomId":3}
+{"type":"room.created","roomId":7}
 {"type":"chat.changed","roomId":3,"lastMessageId":42}
 {"type":"error","code":"NOT_IN_ROOM","message":"..."}
 ```
@@ -77,7 +81,7 @@ ws://{서버}:8080/ws/v1?token={JWT}                                            
 
 - 클라이언트는 10초마다 `ping`을 보냅니다.
 - 서버는 30초 동안 아무 메시지가 없으면 연결을 닫습니다 (close code `4408`).
-- 연결 중 토큰이 만료되면 서버가 닫습니다 (close code `4401`). 다시 로그인한 뒤 연결합니다.
+- 연결 중 토큰이 만료되면 서버가 닫습니다 (close code `4401`). 다시 로그인한 뒤 연결합니다. 연결할 때 토큰이 잘못됐을 때도 같은 코드입니다.
 - 끊기면 클라이언트는 1초, 2초, 4초 ... 최대 30초 간격으로 다시 연결하고, 그동안은 예전 polling으로 화면을 갱신합니다.
 - 다시 연결되면 `room.subscribe`를 다시 보내고, 보고 있던 화면을 GET으로 한 번 새로 고칩니다(끊긴 동안 놓친 신호 보충).
 - 연결이 끊겨도 바로 사망 처리되지 않습니다. 연결 끊김 판정은 기존처럼 마지막 요청 후 60초입니다.

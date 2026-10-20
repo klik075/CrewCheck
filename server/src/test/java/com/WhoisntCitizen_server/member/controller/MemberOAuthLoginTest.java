@@ -42,7 +42,8 @@ class MemberOAuthLoginTest {
         mvc.perform(post("/api/members/login/google").contentType(MediaType.APPLICATION_JSON).content(BODY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value("google_g-1"))
-                .andExpect(jsonPath("$.nickname").value("구글유저"))
+                // 닉네임은 구글 이름이 아니라 "G" + 숫자 6자리
+                .andExpect(jsonPath("$.nickname").value(org.hamcrest.Matchers.matchesPattern("G\\d{6}")))
                 .andExpect(jsonPath("$.accessToken").isNotEmpty());
     }
 

@@ -1,4 +1,4 @@
-# EC2 운영용 MySQL + Redis
+# EC2 운영용 MySQL + Redis + nginx(HTTPS 입구) + certbot(인증서 자동 갱신)
 # 로컬 docker-compose.yml과 다른 점: 포트를 127.0.0.1에만 열어 외부에서 DB/Redis에 직접 붙지 못하게 한다.
 # 비밀번호는 같은 폴더의 .env 파일에서 읽는다. (예시: app.env.example 참고)
 # 실행: docker compose -f docker-compose.prod.yml --env-file .env up -d
@@ -30,8 +30,44 @@ services:
     image: redis:7
     container_name: whoisntcitizen-redis
     restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    #                     --appendonly : 쓰기명령 디스크 파일 기록 여부
+    #                                      --maxmemory : Redis에 할당된 메모리 상한
+    #                                                        --maxmemory-policy : 상한에 닿으면 기존데이터삭제없이 신규 작성 거부
     ports:
       - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data # redis-data(docker볼륨)에 연결
+
+  # HTTPS 입구 (역방향 프록시). itch.io의 WebGL 빌드는 HTTPS 페이지라 https:// · wss:// 로만 접속할 수 있다.
+  #   브라우저 ─https/wss :443─▶ nginx(인증서) ─http─▶ 127.0.0.1:8080 Spring 서버(systemd mafia-server)
+  # 설정: 이 파일 옆 nginx/ 폴더 (mafia.conf = 80포트, mafia-https.conf = 443포트)
+  # 인증서: 이 파일 옆 certbot/ 폴더 (EC2에만 있다. 저장소에 올리지 않는다)
+  # network_mode: host → 컨테이너가 EC2의 80·443을 직접 쓰고, 127.0.0.1:8080으로 Spring에 넘긴다. (ports 설정이 필요 없다)
+  # EC2 보안 그룹 인바운드 80(인증서 확인)·443(HTTPS)을 열어야 한다.
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: whoisntcitizen-nginx
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./nginx:/etc/nginx/conf.d:ro           # 설정 폴더를 통째로 바꿔 끼운다 (이미지 기본 default.conf가 사라짐)
+      - ./certbot/www:/var/www/certbot:ro      # 인증서 발급 확인용 파일 (certbot이 쓰고 nginx가 보여 준다)
+      - ./certbot/conf:/etc/letsencrypt:ro     # 발급된 인증서
+    # 6시간마다 설정을 다시 읽는다 → certbot이 갱신한 인증서가 재시작 없이 반영된다
+    command: /bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g "daemon off;"'
+
+  # Let's Encrypt 인증서 자동 갱신. 12시간마다 확인하고, 만료 30일 전부터 실제로 갱신한다. (인증서 유효기간 90일)
+  # 처음 발급은 이 서비스가 아니라 한 번만 직접 실행한다: nginx/mafia-https.conf.disabled 맨 위 주석 참고
+  certbot:
+    image: certbot/certbot:latest
+    container_name: whoisntcitizen-certbot
+    restart: unless-stopped
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done'
 
 volumes:
   mysql-data:
+  redis-data:

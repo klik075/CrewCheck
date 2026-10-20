@@ -7,6 +7,7 @@ import com.WhoisntCitizen_server.chat.entity.MessageType;
 import com.WhoisntCitizen_server.chat.event.ChatMessageSavedEvent;
 import com.WhoisntCitizen_server.chat.filter.ProfanityFilter;
 import com.WhoisntCitizen_server.chat.repository.ChatMessageRepository;
+import com.WhoisntCitizen_server.chat.spam.ChatSpamGuard;
 import com.WhoisntCitizen_server.common.exception.ForbiddenException;
 import com.WhoisntCitizen_server.common.exception.NotFoundException;
 import com.WhoisntCitizen_server.game.entity.Game;
@@ -54,11 +55,22 @@ import java.util.function.Predicate;
  *
  * 욕설 검열: 사용자가 보낸 메시지는 저장하기 전에 ProfanityFilter로 욕설 부분을 순화 단어(땡큐, 좋아요…)로 바꿉니다. (사망자·해적·세이렌 채팅 포함)
  * 저장소(Redis)와 다른 사람의 화면에는 바뀐 문장만 남습니다. 시스템 메시지는 서버가 만든 문장이라 검사하지 않습니다.
+ *
+ * 도배 방지: 같은 내용을 연속으로 3번째 보낼 때부터 응답에 경고 문구(spamWarning)를 넣고, 10번째에는 그 메시지를 저장하지 않고
+ * 3분간 채팅을 금지합니다(429 CHAT_MUTED). 금지 중에 보낸 메시지도 모두 429입니다. (ChatSpamGuard, 사망자·해적·세이렌 채팅 포함)
+ *
+ * 로비 채팅: 로비 전체를 방 하나(LOBBY_ROOM_ID = 0)로 보고 같은 저장소에 둡니다. 로비 방 id는 1부터라 겹치지 않습니다.
+ * 로그인한 사용자(프로필 있음)는 누구나 보내고 읽을 수 있고, 닉네임은 프로필 닉네임을 씁니다. 욕설 검열·도배 방지도 똑같이 적용합니다.
+ * "로비에 들어온 뒤의 대화만" 보여 주는 것은 클라이언트가 합니다. (입장할 때 마지막 messageId를 받아 두고 그 뒤만 afterId로 조회)
+ * 로비에는 실시간 구독이 없어 저장 알림(ChatMessageSavedEvent)을 보내지 않고, 클라이언트가 폴링합니다.
  */
 @Service
 public class ChatMessageService {
 
     public static final int DEFAULT_LIMIT = 50;
+
+    /** 로비 채팅 메시지를 두는 채팅 저장소의 방 id (로비 방 id는 room:id:sequence로 1부터 발급되므로 겹치지 않는다) */
+    public static final long LOBBY_ROOM_ID = 0L;
     public static final int MAX_LIMIT = 200;
 
     /** 숨긴 메시지 때문에 결과가 비지 않도록 더 읽어 올 때, 한 번 조회에서 읽는 최대 메시지 수 (방당 보관 개수와 같은 규모) */
@@ -91,6 +103,8 @@ public class ChatMessageService {
     private final ApplicationEventPublisher eventPublisher;
     // 사용자 메시지의 욕설을 저장 전에 순화 단어로 바꾼다 (ProfanityFilterConfig가 만든 빈)
     private final ProfanityFilter profanityFilter;
+    // 같은 내용 반복(도배)을 경고하고, 계속하면 채팅을 금지한다 (ChatSpamConfig가 만든 빈)
+    private final ChatSpamGuard spamGuard;
 
     @Autowired
     public ChatMessageService(ChatMessageRepository repository,
@@ -99,7 +113,8 @@ public class ChatMessageService {
                               GameRepository gameRepository,
                               GameLock gameLock,
                               ApplicationEventPublisher eventPublisher,
-                              ProfanityFilter profanityFilter) {
+                              ProfanityFilter profanityFilter,
+                              ChatSpamGuard spamGuard) {
         this.repository = repository;
         this.roomRepository = roomRepository;
         this.userRepository = userRepository;
@@ -107,6 +122,19 @@ public class ChatMessageService {
         this.gameLock = gameLock;
         this.eventPublisher = eventPublisher;
         this.profanityFilter = profanityFilter == null ? ProfanityFilter.disabled() : profanityFilter;
+        this.spamGuard = spamGuard == null ? ChatSpamGuard.disabled() : spamGuard;
+    }
+
+    /** 도배 방지 없이 만드는 생성자 (도배 방지와 관계없는 테스트용) */
+    public ChatMessageService(ChatMessageRepository repository,
+                              LobbyRoomRepository roomRepository,
+                              UserRepository userRepository,
+                              GameRepository gameRepository,
+                              GameLock gameLock,
+                              ApplicationEventPublisher eventPublisher,
+                              ProfanityFilter profanityFilter) {
+        this(repository, roomRepository, userRepository, gameRepository, gameLock, eventPublisher, profanityFilter,
+                ChatSpamGuard.disabled());
     }
 
     /** 욕설 검열 없이 만드는 생성자 (검열과 관계없는 테스트용) */
@@ -155,6 +183,7 @@ public class ChatMessageService {
      * 게임 중이면 보낸 사람의 상태에 따라 정해집니다: 사망자 → DEAD, 밤의 해적 → 해적에게만 보이는 전체 채팅,
      * 밤의 세이렌 → 세이렌 팀에게만 보이는 채팅, 그 밖 → 전체 채팅
      * 욕설은 순화 단어로 바꿔서 저장하고, 응답에도 바뀐 문장이 들어갑니다. (보낸 사람도 바뀐 결과를 봅니다)
+     * 도배: 같은 내용 3번째부터 응답의 spamWarning에 경고 문구 / 10번째와 금지 중에는 저장하지 않고 ChatMutedException(429)
      */
     public ChatMessageResponse send(long roomId, Long memberId, String message) {
         Room room = getRoom(roomId);
@@ -166,9 +195,9 @@ public class ChatMessageService {
                 .findFirst()
                 .orElseThrow(() -> new ForbiddenException("현재 채팅할 수 없는 플레이어입니다. (방 참가자가 아님)"));
 
-        // 게임 잠금 안에서 게임을 읽고 규칙까지 정한다. 메시지 저장은 잠금 밖에서 한다
-        // 볼 수 있는 사람(audience)도 같은 잠금 안에서 정한다. (실시간 알림을 볼 수 있는 사람에게만 보내기 위해)
-        SendRule decided = withActiveGame(room, game -> {
+        // Redis 저장소면 게임을 잠금 없이 한 번 읽어(스냅숏) 규칙과 볼 사람(audience)을 정한다. 메시지 저장도 잠금 밖에서 한다
+        // 채팅이 투표·페이즈 전환과 같은 게임 잠금 줄에 서지 않게 하기 위해서다. 메모리 저장소면 잠금 안에서 읽는다 (readActiveGame 참고)
+        SendRule decided = readActiveGame(room, game -> {
             if (game == null) return new SendRule(Rule.PUBLIC, null, null);
             Rule decidedRule = ruleOf(game, player.getUserId());
             return new SendRule(decidedRule, game.getGameId(), audienceOf(game, decidedRule));
@@ -181,12 +210,47 @@ public class ChatMessageService {
         MessageType type = rule == Rule.DEAD ? MessageType.DEAD : MessageType.USER;
         String gameId = rule == Rule.PUBLIC ? null : decided.gameId();
 
+        // 도배 확인 (채팅 금지면 ChatMutedException → 429, 메시지는 저장하지 않는다). 비교는 욕설을 바꾸기 전 원문으로 한다
+        String spamWarning = spamGuard.check(player.getUserId(), message);
+
         // 욕설 필터링
         String text = profanityFilter.mask(message.trim());
         ChatMessage saved = repository.save(roomId, type, player.getUserId(), player.getNickname(), text,
                 gameId, rule == Rule.NIGHT_PIRATE, rule == Rule.NIGHT_SIREN);
         publishSaved(saved, decided.audience());
-        return ChatMessageResponse.from(saved);
+        return ChatMessageResponse.from(saved, spamWarning);
+    }
+
+    // ---------- 로비 채팅 ----------
+
+    /**
+     * 로비 채팅 조회. 오래된 순(messageId 오름차순)으로 반환합니다.
+     * - afterId가 없으면: 최신 limit개 (로비에 들어올 때 limit=1로 마지막 id만 받아 두는 데 씁니다)
+     * - afterId가 있으면: 그 messageId 이후에 들어온 메시지 최대 limit개 (폴링용)
+     */
+    public List<ChatMessageSummary> getLobbyMessages(Long afterId, Integer limit) {
+        int size = normalizeLimit(limit);
+        List<ChatMessage> messages = (afterId != null)
+                ? repository.findAfter(LOBBY_ROOM_ID, afterId, size)
+                : repository.findLatest(LOBBY_ROOM_ID, size);
+        return messages.stream().map(ChatMessageSummary::from).toList();
+    }
+
+    /**
+     * 로비 채팅 전송. 400: 프로필(User)이 없는 계정
+     * 방 채팅과 같이 도배 확인(429 CHAT_MUTED, 3번째부터 spamWarning) → 욕설 필터 → 저장 순서입니다.
+     */
+    public ChatMessageResponse sendLobby(Long memberId, String message) {
+        User user = userRepository.findByMemberId(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
+
+        String spamWarning = spamGuard.check(user.getId(), message);
+
+        String text = profanityFilter.mask(message.trim());
+        String nickname = user.getNickname() == null || user.getNickname().isBlank() ? "?" : user.getNickname();
+        ChatMessage saved = repository.save(LOBBY_ROOM_ID, MessageType.USER, user.getId(), nickname, text,
+                null, false, false);
+        return ChatMessageResponse.from(saved, spamWarning);
     }
 
     /** 공지(시스템 메시지) 전송. 게임 페이즈 알림 등 서버 코드에서도 직접 호출할 수 있습니다. */
@@ -352,8 +416,27 @@ public class ChatMessageService {
     }
 
     /**
+     * 방에서 진행 중인 게임을 읽어 action에 넘깁니다. (채팅 전송 규칙 판단용) 대기 중이거나 끝난 게임이면 null.
+     *
+     * 저장소가 복사본을 돌려주면(Redis, returnsSnapshots=true) 잠금 없이 한 번 읽습니다.
+     * Redis 저장소는 GET 한 번으로 JSON 전체를 읽어 새 복사본을 만들므로 "어느 한 순간의 저장된 게임 상태"를 통째로 얻습니다.
+     * 다만 그 직후 페이즈가 바뀔 수 있어서, 밤이 시작되는(또는 플레이어가 죽는) 순간과 겹친 전송 한두 건은
+     * 직전 규칙으로 판단될 수 있습니다. (예: 밤 전환 수 ms 안에 보낸 선원 채팅이 공개 채팅으로 저장됨)
+     * 이 허용 범위는 클라이언트 입력 차단과 같은 수준입니다.
+     *
+     * 메모리 저장소(single 모드, returnsSnapshots=false)는 저장소가 들고 있는 바로 그 객체를 돌려주므로
+     * 잠금 없이 읽으면 바뀌는 도중의 상태를 볼 수 있습니다. 그래서 지금처럼 게임 잠금 안에서 읽습니다. (SnapshotRead와 같은 기준)
+     */
+    private <T> T readActiveGame(Room room, Function<Game, T> action) {
+        if (!gameRepository.returnsSnapshots()) return withActiveGame(room, action);
+        String gameId = room.getGameId();
+        if (!room.isInGame() || gameId == null) return action.apply(null);
+        return action.apply(gameRepository.findById(gameId).filter(game -> !game.isEnded()).orElse(null));
+    }
+
+    /**
      * 전송 규칙, 그 규칙을 정한 게임 id, 볼 수 있는 사용자(모두에게 보이면 null).
-     * 게임 잠금 안에서 정해 잠금 밖으로 가지고 나옵니다.
+     * 잠금 없이 읽은 게임 스냅숏에서 정해 가지고 나옵니다.
      */
     private record SendRule(Rule rule, String gameId, Set<Long> audience) {
     }
@@ -363,7 +446,7 @@ public class ChatMessageService {
      *  - 사망자 채팅: 그 게임의 사망자 (사망한 뒤에 보낸 메시지이므로 지금 사망자는 모두 볼 수 있다)
      *  - 밤 해적 채팅·해적 안내: 지금 해적으로 취급되는 사람 (해적·요리사, 접선한 앵무새. 사망한 해적 포함)
      *  - 세이렌 채팅: 지금 세이렌 팀인 사람 (세이렌, 유혹당한 팀원. 사망한 팀원 포함)
-     * withActiveGame 안(게임 잠금 안)에서만 부릅니다.
+     * 게임 잠금 안(withActiveGame) 또는 잠금 없이 읽은 스냅숏(readActiveGame)에서 부릅니다.
      */
     private static Set<Long> audienceOf(Game game, Rule rule) {
         Predicate<GamePlayer> canRead = switch (rule) {
@@ -385,7 +468,7 @@ public class ChatMessageService {
      *  - 사망자 → DEAD (밤에도 가능)
      *  - 밤: 해적 → NIGHT_PIRATE, 세이렌 → NIGHT_SIREN, 그 밖(유혹당한 팀원, 게임 참가자가 아닌 사람 포함) → NIGHT_BLOCKED
      *  - 그 밖 → PUBLIC
-     * withActiveGame 안(게임 잠금 안)에서만 부릅니다.
+     * 게임 잠금 안(withActiveGame) 또는 잠금 없이 읽은 스냅숏(readActiveGame)에서 부릅니다.
      */
     private static Rule ruleOf(Game game, Long userId) {
         GamePlayer p = findPlayer(game, userId);

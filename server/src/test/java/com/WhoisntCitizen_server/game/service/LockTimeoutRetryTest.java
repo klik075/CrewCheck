@@ -8,6 +8,7 @@ import com.WhoisntCitizen_server.game.entity.GamePhase;
 import com.WhoisntCitizen_server.game.entity.GamePlayer;
 import com.WhoisntCitizen_server.game.lock.GameLock;
 import com.WhoisntCitizen_server.game.lock.LocalGameLock;
+import com.WhoisntCitizen_server.game.result.GameResultRecorder;
 import com.WhoisntCitizen_server.game.scheduling.LocalGameTimer;
 import com.WhoisntCitizen_server.game.scheduling.SchedulerDeferredEventPublisher;
 import com.WhoisntCitizen_server.night.service.NightActionResolver;
@@ -39,7 +40,7 @@ class LockTimeoutRetryTest {
 
     private static final Instant NOW = Instant.parse("2026-10-01T12:00:00Z");
     // 밤 30, 결과 5, 낮 60, 투표 30, 처형 5. 종료 후 60초 보관, 연결 끊김 검사 끔, 10일 무사망 시 취소
-    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10);
+    private static final GamePhaseProperties PROPS = new GamePhaseProperties(30, 5, 60, 30, 5, 60, 0, 5, 10, 10);
 
     /** 남은 실패 횟수만큼 LockTimeoutException을 던지고, 그다음부터는 정상 잠금 */
     private static final class FailingGameLock implements GameLock {
@@ -79,7 +80,7 @@ class LockTimeoutRetryTest {
         holder[0] = new GameFlowService(repository, new NightActionResolver(new Random(0)), new VoteResolver(),
                 new WinConditionChecker(), new LocalGameTimer(scheduler, () -> holder[0]),
                 new SchedulerDeferredEventPublisher(scheduler, clock, event -> { }),
-                lock, new LocalPlayerActivityTracker(), PROPS, clock, event -> { });
+                lock, new LocalPlayerActivityTracker(), PROPS, clock, event -> { }, GameResultRecorder.NONE);
         flow = holder[0];
         gameId = repository.save(new Game("1", List.of(
                 new GamePlayer(1L, "해적", TestRoles.RAIDER),

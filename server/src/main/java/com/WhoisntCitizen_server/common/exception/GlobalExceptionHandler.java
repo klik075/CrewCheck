@@ -1,5 +1,7 @@
 package com.WhoisntCitizen_server.common.exception;
 
+import com.WhoisntCitizen_server.chat.dto.ChatMutedResponse;
+import com.WhoisntCitizen_server.chat.spam.ChatMutedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.RedisConnectionFailureException;
@@ -34,6 +36,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(new ErrorResponse("BAD_REQUEST", e.getMessage()));
     }
 
+    /** 닉네임에 욕설·금칙어 포함: 400, code = NICKNAME_NOT_ALLOWED (회원가입, 닉네임 변경) */
+    @ExceptionHandler(NicknameNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleNicknameNotAllowed(NicknameNotAllowedException e) {
+        return ResponseEntity.badRequest().body(new ErrorResponse(NicknameNotAllowedException.CODE, e.getMessage()));
+    }
+
     /** 존재하지 않는 방/유저, 잘못된 입력 등: 400 */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException e) {
@@ -44,6 +52,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse("CONFLICT", e.getMessage()));
+    }
+
+    /** 리프레시 토큰이 없거나 만료·폐기·불일치: 401 */
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthorized(UnauthorizedException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("UNAUTHORIZED", e.getMessage()));
     }
 
     // ---------- 로비 ----------
@@ -72,6 +86,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ForbiddenException.class)
     public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ErrorResponse("FORBIDDEN", e.getMessage()));
+    }
+
+    /**
+     * 도배로 채팅 금지: 429 Too Many Requests + Retry-After(남은 초), code = CHAT_MUTED
+     * warning(금지가 막 시작될 때의 경고 문구)과 remainingSeconds를 함께 보낸다. 메시지는 저장되지 않았다.
+     */
+    @ExceptionHandler(ChatMutedException.class)
+    public ResponseEntity<ChatMutedResponse> handleChatMuted(ChatMutedException e) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRemainingSeconds()))
+                .body(new ChatMutedResponse(ChatMutedException.CODE, e.getMessage(), e.getWarning(),
+                        e.getRemainingSeconds()));
     }
 
     /** JSON 본문을 읽을 수 없음: 400 */

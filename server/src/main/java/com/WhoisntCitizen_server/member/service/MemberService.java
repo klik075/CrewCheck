@@ -2,6 +2,8 @@ package com.WhoisntCitizen_server.member.service;
 
 import com.WhoisntCitizen_server.global.util.JwtTokenProvider;
 import com.WhoisntCitizen_server.member.dto.MemberDto;
+import com.WhoisntCitizen_server.realtime.RealtimeNotifier;
+import com.WhoisntCitizen_server.realtime.protocol.RealtimeProtocol;
 import com.WhoisntCitizen_server.member.entity.AuthProvider;
 import com.WhoisntCitizen_server.member.entity.Member;
 import com.WhoisntCitizen_server.user.entity.User;
@@ -26,9 +28,23 @@ public class MemberService {
 	private final PasswordEncoder passwordEncoder;
 	private final JwtTokenProvider jwtTokenProvider;
 	private final UserRepository userRepository;
+	private final RefreshTokenStore refreshTokenStore;
+	private final RealtimeNotifier realtimeNotifier;
+
+	/**
+	 * 로그인할 때 리프레시 토큰을 새로 발급한다. 같은 계정의 이전 리프레시 토큰은 이 발급으로 덮어써져 무효가 되고,
+	 * 이전 기기의 실시간 연결(WebSocket)은 여기서 닫는다(4409). 클라이언트는 이 코드를 받으면 로그아웃 처리한다.
+	 * (아직 새 기기의 연결은 맺기 전이므로 새 로그인의 연결이 끊기지는 않는다)
+	 */
+	private String issueRefreshToken(Member member, User user) {
+		String refreshToken = refreshTokenStore.issue(member.getId());
+		realtimeNotifier.disconnectUser(user.getId(), RealtimeProtocol.CLOSE_DUPLICATE_LOGIN, "다른 곳에서 로그인했습니다.");
+		return refreshToken;
+	}
 
 	@Transactional
 	public MemberDto.Response signup(MemberDto.SignupRequest req) {
+		userService.assertNicknameAllowed(req.getNickname());
 		if (memberRepository.existsByUsername(req.getUsername())) {
 			throw new IllegalArgumentException("이미 사용 중인 아이디입니다.");
 		}
@@ -74,14 +90,15 @@ public class MemberService {
 				.username(member.getUsername())
 				.nickname(user.getNickname())
 				.accessToken(accessToken)
+				.refreshToken(issueRefreshToken(member, user))
 				.message("로그인에 성공했습니다.")
 				.build();
 	}
 
 	@Transactional
-	public MemberDto.AuthResult socialLogin(AuthProvider provider, String providerId, String defaultNickname) {
+	public MemberDto.AuthResult socialLogin(AuthProvider provider, String providerId) {
 		Member member = memberRepository.findByProviderAndProviderId(provider, providerId)
-				.orElseGet(() -> registerSocialMember(provider, providerId, defaultNickname));
+				.orElseGet(() -> registerSocialMember(provider, providerId));
 
 		User user = userService.getByMemberId(member.getId());
 
@@ -94,11 +111,31 @@ public class MemberService {
 				.username(member.getUsername())
 				.nickname(user.getNickname())
 				.accessToken(accessToken)
+				.refreshToken(issueRefreshToken(member, user))
 				.message(provider + " 로그인에 성공했습니다.")
 				.build();
 	}
 
-	private Member registerSocialMember(AuthProvider provider, String providerId, String defaultNickname) {
+	/** 소셜 가입 닉네임의 숫자 자릿수. 닉네임 = 구글 "G", 카카오 "K" + 숫자. 바꾸려면 이 값만 고친다. (DB 닉네임 최대 20자라 19 이하) */
+	private static final int SOCIAL_NICKNAME_DIGITS = 6;
+
+	/** 접두어(G/K) + 무작위 숫자. 숫자는 자릿수를 채우도록 앞을 0으로 채운다. 예) G048213 */
+	static String buildSocialNickname(AuthProvider provider, int digits, long randomValue) {
+		String prefix = provider == AuthProvider.GOOGLE ? "G" : provider == AuthProvider.KAKAO ? "K" : "U";
+		return prefix + String.format("%0" + digits + "d", randomValue);
+	}
+
+	private String generateUniqueSocialNickname(AuthProvider provider) {
+		int digits = Math.max(1, Math.min(SOCIAL_NICKNAME_DIGITS, 19));
+		long bound = (long) Math.pow(10, digits);
+		String nickname;
+		do {
+			nickname = buildSocialNickname(provider, digits, java.util.concurrent.ThreadLocalRandom.current().nextLong(bound));
+		} while (userRepository.existsByNickname(nickname));
+		return nickname;
+	}
+
+	private Member registerSocialMember(AuthProvider provider, String providerId) {
 		String generatedUsername = provider.name().toLowerCase() + "_" + providerId;
 
 		Member member = memberRepository.save(Member.builder()
@@ -108,7 +145,8 @@ public class MemberService {
 				.providerId(providerId)
 				.build());
 
-		User user = userService.createProfileWithUniqueNickname(member.getId(), defaultNickname);
+		// 구글/카카오 계정의 이름은 쓰지 않는다. (실명 노출 방지, 길이·중복 문제 방지)
+		User user = userService.createProfile(member.getId(), generateUniqueSocialNickname(provider));
 
 		log.info("[소셜 회원 자동 가입 완료] 플랫폼: {}, 회원 ID: {}, 닉네임: {}", provider, member.getId(), user.getNickname());
 		return member;
@@ -133,6 +171,7 @@ public class MemberService {
 				.username(member.getUsername())
 				.nickname(user.getNickname())
 				.accessToken(accessToken)
+				.refreshToken(issueRefreshToken(member, user))
 				.message("게스트 로그인에 성공했습니다.")
 				.build();
 	}

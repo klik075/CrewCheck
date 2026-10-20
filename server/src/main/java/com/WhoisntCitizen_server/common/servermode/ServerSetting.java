@@ -18,7 +18,8 @@ public enum ServerSetting {
     GAME_LOCK("mafia.game.lock", "게임 잠금", "local", "redis"),
     ROOM_LOCK("mafia.room.lock", "방 잠금", "local", "redis"),
     GAME_TIMER("mafia.game.timer", "게임 타이머", "local", "redis"),
-    GAME_ACTIVITY("mafia.game.activity", "접속 기록", "local", "redis");
+    GAME_ACTIVITY("mafia.game.activity", "접속 기록", "local", "redis"),
+    REALTIME_NOTIFIER("mafia.realtime.notifier", "실시간 신호", "local", "redis");
 
     private final String key;
     private final String label;

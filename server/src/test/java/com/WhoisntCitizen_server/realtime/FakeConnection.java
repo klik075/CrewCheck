@@ -1,18 +1,22 @@
 package com.WhoisntCitizen_server.realtime;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
-/** 테스트용 연결. 보낸 JSON을 쌓아 둔다 */
+/**
+ * 테스트용 연결. 보낸 JSON을 쌓아 둔다
+ * 서버 여러 대 테스트에서는 Redis 구독 스레드가 쓰고 테스트 스레드가 읽으므로, 다른 스레드에서도 보이게 해 둔다.
+ */
 class FakeConnection implements RealtimeConnection {
 
     private final String id;
     private final long userId;
-    final List<String> sent = new ArrayList<>();
-    boolean open = true;
+    final List<String> sent = Collections.synchronizedList(new ArrayList<>());
+    volatile boolean open = true;
     boolean failOnSend = false;
     /** close로 닫혔으면 그 코드, 아니면 -1 */
-    int closedCode = -1;
+    volatile int closedCode = -1;
 
     FakeConnection(String id, long userId) {
         this.id = id;

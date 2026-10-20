@@ -120,9 +120,25 @@ public class RealtimeSessionRegistry {
         return connections(byRoom.get(roomId));
     }
 
+    /** 어떤 방도 구독하지 않은 연결들 (복사본). 로비에 있는 사람들 */
+    public synchronized List<RealtimeConnection> connectionsWithoutRoom() {
+        List<RealtimeConnection> result = new ArrayList<>();
+        for (Entry entry : byId.values()) {
+            if (entry.roomId() == null) {
+                result.add(entry.connection());
+            }
+        }
+        return result;
+    }
+
     /** 사용자의 연결들 (복사본) */
     public synchronized List<RealtimeConnection> connectionsOfUser(long userId) {
         return connections(byUser.get(userId));
+    }
+
+    /** 이 서버의 모든 연결 (복사본). 서버를 끌 때 한꺼번에 닫는 데 쓴다 (RealtimeShutdownCloser) */
+    public synchronized List<RealtimeConnection> allConnections() {
+        return byId.values().stream().map(Entry::connection).toList();
     }
 
     /** 연결이 구독 중인 방 */

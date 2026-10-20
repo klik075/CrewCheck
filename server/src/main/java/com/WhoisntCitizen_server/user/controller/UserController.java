@@ -50,4 +50,14 @@ public class UserController {
 		Long currentMemberId = Long.valueOf(jwt.getSubject());
 		return ResponseEntity.ok(userService.updateNickname(currentMemberId, req.getNickname()));
 	}
+
+	// 프로필 이미지(아바타 프리셋) 변경
+	@PatchMapping("/me/profile-image")
+	public ResponseEntity<UserDto.MyProfileResponse> updateProfileImage(
+			@AuthenticationPrincipal Jwt jwt,
+			@RequestBody @Valid UserDto.UpdateProfileImageRequest req
+	) {
+		Long currentMemberId = Long.valueOf(jwt.getSubject());
+		return ResponseEntity.ok(userService.updateProfileImage(currentMemberId, req.getProfileImageId()));
+	}
 }
