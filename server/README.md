@@ -198,7 +198,7 @@ src/main/resources/
 deploy/          운영 배포 (app.env.example, docker-compose.prod.yml, systemd, nginx)
 postman/         Postman 컬렉션 (REST, WebSocket 점검)
 loadtest/        k6 부하 테스트 스크립트·결과·트러블슈팅 기록
-Claude outputs/  게임 진행·멀티서버·WebSocket 설계 문서
+docs/design/  게임 진행·멀티서버·WebSocket 설계 문서
 ```
 
 ## 6. ERD
@@ -273,7 +273,7 @@ erDiagram
 - REST API 매핑 54개(개발용 포함), WebSocket 채널 1개(`/ws/v1`)
 - 인증이 필요한 API는 `Authorization: Bearer <JWT>` 를 사용합니다.
 - **전체 요청·응답 예시**: [`postman/mafia-game.postman_collection.json`](postman/mafia-game.postman_collection.json) (Postman에서 Import)
-- **WebSocket 점검**: [`postman/websocket-check.postman_collection.json`](postman/websocket-check.postman_collection.json), 프로토콜 문서 [`Claude outputs/websocket-protocol.md`](Claude%20outputs/websocket-protocol.md)
+- **WebSocket 점검**: [`postman/websocket-check.postman_collection.json`](postman/websocket-check.postman_collection.json), 프로토콜 문서 [`docs/design/websocket-protocol.md`](docs/design/websocket-protocol.md)
 
 <!-- 📷 [사진 10] (선택) Postman 컬렉션 화면 캡처 → docs/images/postman.png -->
 
@@ -477,7 +477,7 @@ erDiagram
 
 - [`loadtest/README.md`](loadtest/README.md): 로비·대기실 부하 테스트 계획과 실행 방법
 - [`loadtest/TROUBLESHOOTING.md`](loadtest/TROUBLESHOOTING.md): 대기실 튕김·방 목록 N+1 상세 분석
-- `Claude outputs/00_README.md` 외 `01`~`08`: 게임 진행(시작 → 역할 배정 → 밤 → 낮·투표 → 종료) 설계
-- `Claude outputs/멀티서버_*.md`: 게임 상태·분산 잠금·타이머·WebSocket 멀티서버 설계
-- `Claude outputs/마피아게임_서버_아키텍처_변천사.md`: 아키텍처 변천사
-- `Claude outputs/websocket-protocol.md`: 실시간 프로토콜
+- `docs/design/00_README.md` 외 `01`~`08`: 게임 진행(시작 → 역할 배정 → 밤 → 낮·투표 → 종료) 설계
+- `docs/design/멀티서버_*.md`: 게임 상태·분산 잠금·타이머·WebSocket 멀티서버 설계
+- `docs/design/마피아게임_서버_아키텍처_변천사.md`: 아키텍처 변천사
+- `docs/design/websocket-protocol.md`: 실시간 프로토콜

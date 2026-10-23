@@ -212,7 +212,7 @@ Build Settings에 포함된 씬 (`ProjectSettings/EditorBuildSettings.asset` 기
 
 - **ERD**: [서버 README — ERD](https://github.com/IamREALcitizen/project_server#6-erd)
 - **API 명세**: [서버 README — API 명세](https://github.com/IamREALcitizen/project_server#7-api-명세), Postman 컬렉션 `postman/mafia-game.postman_collection.json`
-- **WebSocket 프로토콜**: 서버 저장소 `Claude outputs/websocket-protocol.md`
+- **WebSocket 프로토콜**: [`server/docs/design/websocket-protocol.md`](../server/docs/design/websocket-protocol.md)
 - 클라이언트 쪽 API 호출은 `Assets/02_Scripts/Network/ApiClient` 와 `Game/Core` 의 `IGameApi` 에 모여 있고, 응답 JSON 형식은 `GameDtoParseTests` 로 고정해 두었습니다.
 
 </br>

@@ -24,7 +24,7 @@ import java.time.Clock;
 import java.time.Duration;
 
 /**
- * 실시간 알림 WebSocket(/ws/v1) 등록. 규칙은 Claude outputs/websocket-protocol.md.
+ * 실시간 알림 WebSocket(/ws/v1) 등록. 규칙은 server/docs/design/websocket-protocol.md.
  *
  * 구성
  *  - RealtimeWebSocketHandler: 연결·메시지 처리

@@ -5,7 +5,7 @@ namespace WhoisntCitizen.Network.Realtime
     /// <summary>
     /// 서버 WebSocket(v1) 약속값을 모아 둔 클래스.
     /// 서버 RealtimeProtocol / ServerMessage / ClientMessage / RealtimeErrorCode 와 값이 같아야 한다.
-    /// (문서: 서버 저장소 Claude outputs/websocket-protocol.md)
+    /// (문서: server/docs/design/websocket-protocol.md)
     /// </summary>
     public static class RealtimeProtocol
     {
