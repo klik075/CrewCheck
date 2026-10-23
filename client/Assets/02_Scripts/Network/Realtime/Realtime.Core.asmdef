@@ -1,0 +1,14 @@
+{
+    "name": "Realtime.Core",
+    "rootNamespace": "WhoisntCitizen.Network.Realtime",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
