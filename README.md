@@ -111,7 +111,7 @@ flowchart LR
 <details>
 <summary><b>🛠 주요 구현 (문제 → 설계 → 핵심 코드 → 결과)</b></summary>
 
-#### 7-1. Unity `RealtimeClient` — 끊겨도 멈추지 않는 실시간 연결
+#### 1. Unity `RealtimeClient` — 끊겨도 멈추지 않는 실시간 연결
 
 **문제**
 WebSocket 수신은 백그라운드 스레드에서 일어나는데 Unity API는 메인 스레드에서만 쓸 수 있습니다. 또 서버가 재시작되면 모든 클라이언트가 같은 순간에 끊기고 같은 간격으로 다시 붙으려 해서 접속이 한꺼번에 몰립니다.
@@ -142,7 +142,7 @@ public double NextDelaySeconds()
 
 **결과**: 서버 재시작 시 즉시 끊김을 감지하고 1초 폴링으로 게임을 이어간 뒤, 백오프로 재연결·재구독하고 GET 한 번으로 놓친 변경을 채웁니다.
 
-#### 7-2. WebGL 대응 — 소켓을 인터페이스로 분리하고 브라우저 WebSocket 연결
+#### 2. WebGL 대응 — 소켓을 인터페이스로 분리하고 브라우저 WebSocket 연결
 
 **문제**
 배포 대상인 WebGL에는 스레드가 없고 .NET `ClientWebSocket`도 동작하지 않습니다. 에디터·데스크톱에서 쓰던 연결 코드를 WebGL 빌드에서는 그대로 쓸 수 없었습니다.
@@ -173,7 +173,7 @@ private static IRealtimeTransport CreateTransport()
 
 **결과**: 화면 코드와 `RealtimeClient`는 한 줄도 바꾸지 않고 WebGL 배포본에서 실시간 연결이 동작하게 했습니다.
 
-#### 7-3. 서버 주도 게임 진행 코어
+#### 3. 서버 주도 게임 진행 코어
 
 **문제**
 마피아 게임은 플레이어마다 볼 수 있는 정보가 다르고, 밤 능력은 서로 영향을 주고받습니다(보호가 공격을 막는 등). 클라이언트가 판정하거나 도착한 순서대로 처리하면, 같은 선택에도 결과가 달라지고 정보가 새어 나갑니다.
@@ -207,7 +207,7 @@ public void onPhaseTimeout(String gameId, long expectedVersion) {
 
 **결과**: 이 버전 방식 덕분에 이후 타이머를 Redis로 옮길 때 진행 로직을 바꾸지 않았고, 여러 서버에서 같은 타이머가 중복 실행돼도 안전했습니다.
 
-#### 7-4. 서버 메모리 → Redis 외부화
+#### 4. 서버 메모리 → Redis 외부화
 
 **문제**
 게임 상태와 타이머가 서버 메모리에만 있어서 서버가 꺼지면 진행 중인 게임이 사라졌고, 서버가 2대면 서로 다른 게임을 봤습니다. `synchronized`는 같은 JVM 안에서만 동시 수정을 막습니다.
@@ -223,7 +223,7 @@ public void onPhaseTimeout(String gameId, long expectedVersion) {
 
 서버 간 실시간 신호 전달(Redis Pub/Sub)은 팀원(박재영)이 구현했고, 실제로 서버 여러 대를 EC2에 띄운 검증까지는 진행하지 못했습니다.
 
-#### 7-5. Redis + Lua 분산 타이머
+#### 5. Redis + Lua 분산 타이머
 
 **문제**
 페이즈 타이머가 서버 메모리에 있으면 그 서버가 죽을 때 게임이 멈추고, 서버가 여러 대면 같은 타이머가 두 번 실행될 수 있습니다.
@@ -248,7 +248,7 @@ return due
 
 **결과**: 게임 진행 전체를 Redis 타이머로 돌리는 통합 테스트(`RedisTimerGameFlowTest`)에서 서버 재시작·서버 2대·lease 만료 상황을 확인했습니다.
 
-#### 7-6. WebSocket 신호 서버 `/ws/v1`
+#### 6. WebSocket 신호 서버 `/ws/v1`
 
 **설계**
 - 서버는 내용 없이 `game.changed` / `room.changed` / `chat.changed` **신호만** 보냅니다. 신호에는 id와 `phaseVersion`·`lastMessageId`만 담습니다.
